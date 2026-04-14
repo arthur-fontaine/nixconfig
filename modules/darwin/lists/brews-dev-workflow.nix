@@ -1,0 +1,20 @@
+# Development workflow tools
+[
+  "bacon"
+  "chezmoi"
+  "firebase-cli"
+  "gh"
+  "git-delta"
+  "git-lfs"
+  "gitingest"
+  "helix"
+  "httpie"
+  "hyperfine"
+  "lazygit"
+  "neovim"
+  "rtk"
+  "sem-cli"
+  "xcodes"
+  "anomalyco/tap/opencode"
+  "chase/tap/awrit"
+]

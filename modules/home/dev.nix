@@ -1,12 +1,19 @@
 { lib, ... }:
 let
-  vscodeExtensions = import ./lists/vscode-extensions.nix;
+  vscodeExtensions = builtins.concatLists [
+    (import ./lists/vscode-theme-and-ui.nix)
+    (import ./lists/vscode-languages-and-frameworks.nix)
+    (import ./lists/vscode-workflow-and-tools.nix)
+  ];
+
   goTools = import ./lists/go-tools.nix;
   cargoBins = import ./lists/cargo-bins.nix;
 
   asLines = items: lib.concatStringsSep "\n" items;
 in
 {
+  # Keep these installs grouped here because they extend tools installed by Homebrew,
+  # but are still easier to maintain as explicit lists than as many tiny Nix modules.
   home.activation.installDevTools = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
 

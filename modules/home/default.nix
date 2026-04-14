@@ -1,12 +1,19 @@
 { username, homeDirectory, ... }:
 {
   imports = [
+    # Core user environment.
     ./environment.nix
     ./zsh.nix
     ./git.nix
     ./gh.nix
+
+    # App-specific configuration.
     ./apps
+
+    # Transitional compatibility layer for legacy files.
     ./compat
+
+    # Large installation lists and activation hooks.
     ./dev.nix
   ];
 

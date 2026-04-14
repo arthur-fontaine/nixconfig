@@ -1,0 +1,23 @@
+# CLI and shell tools
+[
+  "act"
+  "agent-browser"
+  "antidote"
+  "aria2"
+  "awscli"
+  "bash"
+  "bat"
+  "coreutils"
+  "eza"
+  "fd"
+  "fx"
+  "fzf"
+  "glow"
+  "just"
+  "qrencode"
+  "terminal-notifier"
+  "thefuck"
+  "tmate"
+  "tree"
+  "zellij"
+]

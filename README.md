@@ -20,7 +20,7 @@ Nix-based macOS configuration converted from `~/.local/share/chezmoi` and curate
 - `modules/darwin/default.nix`: shared Darwin wiring
 - `modules/darwin/defaults.nix`: macOS defaults
 - `modules/darwin/homebrew.nix`: Homebrew activation and package wiring
-- `modules/darwin/lists/*.nix`: taps, brews, casks
+- `modules/darwin/lists/*.nix`: categorized Homebrew taps, formulae, and casks
 
 ### home-manager layer
 
@@ -33,20 +33,20 @@ Nix-based macOS configuration converted from `~/.local/share/chezmoi` and curate
 - `modules/home/apps/default.nix`: app-module aggregation
 - `modules/home/apps/*.nix`: app-specific config
 - `modules/home/compat/default.nix`: legacy compatibility layer
-- `modules/home/lists/*.nix`: large tool/extension lists
+- `modules/home/lists/*.nix`: grouped VS Code, Go, and Cargo lists
 - `modules/home/files/**`: raw config files copied from the current setup where direct file management is still preferred
 
 ## What is declarative now
 
 These are modeled directly in Nix:
 
-- Homebrew taps, formulae, casks
+- Homebrew taps, formulae, and casks grouped by category
 - macOS defaults
 - git config
 - gh config
 - shell environment variables and PATH additions
 - screenshot directory creation and screenshot destination
-- VS Code / Go / Cargo install hooks
+- VS Code / Go / Cargo install hooks with grouped extension lists
 - Mise config
 - Codex config
 - OpenCode config
@@ -72,6 +72,7 @@ These are still linked from `modules/home/files/**` because that is the simplest
 - Pi config now targets `~/.pi/agent/**`, which matches the original chezmoi layout.
 - `modules/home/apps/**` is the cleaner long-term home for app configuration.
 - `modules/home/compat/**` exists specifically to isolate legacy carry-over files from the future-state Nix config.
+- Homebrew and VS Code lists are now grouped by category to make review and editing easier.
 
 ## Apply later
 
