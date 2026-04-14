@@ -6,7 +6,7 @@
     autosuggestion.enable = false;
     syntaxHighlighting.enable = false;
 
-    initExtraFirst = builtins.readFile ./zshrc;
+    initContent = lib.mkBefore (builtins.readFile ./zshrc);
   };
 
   xdg.configFile."zsh/zsh_plugins.txt".source = ./zsh_plugins.txt;
