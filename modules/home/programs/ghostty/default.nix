@@ -22,6 +22,6 @@
     adjust-cell-height = 10
   '';
 
-  xdg.configFile."ghostty/themes/zed-mono-dark".source = ../files/ghostty/themes/zed-mono-dark;
-  xdg.configFile."ghostty/themes/zed-mono-light".source = ../files/ghostty/themes/zed-mono-light;
+  xdg.configFile."ghostty/themes/zed-mono-dark".source = ./themes/zed-mono-dark;
+  xdg.configFile."ghostty/themes/zed-mono-light".source = ./themes/zed-mono-light;
 }

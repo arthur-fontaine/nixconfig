@@ -15,5 +15,5 @@
     readWritePaths = [ "~/.pi/agent/extensions/" ];
   };
 
-  home.file.".pi/agent/extensions".source = ../files/pi/extensions;
+  home.file.".pi/agent/extensions".source = ./extensions;
 }

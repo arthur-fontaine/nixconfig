@@ -18,22 +18,21 @@ Nix-based macOS configuration originally imported from `~/.local/share/chezmoi` 
 ### macOS layer
 
 - `modules/darwin/default.nix`: shared Darwin wiring
-- `modules/darwin/defaults.nix`: macOS defaults
-- `modules/darwin/homebrew.nix`: Homebrew activation and package wiring
-- `modules/darwin/lists/*.nix`: categorized Homebrew taps, formulae, and casks
+- `modules/darwin/core/default.nix`: shared Darwin core imports
+- `modules/darwin/core/defaults.nix`: macOS defaults
+- `modules/darwin/homebrew/default.nix`: Homebrew activation and package wiring
+- `modules/darwin/homebrew/*.nix`: categorized Homebrew taps, formulae, and casks
 
 ### home-manager layer
 
 - `modules/home/default.nix`: user module composition
-- `modules/home/environment.nix`: PATH, env vars, screenshot directory/defaults
-- `modules/home/zsh.nix`: shell wiring, prompt, plugins, completions
-- `modules/home/git.nix`: declarative git config
-- `modules/home/gh.nix`: declarative GitHub CLI config
-- `modules/home/dev.nix`: VS Code, Go, Cargo install hooks
-- `modules/home/apps/default.nix`: app-module aggregation
-- `modules/home/apps/*.nix`: app-specific config
-- `modules/home/lists/*.nix`: grouped VS Code, Go, and Cargo lists
-- `modules/home/files/**`: raw config files still managed by Nix where direct file management is preferred
+- `modules/home/core/default.nix`: shared home-manager core imports
+- `modules/home/core/environment.nix`: PATH, env vars, screenshot directory/defaults
+- `modules/home/programs/default.nix`: program-module aggregation
+- `modules/home/programs/<name>/default.nix`: one module per program or tool
+- `modules/home/programs/<name>/*`: raw files colocated with the program that owns them
+- `modules/home/profiles/development/default.nix`: development profile activation hooks
+- `modules/home/profiles/development/*.nix`: grouped VS Code, Go, and Cargo lists
 
 ## What is declarative now
 
@@ -53,7 +52,7 @@ These are modeled directly in Nix:
 
 ## What stays as raw config files
 
-These are still linked from `modules/home/files/**` because that is the simplest way to keep behavior exact and easy to diff:
+These are still kept as literal files, but now live beside the program module that owns them so ownership is obvious:
 
 - Ghostty themes
 - Zed
@@ -68,7 +67,7 @@ These are still linked from `modules/home/files/**` because that is the simplest
 - Auth and secret state is still intentionally excluded.
 - `zsh_plugins.zsh` and generated completions are seeded from the repo and then refreshed into mutable files during activation.
 - Pi config now targets `~/.pi/agent/**`, which matches the original chezmoi layout.
-- `modules/home/apps/**` is the long-term home for app configuration.
+- `modules/home/programs/**` is now the long-term home for tool and app configuration.
 - Homebrew and VS Code lists are grouped by category to make review and editing easier.
 - This repo no longer carries chezmoi compatibility files such as `.Brewfile`, `chezmoi.toml`, or a copied `nix.conf`.
 

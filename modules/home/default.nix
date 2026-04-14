@@ -1,17 +1,9 @@
 { username, homeDirectory, ... }:
 {
   imports = [
-    # Core user environment.
-    ./environment.nix
-    ./zsh.nix
-    ./git.nix
-    ./gh.nix
-
-    # App-specific configuration.
-    ./apps
-
-    # Large installation lists and activation hooks.
-    ./dev.nix
+    ./core
+    ./programs
+    ./profiles/development
   ];
 
   home.username = username;

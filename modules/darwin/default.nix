@@ -1,8 +1,8 @@
 { pkgs, username, ... }:
 {
   imports = [
-    ./defaults.nix
-    ./homebrew.nix
+    ./core
+    ./homebrew
   ];
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];

@@ -1,13 +1,13 @@
 { lib, ... }:
 let
   vscodeExtensions = builtins.concatLists [
-    (import ./lists/vscode-theme-and-ui.nix)
-    (import ./lists/vscode-languages-and-frameworks.nix)
-    (import ./lists/vscode-workflow-and-tools.nix)
+    (import ./vscode-theme-and-ui.nix)
+    (import ./vscode-languages-and-frameworks.nix)
+    (import ./vscode-workflow-and-tools.nix)
   ];
 
-  goTools = import ./lists/go-tools.nix;
-  cargoBins = import ./lists/cargo-bins.nix;
+  goTools = import ./go-tools.nix;
+  cargoBins = import ./cargo-bins.nix;
 
   asLines = items: lib.concatStringsSep "\n" items;
 in
