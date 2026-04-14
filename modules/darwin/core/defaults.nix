@@ -2,12 +2,15 @@
 {
   system.defaults = {
     NSGlobalDomain = {
-      NSPreferredExternalTerminalApp = "Ghostty";
       "com.apple.swipescrolldirection" = false;
-      AppleInterfaceStyleSwitchesAutomatically = 1;
+      AppleInterfaceStyleSwitchesAutomatically = true;
     };
 
     CustomUserPreferences = {
+      NSGlobalDomain = {
+        NSPreferredExternalTerminalApp = "com.mitchellh.ghostty";
+      };
+
       "com.apple.HIToolbox" = {
         AppleCurrentKeyboardLayoutInputSourceID = "com.apple.keylayout.USInternational-PC";
         AppleEnabledInputSources = [

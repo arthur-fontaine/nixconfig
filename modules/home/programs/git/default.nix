@@ -22,8 +22,6 @@
 
     extraConfig = {
       user.signingkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFqXVHTP+AGPqko54gq4iXtlDTiut2G6gT05KRiwxOpY";
-      core.pager = "delta";
-      interactive.diffFilter = "delta --color-only";
       merge.conflictstyle = "zdiff3";
       push.autoSetupRemote = true;
       gpg.format = "ssh";
