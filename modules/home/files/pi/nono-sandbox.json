@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "readWritePaths": [
+    "~/.pi/agent/extensions/"
+  ]
+}

@@ -1,0 +1,1 @@
+setopt SHARE_HISTORY

@@ -1,0 +1,537 @@
+{ pkgs, ... }:
+let
+  vscodeExtensions = [
+    "1yib.rust-bundle"
+    "a-h.templ"
+    "acrylic.acrylic-dark-theme"
+    "adpyke.codesnap"
+    "alefragnani.bookmarks"
+    "alexanderte.dainty-vscode"
+    "alexcvzz.vscode-sqlite"
+    "alexkrechik.cucumberautocomplete"
+    "amiralizadeh9480.laravel-extra-intellisense"
+    "andrejunges.handlebars"
+    "andrsdc.base16-themes"
+    "angular.ng-template"
+    "annalifatou.minimal-wave"
+    "antfu.goto-alias"
+    "antfu.theme-vitesse"
+    "antfu.unocss"
+    "anweber.vscode-httpyac"
+    "ariga.atlas-hcl"
+    "arrrrny.zed-one-theme"
+    "arthur-fontaine.vscode-autotyper"
+    "artlaman.chalice-color-theme"
+    "artlaman.chalice-icon-theme"
+    "astro-build.astro-vscode"
+    "attilah.ohm"
+    "be5invis.theme-verdandi"
+    "beardedbear.beardedicons"
+    "beardedbear.beardedtheme"
+    "benbusby.earthbound-themes"
+    "better-ts-errors.better-ts-errors"
+    "bierner.comment-tagged-templates"
+    "bierner.github-markdown-preview"
+    "bierner.jsdoc-markdown-highlighting"
+    "bierner.markdown-checkbox"
+    "bierner.markdown-emoji"
+    "bierner.markdown-footnotes"
+    "bierner.markdown-mermaid"
+    "bierner.markdown-preview-github-styles"
+    "bierner.markdown-yaml-preamble"
+    "bilawal-hameed.vscode-stockholm-theme"
+    "biomejs.biome"
+    "bmewburn.vscode-intelephense-client"
+    "bradlc.vscode-tailwindcss"
+    "cardinal90.multi-cursor-case-preserve"
+    "carlos-rgl.material-gecko"
+    "casualjim.gotemplate"
+    "catppuccin.catppuccin-vsc-icons"
+    "cdonohue.polychrome-vscode-themes"
+    "chadalen.vscode-jetbrains-icon-theme"
+    "charliermarsh.ruff"
+    "christian-kohler.npm-intellisense"
+    "cocopon.iceberg-theme"
+    "cr-jr.chronotype-vscode-themes"
+    "crystal-lang-tools.crystal-lang"
+    "davidanson.vscode-markdownlint"
+    "daylerees.rainglow"
+    "dbaeumer.vscode-eslint"
+    "denoland.vscode-deno"
+    "devsense.composer-php-vscode"
+    "devsense.intelli-php-vscode"
+    "devsense.phptools-vscode"
+    "devsense.profiler-php-vscode"
+    "divanvisagie.nord-native-theme"
+    "docker.docker"
+    "dotenv.dotenv-vscode"
+    "dprint.dprint"
+    "drcika.apc-extension"
+    "dustypomerleau.rust-syntax"
+    "eamodio.gitlens"
+    "editorconfig.editorconfig"
+    "emily-curry.base16-tomorrow-dark-vscode"
+    "esbenp.prettier-vscode"
+    "expo.vscode-expo-tools"
+    "figma.figma-vscode-extension"
+    "figma.kiwi-message-format"
+    "fill-labs.dependi"
+    "fisheva.eva-theme"
+    "formulahendry.auto-rename-tag"
+    "formulahendry.code-runner"
+    "frizadiga.friza-dark"
+    "fwcd.kotlin"
+    "github.codespaces"
+    "github.copilot-chat"
+    "github.github-vscode-theme"
+    "github.remotehub"
+    "github.vscode-github-actions"
+    "gitlab.gitlab-workflow"
+    "golang.go"
+    "grapecity.gc-excelviewer"
+    "graphql.vscode-graphql"
+    "graphql.vscode-graphql-syntax"
+    "greven.umbra"
+    "gruntfuggly.todo-tree"
+    "gsakkas.gruvbox-mix"
+    "gulajavaministudio.mayukaithemevsc"
+    "hashicorp.hcl"
+    "haskell.haskell"
+    "hemlok.framer-dark"
+    "homerotto.themin"
+    "hoovercj.vscode-settings-cycler"
+    "huacat.office-theme"
+    "huytd.nord-light"
+    "hverlin.mise-vscode"
+    "icrawl.discord-vscode"
+    "inferrinizzard.prettier-sql-vscode"
+    "isudox.vscode-jetbrains-keybindings"
+    "jock.svg"
+    "jtlowe.vscode-icon-theme"
+    "justusadam.language-haskell"
+    "kisstkondoros.vscode-codemetrics"
+    "kylpo.vscode-find-in-files-with-selection"
+    "lambdastudio.lambda-studio-themes"
+    "langium.langium-vscode"
+    "lehoanganh298.json-lines-viewer"
+    "leonardssh.vscord"
+    "llvm-vs-code-extensions.lldb-dap"
+    "lokalise.i18n-ally"
+    "luongnd.edge"
+    "m-thorsen.vscode-materia"
+    "magicstack.edgedb"
+    "mateocerquetella.xcode-12-theme"
+    "mathiasfrohlich.kotlin"
+    "matthewpi.caddyfile-support"
+    "mblode.twig-language-2"
+    "mechatroner.rainbow-csv"
+    "meganrogge.template-string-converter"
+    "merithayan.polar"
+    "mhutchie.git-graph"
+    "michaelzhou.fleet-theme"
+    "miguelsolorio.fluent-icons"
+    "miguelsolorio.min-theme"
+    "miguelsolorio.symbols"
+    "mikelward.theme-plainlight"
+    "modular-mojotools.vscode-mojo"
+    "monokai.theme-monokai-pro-vscode"
+    "ms-azuretools.vscode-containers"
+    "ms-azuretools.vscode-docker"
+    "ms-ceintl.vscode-language-pack-fr"
+    "ms-playwright.playwright"
+    "ms-python.black-formatter"
+    "ms-python.debugpy"
+    "ms-python.isort"
+    "ms-python.python"
+    "ms-python.vscode-pylance"
+    "ms-python.vscode-python-envs"
+    "ms-toolsai.datawrangler"
+    "ms-toolsai.jupyter"
+    "ms-toolsai.jupyter-keymap"
+    "ms-toolsai.jupyter-renderers"
+    "ms-toolsai.vscode-jupyter-cell-tags"
+    "ms-toolsai.vscode-jupyter-slideshow"
+    "ms-vscode-remote.remote-containers"
+    "ms-vscode-remote.remote-ssh"
+    "ms-vscode-remote.remote-ssh-edit"
+    "ms-vscode.azure-repos"
+    "ms-vscode.cmake-tools"
+    "ms-vscode.cpp-devtools"
+    "ms-vscode.cpptools"
+    "ms-vscode.live-server"
+    "ms-vscode.makefile-tools"
+    "ms-vscode.remote-explorer"
+    "ms-vscode.remote-repositories"
+    "ms-vscode.theme-tomorrowkit"
+    "ms-vscode.vscode-js-profile-flame"
+    "ms-vscode.vscode-websearchforcopilot"
+    "ms-vsliveshare.vsliveshare"
+    "mustafamohamad.min-tomorrow-theme"
+    "mvllow.rose-pine"
+    "mylesmurphy.prettify-ts"
+    "ngryman.codesandbox-theme"
+    "nicohlr.pycharm"
+    "nyomansunima.boola"
+    "o4x.base16-tomorrow"
+    "onecentlin.laravel5-snippets"
+    "openai.chatgpt"
+    "origamid.origamid-next"
+    "orta.vscode-jest"
+    "orta.vscode-twoslash-queries"
+    "oven.bun-vscode"
+    "oxc.oxc-vscode"
+    "paulera.paulerathemes"
+    "ph-hawkins.arc-plus"
+    "pkief.material-icon-theme"
+    "platformio.platformio-ide"
+    "pmndrs.pmndrs"
+    "prisma.prisma"
+    "pulsebyte.pulsebyte"
+    "raunofreiberg.vesper"
+    "reagankarnes.one-material-dark"
+    "redhat.fabric8-analytics"
+    "redhat.java"
+    "redhat.vscode-yaml"
+    "richie5um2.vscode-sort-json"
+    "robertrossmann.remedy"
+    "rust-lang.rust-analyzer"
+    "ryan0x200.kaia-theme-vscode"
+    "ryuta46.multi-command"
+    "sainnhe.gruvbox-material"
+    "sallar.vscode-duotone-dark"
+    "samuelcolvin.jinjahtml"
+    "sapegin.theme-squirrelsonglight"
+    "sdras.night-owl"
+    "sentientcoffee.dark-coffee-theme"
+    "serayuzgur.crates"
+    "shadowblood.tailwind-moon"
+    "simonsiefke.svg-preview"
+    "sswg.swift-lang"
+    "streetsidesoftware.code-spell-checker"
+    "streetsidesoftware.code-spell-checker-french"
+    "subframe7536.custom-ui-style"
+    "svelte.svelte-vscode"
+    "swiftlang.swift-vscode"
+    "tamasfe.even-better-toml"
+    "teabyii.ayu"
+    "thenouillet.symfony-vscode"
+    "thiagolciobittencourt.ubuntuvscode"
+    "thompsonbrian.improved-minimal-theme"
+    "tinkertrain.theme-panda"
+    "tomoki1207.pdf"
+    "trongthanh.theme-boxythemekit"
+    "typespec.typespec-vscode"
+    "unifiedjs.vscode-mdx"
+    "usernamehw.errorlens"
+    "vadimcn.vscode-lldb"
+    "valentjn.vscode-ltex"
+    "viktorqvarfordt.vscode-pitch-black-theme"
+    "vitest.explorer"
+    "vivaxy.vscode-conventional-commits"
+    "vscjava.vscode-gradle"
+    "vscode-icons-team.vscode-icons"
+    "vscodevim.vim"
+    "vue.volar"
+    "wheredoesyourmindgo.nushu-vscode-theme"
+    "whitebird.kaz-vscode"
+    "wholroyd.jinja"
+    "wicked-labs.wvsc-serendipity"
+    "xaver.clang-format"
+    "yoavbls.pretty-ts-errors"
+    "yy0931.vscode-sqlite3-editor"
+    "yzhang.markdown-all-in-one"
+    "ziglang.vscode-zig"
+    "ziterz.codesandbox-black-theme"
+    "zxh404.vscode-proto3"
+  ];
+  goTools = [
+    "cmd/go"
+    "cmd/gofmt"
+    "golang.org/x/tools/gopls"
+  ];
+  cargoBins = [
+    "cargo-xwin"
+    "wrkflw"
+  ];
+in
+{
+  home.sessionVariables = {
+    CODEX_HOME = "/Users/arthur-fontaine/.config/codex";
+    CARGO_NET_GIT_FETCH_WITH_CLI = "true";
+  };
+
+  home.activation.installDevTools = pkgs.lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+
+    if command -v code >/dev/null 2>&1; then
+      while IFS= read -r extension; do
+        [ -n "$extension" ] || continue
+        code --install-extension "$extension" --force || true
+      done <<'EOF'
+$1yib.rust-bundle
+a-h.templ
+acrylic.acrylic-dark-theme
+adpyke.codesnap
+alefragnani.bookmarks
+alexanderte.dainty-vscode
+alexcvzz.vscode-sqlite
+alexkrechik.cucumberautocomplete
+amiralizadeh9480.laravel-extra-intellisense
+andrejunges.handlebars
+andrsdc.base16-themes
+angular.ng-template
+annalifatou.minimal-wave
+antfu.goto-alias
+antfu.theme-vitesse
+antfu.unocss
+anweber.vscode-httpyac
+ariga.atlas-hcl
+arrrrny.zed-one-theme
+arthur-fontaine.vscode-autotyper
+artlaman.chalice-color-theme
+artlaman.chalice-icon-theme
+astro-build.astro-vscode
+attilah.ohm
+be5invis.theme-verdandi
+beardedbear.beardedicons
+beardedbear.beardedtheme
+benbusby.earthbound-themes
+better-ts-errors.better-ts-errors
+bierner.comment-tagged-templates
+bierner.github-markdown-preview
+bierner.jsdoc-markdown-highlighting
+bierner.markdown-checkbox
+bierner.markdown-emoji
+bierner.markdown-footnotes
+bierner.markdown-mermaid
+bierner.markdown-preview-github-styles
+bierner.markdown-yaml-preamble
+bilawal-hameed.vscode-stockholm-theme
+biomejs.biome
+bmewburn.vscode-intelephense-client
+bradlc.vscode-tailwindcss
+cardinal90.multi-cursor-case-preserve
+carlos-rgl.material-gecko
+casualjim.gotemplate
+catppuccin.catppuccin-vsc-icons
+cdonohue.polychrome-vscode-themes
+chadalen.vscode-jetbrains-icon-theme
+charliermarsh.ruff
+christian-kohler.npm-intellisense
+cocopon.iceberg-theme
+cr-jr.chronotype-vscode-themes
+crystal-lang-tools.crystal-lang
+davidanson.vscode-markdownlint
+daylerees.rainglow
+dbaeumer.vscode-eslint
+denoland.vscode-deno
+devsense.composer-php-vscode
+devsense.intelli-php-vscode
+devsense.phptools-vscode
+devsense.profiler-php-vscode
+divanvisagie.nord-native-theme
+docker.docker
+dotenv.dotenv-vscode
+dprint.dprint
+drcika.apc-extension
+dustypomerleau.rust-syntax
+eamodio.gitlens
+editorconfig.editorconfig
+emily-curry.base16-tomorrow-dark-vscode
+esbenp.prettier-vscode
+expo.vscode-expo-tools
+figma.figma-vscode-extension
+figma.kiwi-message-format
+fill-labs.dependi
+fisheva.eva-theme
+formulahendry.auto-rename-tag
+formulahendry.code-runner
+frizadiga.friza-dark
+fwcd.kotlin
+github.codespaces
+github.copilot-chat
+github.github-vscode-theme
+github.remotehub
+github.vscode-github-actions
+gitlab.gitlab-workflow
+golang.go
+grapecity.gc-excelviewer
+graphql.vscode-graphql
+graphql.vscode-graphql-syntax
+greven.umbra
+gruntfuggly.todo-tree
+gsakkas.gruvbox-mix
+gulajavaministudio.mayukaithemevsc
+hashicorp.hcl
+haskell.haskell
+hemlok.framer-dark
+homerotto.themin
+hoovercj.vscode-settings-cycler
+huacat.office-theme
+huytd.nord-light
+hverlin.mise-vscode
+icrawl.discord-vscode
+inferrinizzard.prettier-sql-vscode
+isudox.vscode-jetbrains-keybindings
+jock.svg
+jtlowe.vscode-icon-theme
+justusadam.language-haskell
+kisstkondoros.vscode-codemetrics
+kylpo.vscode-find-in-files-with-selection
+lambdastudio.lambda-studio-themes
+langium.langium-vscode
+lehoanganh298.json-lines-viewer
+leonardssh.vscord
+llvm-vs-code-extensions.lldb-dap
+lokalise.i18n-ally
+luongnd.edge
+m-thorsen.vscode-materia
+magicstack.edgedb
+mateocerquetella.xcode-12-theme
+mathiasfrohlich.kotlin
+matthewpi.caddyfile-support
+mblode.twig-language-2
+mechatroner.rainbow-csv
+meganrogge.template-string-converter
+merithayan.polar
+mhutchie.git-graph
+michaelzhou.fleet-theme
+miguelsolorio.fluent-icons
+miguelsolorio.min-theme
+miguelsolorio.symbols
+mikelward.theme-plainlight
+modular-mojotools.vscode-mojo
+monokai.theme-monokai-pro-vscode
+ms-azuretools.vscode-containers
+ms-azuretools.vscode-docker
+ms-ceintl.vscode-language-pack-fr
+ms-playwright.playwright
+ms-python.black-formatter
+ms-python.debugpy
+ms-python.isort
+ms-python.python
+ms-python.vscode-pylance
+ms-python.vscode-python-envs
+ms-toolsai.datawrangler
+ms-toolsai.jupyter
+ms-toolsai.jupyter-keymap
+ms-toolsai.jupyter-renderers
+ms-toolsai.vscode-jupyter-cell-tags
+ms-toolsai.vscode-jupyter-slideshow
+ms-vscode-remote.remote-containers
+ms-vscode-remote.remote-ssh
+ms-vscode-remote.remote-ssh-edit
+ms-vscode.azure-repos
+ms-vscode.cmake-tools
+ms-vscode.cpp-devtools
+ms-vscode.cpptools
+ms-vscode.live-server
+ms-vscode.makefile-tools
+ms-vscode.remote-explorer
+ms-vscode.remote-repositories
+ms-vscode.theme-tomorrowkit
+ms-vscode.vscode-js-profile-flame
+ms-vscode.vscode-websearchforcopilot
+ms-vsliveshare.vsliveshare
+mustafamohamad.min-tomorrow-theme
+mvllow.rose-pine
+mylesmurphy.prettify-ts
+ngryman.codesandbox-theme
+nicohlr.pycharm
+nyomansunima.boola
+o4x.base16-tomorrow
+onecentlin.laravel5-snippets
+openai.chatgpt
+origamid.origamid-next
+orta.vscode-jest
+orta.vscode-twoslash-queries
+oven.bun-vscode
+oxc.oxc-vscode
+paulera.paulerathemes
+ph-hawkins.arc-plus
+pkief.material-icon-theme
+platformio.platformio-ide
+pmndrs.pmndrs
+prisma.prisma
+pulsebyte.pulsebyte
+raunofreiberg.vesper
+reagankarnes.one-material-dark
+redhat.fabric8-analytics
+redhat.java
+redhat.vscode-yaml
+richie5um2.vscode-sort-json
+robertrossmann.remedy
+rust-lang.rust-analyzer
+ryan0x200.kaia-theme-vscode
+ryuta46.multi-command
+sainnhe.gruvbox-material
+sallar.vscode-duotone-dark
+samuelcolvin.jinjahtml
+sapegin.theme-squirrelsonglight
+sdras.night-owl
+sentientcoffee.dark-coffee-theme
+serayuzgur.crates
+shadowblood.tailwind-moon
+simonsiefke.svg-preview
+sswg.swift-lang
+streetsidesoftware.code-spell-checker
+streetsidesoftware.code-spell-checker-french
+subframe7536.custom-ui-style
+svelte.svelte-vscode
+swiftlang.swift-vscode
+tamasfe.even-better-toml
+teabyii.ayu
+thenouillet.symfony-vscode
+thiagolciobittencourt.ubuntuvscode
+thompsonbrian.improved-minimal-theme
+tinkertrain.theme-panda
+tomoki1207.pdf
+trongthanh.theme-boxythemekit
+typespec.typespec-vscode
+unifiedjs.vscode-mdx
+usernamehw.errorlens
+vadimcn.vscode-lldb
+valentjn.vscode-ltex
+viktorqvarfordt.vscode-pitch-black-theme
+vitest.explorer
+vivaxy.vscode-conventional-commits
+vscjava.vscode-gradle
+vscode-icons-team.vscode-icons
+vscodevim.vim
+vue.volar
+wheredoesyourmindgo.nushu-vscode-theme
+whitebird.kaz-vscode
+wholroyd.jinja
+wicked-labs.wvsc-serendipity
+xaver.clang-format
+yoavbls.pretty-ts-errors
+yy0931.vscode-sqlite3-editor
+yzhang.markdown-all-in-one
+ziglang.vscode-zig
+ziterz.codesandbox-black-theme
+zxh404.vscode-proto3
+EOF
+    fi
+
+    if command -v go >/dev/null 2>&1; then
+      while IFS= read -r tool; do
+        [ -n "$tool" ] || continue
+        go install "$tool@latest" || true
+      done <<'EOF'
+$cmd/go
+cmd/gofmt
+golang.org/x/tools/gopls
+EOF
+    fi
+
+    if command -v cargo >/dev/null 2>&1; then
+      while IFS= read -r bin; do
+        [ -n "$bin" ] || continue
+        cargo install "$bin" || true
+      done <<'EOF'
+$cargo-xwin
+wrkflw
+EOF
+    fi
+  '';
+}

@@ -1,0 +1,11 @@
+{
+  "name": "pi-nono-sandbox",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "nono-ts": "^0.3.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  }
+}

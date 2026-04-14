@@ -1,0 +1,34 @@
+{
+  "enabled": true,
+  "skipIfCwdIsHome": true,
+  "allowNetwork": true,
+  "readOnlyPaths": [
+    "~/.config/ghostty",
+    "~/Library/Preferences/.GlobalPreferences.plist",
+    "/Applications",
+    "/var",
+    "~/.gitconfig",
+    "~/.ssh/known_hosts"
+  ],
+  "readWritePaths": [
+    "/dev"
+  ],
+  "protectedPaths": [
+    "~/.ssh",
+    "~/.aws",
+    "~/.gnupg",
+    "~/.git-credentials",
+    "~/.npmrc"
+  ],
+  "dangerousCommandPatterns": [
+    "\\brm\\s+(-rf?|--recursive)\\b",
+    "\\bsudo\\b",
+    "\\b(chmod|chown)\\b.*\\b777\\b",
+    "\\bssh\\b",
+    "\\bscp\\b",
+    "\\bsftp\\b",
+    "\\blaunchctl\\b",
+    "\\bsecurity\\b"
+  ],
+  "alwaysAllowCommands": []
+}

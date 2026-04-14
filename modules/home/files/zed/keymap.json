@@ -1,0 +1,98 @@
+// Zed keymap
+//
+// For information on binding keys, see the Zed
+// documentation: https://zed.dev/docs/key-bindings
+//
+// To see the default key bindings run `zed: open default keymap`
+// from the command palette.
+[
+  {
+    "bindings": {
+      "cmd-p": null,
+      "shift shift": "file_finder::Toggle",
+      "cmd-shift-p": null,
+      "alt alt": "command_palette::Toggle",
+      "cmd-shift-c": "agent::ToggleFocus",
+      "cmd-shift-g": "git_panel::ToggleFocus",
+      "cmd-shift-t": "terminal_panel::ToggleFocus",
+    },
+  },
+  {
+    "context": "Workspace",
+    "bindings": {
+      "cmd-b": "workspace::ToggleRightDock",
+      "cmd-alt-b": "workspace::ToggleLeftDock",
+      "cmd-shift-t": null,
+    },
+  },
+  {
+    "context": "Editor",
+    "bindings": {
+      "cmd-backspace": "editor::DeleteLine",
+      "cmd-o": "editor::ShowCompletions",
+      "alt-cmd-l": "editor::Format",
+    },
+  },
+  {
+    "context": "Terminal",
+    "bindings": {
+      "cmd-shift-t": "workspace::NewTerminal",
+      "cmd-i": "assistant::InlineAssist",
+    },
+  },
+  {
+    "context": "KeymapEditor",
+    "bindings": {
+      "cmd-e": null,
+    },
+  },
+  {
+    "context": "!ContextEditor > (Editor && mode == full)",
+    "bindings": {
+      "cmd-i": "assistant::InlineAssist",
+    },
+  },
+  {
+    "context": "(Editor && mode == full)",
+    "bindings": {
+      "cmd-enter": "editor::NewlineAbove",
+      "alt-cmd-l": null,
+    },
+  },
+  {
+    "context": "Pane",
+    "bindings": {
+      "alt-cmd-l": null,
+    },
+  },
+  {
+    "context": "BufferSearchBar",
+    "bindings": {
+      "alt-cmd-l": null,
+    },
+  },
+  {
+    "context": "Workspace",
+    "bindings": {
+      "cmd-shift-n": null,
+    },
+  },
+  {
+    "context": "ProjectPanel",
+    "bindings": {
+      "cmd-shift-n": "project_panel::NewDirectory",
+    },
+  },
+  {
+    "context": "(Editor && edit_prediction)",
+    "bindings": {
+      "cmd-right": "editor::AcceptNextWordEditPrediction",
+    },
+  },
+  {
+    "bindings": {
+      "cmd-right": "editor::AcceptNextWordEditPrediction",
+    },
+    "context": "(Editor && edit_prediction)",
+  },
+]

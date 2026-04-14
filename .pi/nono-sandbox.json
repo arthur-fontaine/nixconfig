@@ -1,0 +1,3 @@
+{
+  "readOnlyPaths": ["~/.config", "~/.local/share/chezmoi", "~/.Brewfile", "~/.pi"]
+}

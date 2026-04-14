@@ -1,0 +1,21 @@
+# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
+# Initialization code that may require console input (password prompts, [y/n]
+# confirmations, etc.) must go above this block; everything else may go below.
+if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+fi
+
+# Set the zsh config directory
+export ZSHRCD=~/.config/zsh/zshrc.d
+
+# Activate Antidote
+source /opt/homebrew/opt/antidote/share/antidote/antidote.zsh
+
+# Run the following command to generate the zsh_plugins.zsh file (make the plugins loading faster and optimized)
+# antidote bundle < ~/.config/zsh/zsh_plugins.txt > ~/.config/zsh/zsh_plugins.zsh
+source ~/.config/zsh/zsh_plugins.zsh
+# If you want to load plugins from zsh_plugins.txt instead of the generated zsh_plugins.zsh file, uncomment the following line:
+# antidote load ~/.config/zsh/zsh_plugins.txt
+
+# The rest of the config is in the ./.config/zshrc.d directory
+
