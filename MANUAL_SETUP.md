@@ -1,6 +1,6 @@
 # Manual follow-up
 
-These steps existed outside chezmoi and still need manual handling even after the Nix conversion.
+These steps still need manual handling even after the Nix conversion.
 
 ## System settings
 

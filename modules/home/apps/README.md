@@ -13,7 +13,7 @@ Currently more declarative:
 - base Pi agent settings in `pi.nix`
 
 Currently raw file backed:
-- `ghostty.nix`
+- Ghostty themes in `ghostty.nix`
 - `zed.nix`
 - `karabiner.nix`
 - Pi agent extensions in `pi.nix`

@@ -10,9 +10,6 @@
     # App-specific configuration.
     ./apps
 
-    # Transitional compatibility layer for legacy files.
-    ./compat
-
     # Large installation lists and activation hooks.
     ./dev.nix
   ];

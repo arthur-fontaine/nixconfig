@@ -1,7 +1,6 @@
 # Development workflow tools
 [
   "bacon"
-  "chezmoi"
   "firebase-cli"
   "gh"
   "git-delta"

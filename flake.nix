@@ -1,5 +1,5 @@
 {
-  description = "Arthur Fontaine's nix-darwin + home-manager config converted from chezmoi";
+  description = "Arthur Fontaine's nix-darwin + home-manager config";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";

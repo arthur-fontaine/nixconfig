@@ -1,6 +1,6 @@
 # Homebrew lists
 
-These lists come from the original `.Brewfile` and are split by category so they are easier to scan.
+These Homebrew lists were imported from the old setup and are now split by category so they are easier to scan.
 
 ## Shared
 

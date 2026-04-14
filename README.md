@@ -1,10 +1,10 @@
 # nixconfig
 
-Nix-based macOS configuration converted from `~/.local/share/chezmoi` and curated parts of `~/.config`.
+Nix-based macOS configuration originally imported from `~/.local/share/chezmoi` and curated parts of `~/.config`, now cleaned up to be managed directly by Nix.
 
 ## Goals
 
-- preserve the behavior of the original chezmoi-managed setup
+- preserve the behavior of the original setup while moving ownership to Nix
 - move machine state into declarative `nix-darwin` + `home-manager`
 - keep raw app configs where Nix modules would add little value
 - keep large package lists easy to scan and edit
@@ -32,9 +32,8 @@ Nix-based macOS configuration converted from `~/.local/share/chezmoi` and curate
 - `modules/home/dev.nix`: VS Code, Go, Cargo install hooks
 - `modules/home/apps/default.nix`: app-module aggregation
 - `modules/home/apps/*.nix`: app-specific config
-- `modules/home/compat/default.nix`: legacy compatibility layer
 - `modules/home/lists/*.nix`: grouped VS Code, Go, and Cargo lists
-- `modules/home/files/**`: raw config files copied from the current setup where direct file management is still preferred
+- `modules/home/files/**`: raw config files still managed by Nix where direct file management is preferred
 
 ## What is declarative now
 
@@ -56,12 +55,11 @@ These are modeled directly in Nix:
 
 These are still linked from `modules/home/files/**` because that is the simplest way to keep behavior exact and easy to diff:
 
-- Ghostty
+- Ghostty themes
 - Zed
 - Karabiner
 - Pi agent extensions
 - zsh prompt, plugins, completions, and `zshrc.d` fragments
-- transitional compatibility files like `.Brewfile`, `chezmoi.toml`, and `nix.conf`
 
 ## Notes
 
@@ -70,9 +68,9 @@ These are still linked from `modules/home/files/**` because that is the simplest
 - Auth and secret state is still intentionally excluded.
 - `zsh_plugins.zsh` and generated completions are seeded from the repo and then refreshed into mutable files during activation.
 - Pi config now targets `~/.pi/agent/**`, which matches the original chezmoi layout.
-- `modules/home/apps/**` is the cleaner long-term home for app configuration.
-- `modules/home/compat/**` exists specifically to isolate legacy carry-over files from the future-state Nix config.
-- Homebrew and VS Code lists are now grouped by category to make review and editing easier.
+- `modules/home/apps/**` is the long-term home for app configuration.
+- Homebrew and VS Code lists are grouped by category to make review and editing easier.
+- This repo no longer carries chezmoi compatibility files such as `.Brewfile`, `chezmoi.toml`, or a copied `nix.conf`.
 
 ## Apply later
 
