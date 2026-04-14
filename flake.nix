@@ -9,26 +9,31 @@
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = inputs@{ self, nixpkgs, nix-darwin, home-manager, ... }:
+  outputs = inputs@{ nixpkgs, nix-darwin, home-manager, ... }:
     let
-      system = "aarch64-darwin";
-      username = "arthur-fontaine";
-      homeDirectory = "/Users/${username}";
+      hosts = import ./hosts;
+
+      mkDarwinConfiguration = hostName: {
+        system,
+        username,
+        homeDirectory ? "/Users/${username}",
+      }:
+        nix-darwin.lib.darwinSystem {
+          inherit system;
+          specialArgs = { inherit inputs hostName username homeDirectory; };
+          modules = [
+            ./modules/darwin
+            home-manager.darwinModules.home-manager
+            {
+              users.users.${username}.home = homeDirectory;
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.extraSpecialArgs = { inherit inputs hostName username homeDirectory; };
+              home-manager.users.${username} = import ./modules/home;
+            }
+          ];
+        };
     in {
-      darwinConfigurations."Arthur-Mac" = nix-darwin.lib.darwinSystem {
-        inherit system;
-        specialArgs = { inherit inputs username homeDirectory; };
-        modules = [
-          ./modules/darwin
-          home-manager.darwinModules.home-manager
-          {
-            users.users.${username}.home = homeDirectory;
-            home-manager.useGlobalPkgs = true;
-            home-manager.useUserPackages = true;
-            home-manager.extraSpecialArgs = { inherit inputs username homeDirectory; };
-            home-manager.users.${username} = import ./modules/home;
-          }
-        ];
-      };
+      darwinConfigurations = nixpkgs.lib.mapAttrs mkDarwinConfiguration hosts;
     };
 }

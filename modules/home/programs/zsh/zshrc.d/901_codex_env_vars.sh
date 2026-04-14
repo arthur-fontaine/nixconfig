@@ -1,1 +1,1 @@
-export CODEX_HOME="/Users/arthur-fontaine/.config/codex"
+export CODEX_HOME="$HOME/.config/codex"

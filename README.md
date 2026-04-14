@@ -14,6 +14,7 @@ Nix-based macOS configuration originally imported from `~/.local/share/chezmoi` 
 ### Entry point
 
 - `flake.nix`
+- `hosts/default.nix`: host and user definitions consumed by the flake
 
 ### macOS layer
 
@@ -62,19 +63,69 @@ These are still kept as literal files, but now live beside the program module th
 
 ## Notes
 
-- This repo has not run `nix` locally.
-- The current revision has only been statically reviewed for likely Nix/Home Manager issues; it has not been evaluated yet.
 - Auth and secret state is still intentionally excluded.
 - `zsh_plugins.zsh` and generated completions are seeded from the repo and then refreshed into mutable files during activation.
 - Pi config now targets `~/.pi/agent/**`, which matches the original chezmoi layout.
 - `modules/home/programs/**` is now the long-term home for tool and app configuration.
 - Homebrew and VS Code lists are grouped by category to make review and editing easier.
 - This repo no longer carries chezmoi compatibility files such as `.Brewfile`, `chezmoi.toml`, or a copied `nix.conf`.
+- The flake evaluates, but fresh-machine bootstrap and app sign-in still require the steps below.
 
-## Apply later
+## Fresh Mac bootstrap
 
-When you are ready on your machine:
+### 1. Install prerequisites
+
+Install Apple command line tools:
 
 ```sh
-sudo nix run nix-darwin -- switch --flake .#Arthur-Mac
+xcode-select --install
 ```
+
+Install Nix using the official installer:
+
+```sh
+sh <(curl -L https://nixos.org/nix/install)
+```
+
+If you keep the Homebrew module enabled, install Homebrew once as well:
+
+```sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+### 2. Clone this repo
+
+```sh
+git clone <your-fork-or-repo-url>
+cd nixconfig
+```
+
+### 3. Add or edit your host definition
+
+Host and user identity now live in `hosts/default.nix`.
+Add a new entry for your machine, for example:
+
+```nix
+{
+  My-Mac = {
+    system = "aarch64-darwin"; # use "x86_64-darwin" on Intel Macs
+    username = "alice";
+    # homeDirectory = "/Users/alice"; # optional override
+  };
+}
+```
+
+### 4. Apply the configuration
+
+Replace `My-Mac` with the host key you defined above:
+
+```sh
+sudo nix run nix-darwin/master#darwin-rebuild -- switch --flake .#My-Mac
+```
+
+### 5. Complete manual setup
+
+After the switch finishes:
+
+- complete the app-specific follow-up in `MANUAL_SETUP.md`
+- sign in to services such as GitHub, 1Password, Raycast sync, and AI tooling
