@@ -1,5 +1,5 @@
 {
-  description = "Arthur Fontaine's nix-darwin + home-manager config";
+  description = "Declarative macOS setup with nix-darwin and home-manager";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -13,14 +13,18 @@
     let
       hosts = import ./hosts;
 
-      mkDarwinConfiguration = hostName: {
+      mkDarwinConfiguration = hostName: hostConfig@{
         system,
         username,
         homeDirectory ? "/Users/${username}",
+        ...
       }:
+        let
+          specialArgs = hostConfig // { inherit inputs hostName homeDirectory; };
+        in
         nix-darwin.lib.darwinSystem {
           inherit system;
-          specialArgs = { inherit inputs hostName username homeDirectory; };
+          inherit specialArgs;
           modules = [
             ./modules/darwin
             home-manager.darwinModules.home-manager
@@ -28,7 +32,7 @@
               users.users.${username}.home = homeDirectory;
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
-              home-manager.extraSpecialArgs = { inherit inputs hostName username homeDirectory; };
+              home-manager.extraSpecialArgs = specialArgs;
               home-manager.users.${username} = import ./modules/home;
             }
           ];

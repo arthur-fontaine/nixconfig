@@ -1,14 +1,16 @@
-{ ... }:
+{ lib, gitName ? null, gitEmail ? null, gitSigningKey ? null, ... }:
+let
+  hasSigningKey = gitSigningKey != null && gitSigningKey != "";
+in
 {
   programs.git = {
     enable = true;
 
     settings = {
-      user = {
-        name = "Arthur Fontaine";
-        email = "0arthur.fontaine@gmail.com";
-        signingkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFqXVHTP+AGPqko54gq4iXtlDTiut2G6gT05KRiwxOpY";
-      };
+      user =
+        lib.optionalAttrs (gitName != null && gitName != "") { name = gitName; }
+        // lib.optionalAttrs (gitEmail != null && gitEmail != "") { email = gitEmail; }
+        // lib.optionalAttrs hasSigningKey { signingkey = gitSigningKey; };
 
       alias = {
         adog = "log --all --decorate --oneline --graph";
@@ -17,9 +19,9 @@
       url."ssh://git@github.com/".insteadOf = "https://github.com/";
 
       merge.conflictstyle = "zdiff3";
-      
       push.autoSetupRemote = true;
-
+    }
+    // lib.optionalAttrs hasSigningKey {
       gpg = {
         format = "ssh";
         "ssh".program = "/Applications/1Password.app/Contents/MacOS/op-ssh-sign";

@@ -1,0 +1,12 @@
+{
+  My-Mac = {
+    system = "aarch64-darwin"; # or "x86_64-darwin" on Intel Macs
+    username = "alice";
+    gitName = "Alice Example";
+    gitEmail = "alice@example.com";
+
+    # Optional overrides:
+    # homeDirectory = "/Users/alice";
+    # gitSigningKey = "ssh-ed25519 AAAA...";
+  };
+}
