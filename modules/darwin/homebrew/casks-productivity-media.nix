@@ -5,7 +5,6 @@
   "discord"
   "handy"
   "keka"
-  "kekaexternalhelper"
   "obsidian"
   "raycast"
   "sony-ps-remote-play"

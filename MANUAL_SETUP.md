@@ -2,14 +2,6 @@
 
 These steps still need manual handling even after the Nix conversion.
 
-## Default apps / helpers
-
-### Keka helper
-
-```sh
-/Applications/KekaExternalHelper.app/Contents/MacOS/KekaExternalHelper --set-as-default
-```
-
 ## First-run app setup
 
 ### Raycast
