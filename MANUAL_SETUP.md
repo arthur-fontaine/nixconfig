@@ -2,16 +2,6 @@
 
 These steps still need manual handling even after the Nix conversion.
 
-## System settings
-
-### Keyboard layout
-
-Set input source to **U.S. International – PC**.
-
-### Trackpad
-
-Disable **Natural Scrolling**.
-
 ## Default apps / helpers
 
 ### Keka helper
