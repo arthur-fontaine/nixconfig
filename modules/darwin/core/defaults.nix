@@ -1,8 +1,11 @@
 { ... }:
 {
   system.defaults = {
-    NSGlobalDomain.NSPreferredExternalTerminalApp = "Ghostty";
-    NSGlobalDomain."com.apple.swipescrolldirection" = false;
+    NSGlobalDomain = {
+      NSPreferredExternalTerminalApp = "Ghostty";
+      "com.apple.swipescrolldirection" = false;
+      AppleInterfaceStyleSwitchesAutomatically = 1;
+    };
 
     CustomUserPreferences = {
       "com.apple.HIToolbox" = {
