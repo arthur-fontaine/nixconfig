@@ -1,10 +1,19 @@
-{ pkgs, username, homeDirectory, ... }:
+{ username, homeDirectory, ... }:
 {
   imports = [
-    ./shell.nix
-    ./files.nix
+    ./environment.nix
+    ./zsh.nix
+    ./git.nix
+    ./gh.nix
+    ./ghostty.nix
+    ./mise.nix
+    ./zed.nix
+    ./karabiner.nix
+    ./codex.nix
+    ./opencode.nix
+    ./pi.nix
+    ./legacy.nix
     ./dev.nix
-    ./apps.nix
   ];
 
   home.username = username;

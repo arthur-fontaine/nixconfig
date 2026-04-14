@@ -1,0 +1,104 @@
+#compdef pnpm
+
+_pnpm() {
+  if type compdef &> /dev/null; then
+    _pnpm_completion() {
+      local curcontext="$curcontext" state line
+      typeset -A opt_args
+
+      # Commands that allow file completions
+      local file_commands=(add install link)
+      # Commands that allow package name completions
+      local pkg_commands=(add remove uninstall)
+
+      format_completions() {
+        local -a formatted=()
+        local item desc
+        for item in "$@"; do
+          item="${item//[[:space:]]+/ }"
+          if [[ $item == *--* ]]; then
+            desc="${item#*--}"
+            item="${item%--*}"
+            item="${item//[[:space:]]/}"
+            desc="${desc//[[:space:]]/}"
+            if [[ "$item" != "$desc" ]]; then
+              formatted+=("${item}:${desc}")
+            else
+              formatted+=("${item}")
+            fi
+          else
+            item="${item//[[:space:]]/}"
+            formatted+=("${item}")
+          fi
+        done
+        print -l "${(i)formatted[@]}"
+      }
+
+      local reply
+      reply=($(COMP_CWORD="$((CURRENT-1))" COMP_LINE="$BUFFER" COMP_POINT="$CURSOR" SHELL=zsh pnpm completion-server -- "${words[@]}"))
+
+      case $CURRENT in
+        2) # completing first argument: prioritize package.json scripts
+          local -a formatted_commands scripts
+          formatted_commands=($(format_completions "${reply[@]}"))
+
+          if [[ -f package.json ]]; then
+            # Only script names
+            scripts=($(jq -r '.scripts | keys[]?' 2>/dev/null < package.json))
+            scripts=(${(i)scripts})
+          fi
+
+          # Show scripts group first (tag = scripts), then commands (tag = commands)
+          if (( $#scripts )); then
+            _wanted scripts expl 'package scripts' compadd -Q -a scripts
+          fi
+          _describe -t commands 'commands' formatted_commands
+          ;;
+        *)
+          if [[ " ${file_commands[@]} " == *" ${words[CURRENT-1]} "* ]]; then
+            if [[ ${words[CURRENT]} == ./* || ${words[CURRENT]} == ../* || ${words[CURRENT]} == /* || -z ${words[CURRENT]} ]]; then
+              _files
+            elif [[ " ${pkg_commands[@]} " == *" ${words[CURRENT-1]} "* ]]; then
+              if [[ -f package.json ]]; then
+                local -a packages
+                packages=(
+                  $(jq -r '.dependencies // {} | keys[]?' 2>/dev/null < package.json)
+                  $(jq -r '.devDependencies // {} | keys[]?' 2>/dev/null < package.json)
+                )
+                packages=(${(ui)packages})
+                compadd -a packages
+              fi
+            fi
+          elif [[ ${words[CURRENT-1]} == "run" ]]; then
+            if [[ -f package.json ]]; then
+              local -a scripts
+              scripts=($(jq -r '.scripts | keys[]?' 2>/dev/null < package.json))
+              scripts=(${(i)scripts})
+              compadd -a scripts
+            fi
+          else
+            local -a formatted_values
+            formatted_values=($(format_completions "${reply[@]}"))
+            _describe 'values' formatted_values
+          fi
+          ;;
+      esac
+    }
+
+    if [[ $zsh_eval_context == *func ]]; then
+      _pnpm_completion "$@"
+    else
+      compdef _pnpm_completion pnpm
+    fi
+  fi
+}
+
+_pnpm "$@"
+
+# PNPM: scripts d'abord, puis commandes, puis autres valeurs
+zstyle ':completion:*:*:pnpm:*' group-order 'scripts' 'commands' 'values'
+
+# Afficher des en-têtes par groupe, colorés
+zstyle ':completion:*:*:pnpm:*' verbose yes
+zstyle ':completion:*:*:pnpm:*' group-name ''
+zstyle ':completion:*' format '%F{yellow}-- %d --%f'
