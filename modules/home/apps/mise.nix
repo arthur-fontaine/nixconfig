@@ -1,0 +1,30 @@
+{ pkgs, ... }:
+let
+  toml = pkgs.formats.toml { };
+in
+{
+  xdg.configFile."mise/config.toml".source = toml.generate "mise-config.toml" {
+    tools = {
+      node = "lts";
+      deno = "latest";
+      python = "latest";
+      uv = "latest";
+      go = "latest";
+      rust = "latest";
+      "npm:pnpm" = "latest";
+      "npm:bun" = "latest";
+      "npm:yarn" = "latest";
+      "npm:gitignore.cli" = "latest";
+      "npm:@go-task/cli" = "latest";
+      "npm:gacp" = "latest";
+      "npm:typescript-language-server" = "latest";
+      "npm:typescript" = "latest";
+      "npm:@mariozechner/pi-coding-agent" = "latest";
+      "npm:osgrep" = "latest";
+    };
+
+    settings = {
+      idiomatic_version_file_enable_tools = [ "python" ];
+    };
+  };
+}

@@ -5,14 +5,8 @@
     ./zsh.nix
     ./git.nix
     ./gh.nix
-    ./ghostty.nix
-    ./mise.nix
-    ./zed.nix
-    ./karabiner.nix
-    ./codex.nix
-    ./opencode.nix
-    ./pi.nix
-    ./legacy.nix
+    ./apps
+    ./compat
     ./dev.nix
   ];
 
