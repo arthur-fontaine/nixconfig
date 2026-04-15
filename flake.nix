@@ -28,14 +28,24 @@
           modules = [
             ./modules/darwin
             home-manager.darwinModules.home-manager
-            {
+            ({ pkgs, ... }: {
               users.users.${username}.home = homeDirectory;
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
-              home-manager.backupCommand = "mkdir -p \"$HOME/.hm-backup\" && relative=\"\${1#$HOME/}\" && mkdir -p \"$HOME/.hm-backup/$(dirname \"$relative\")\" && mv \"$1\" \"$HOME/.hm-backup/$relative\"";
+              home-manager.backupCommand =
+                let
+                  script = pkgs.writeShellScript "hm-backup" ''
+                    set -e
+                    backup_dir="$HOME/.hm-backup"
+                    file="$1"
+                    relative="''${file#"$HOME/"}"
+                    mkdir -p "$backup_dir/$(dirname "$relative")"
+                    mv "$file" "$backup_dir/$relative"
+                  '';
+                in "${script}";
               home-manager.extraSpecialArgs = specialArgs;
               home-manager.users.${username} = import ./modules/home;
-            }
+            })
           ];
         };
     in {
