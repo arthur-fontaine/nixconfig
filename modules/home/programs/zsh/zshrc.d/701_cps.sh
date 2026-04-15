@@ -1,4 +1,4 @@
-function ??() {
+function ai_shell() {
   local prompt="Give me a bash command to $*. Only output the raw command without formatting."
   local command
 
@@ -24,3 +24,5 @@ function ??() {
     printf "\033[33mSkipped.\033[0m\n"
   fi
 }
+
+alias '??'=ai_shell
