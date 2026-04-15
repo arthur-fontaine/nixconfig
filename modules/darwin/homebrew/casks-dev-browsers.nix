@@ -4,7 +4,6 @@
   "claude-code"
   "cyberduck"
   "datagrip"
-  "figma-agent"
   "gcloud-cli"
   "ghostty@tip"
   "google-chrome"

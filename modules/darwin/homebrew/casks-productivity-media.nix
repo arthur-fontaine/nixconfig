@@ -1,7 +1,6 @@
 # Productivity and media apps
 [
   "alcove"
-  "athas"
   "discord"
   "handy"
   "keka"
