@@ -13,14 +13,7 @@ in
       "github@openai-curated" = { enabled = true; };
     };
 
-    projects = {
-      "/Users/arthur-fontaine/Developer/code/github.com/arthur-fontaine/vscode-autotyper" = {
-        trust_level = "trusted";
-      };
-      "/Users/arthur-fontaine/Developer/code/github.com/arthur-fontaine/fcose-rs" = {
-        trust_level = "trusted";
-      };
-    };
+    projects = {};
 
     notice = {
       model_migrations = {
