@@ -1,5 +1,5 @@
 function ??() {
-  local prompt="Give me a bash command to $1. Only output the raw command without formatting."
+  local prompt="Give me a bash command to $*. Only output the raw command without formatting."
   local command
 
   command=$(pi -p "$prompt" --model github-copilot/claude-haiku-4.5:minimal)
