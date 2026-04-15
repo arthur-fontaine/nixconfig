@@ -1,6 +1,7 @@
 # Development workflow tools
 [
   "bacon"
+  "difftastic"
   "firebase-cli"
   "gh"
   "git-delta"

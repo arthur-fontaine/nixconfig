@@ -1,6 +1,7 @@
 # Developer apps, browsers, and terminals
 [
   "bruno"
+  "claude-code"
   "cyberduck"
   "datagrip"
   "figma-agent"

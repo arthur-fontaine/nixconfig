@@ -7,12 +7,27 @@
     defaultThinkingLevel = "high";
     quietStartup = true;
     theme = "light";
-    packages = [ "git:github.com/MasuRii/pi-rtk-optimizer" ];
+    packages = [
+      "git:github.com/MasuRii/pi-rtk-optimizer"
+      "git:github.com/Aetherall/lmgrep"
+      "git:github.com/jonjonrankin/pi-caveman"
+    ];
   };
 
   home.file.".pi/agent/nono-sandbox.json".text = builtins.toJSON {
     enabled = true;
-    readWritePaths = [ "~/.pi/agent/extensions/" ];
+    readOnlyPaths = [
+      "~/.config/git/ignore"
+      "~/.config/gh/config.yml"
+      "~/.config/gh/hosts.yml"
+      "~/Library/Keychains"
+    ];
+    readWritePaths = [
+      "~/.pi/agent/extensions/"
+      "~/.local/state/lmgrep"
+      "~/Library/Application Support/lmgrep"
+      "~/Library/pnpm/.tools/pnpm"
+    ];
   };
 
   home.file.".pi/agent/extensions".source = ./extensions;

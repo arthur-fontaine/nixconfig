@@ -1,4 +1,4 @@
 { ... }:
 {
-  system.defaults.CustomUserPreferences.NSGlobalDomain.NSPreferredExternalTerminalApp = "com.mitchellh.ghostty";
+  system.defaults.CustomUserPreferences.NSGlobalDomain.NSPreferredExternalTerminalApp = "Ghostty";
 }
