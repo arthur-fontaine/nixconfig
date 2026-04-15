@@ -19,7 +19,10 @@ It is designed for Apple Silicon Macs but it might work on Intel Macs too (I hav
 Paste this into a fresh macOS terminal:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/arthur-fontaine/nixconfig/main/scripts/bootstrap-macos.sh | bash
+tmp="$(mktemp -t nixconfig-bootstrap.XXXXXX.sh)" &&
+curl -fsSL https://raw.githubusercontent.com/arthur-fontaine/nixconfig/main/scripts/bootstrap-macos.sh -o "$tmp" &&
+chmod +x "$tmp" &&
+"$tmp"
 ```
 
 The bootstrap script will:
@@ -97,8 +100,10 @@ If you want to version your host definition, move it into `hosts/shared.nix` aft
 If you fork this repository, you can still use the same bootstrap script while pointing it at your fork:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/arthur-fontaine/nixconfig/main/scripts/bootstrap-macos.sh | \
-  NIXCONFIG_REPO_URL=https://github.com/<you>/nixconfig.git bash
+tmp="$(mktemp -t nixconfig-bootstrap.XXXXXX.sh)" &&
+curl -fsSL https://raw.githubusercontent.com/arthur-fontaine/nixconfig/main/scripts/bootstrap-macos.sh -o "$tmp" &&
+chmod +x "$tmp" &&
+NIXCONFIG_REPO_URL=https://github.com/<you>/nixconfig.git "$tmp"
 ```
 
 ## Want the implementation details?

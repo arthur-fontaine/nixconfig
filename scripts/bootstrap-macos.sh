@@ -2,9 +2,23 @@
 set -euo pipefail
 
 REPO_URL="${NIXCONFIG_REPO_URL:-https://github.com/arthur-fontaine/nixconfig.git}"
+BOOTSTRAP_URL="${NIXCONFIG_BOOTSTRAP_URL:-https://raw.githubusercontent.com/arthur-fontaine/nixconfig/main/scripts/bootstrap-macos.sh}"
 DEFAULT_REPO_DIR="${NIXCONFIG_REPO_DIR:-$HOME/nixconfig}"
 NIX_INSTALLER_URL="https://install.determinate.systems/nix"
 HOMEBREW_INSTALL_URL="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+
+if [ ! -t 0 ] && [ ! -r "${BASH_SOURCE[0]:-}" ] && [ -z "${NIXCONFIG_BOOTSTRAP_REEXEC:-}" ]; then
+  tmp_script="$(mktemp -t nixconfig-bootstrap.XXXXXX.sh)"
+  trap 'rm -f "$tmp_script"' EXIT
+  curl -fsSL "$BOOTSTRAP_URL" -o "$tmp_script"
+  chmod +x "$tmp_script"
+
+  if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    NIXCONFIG_BOOTSTRAP_REEXEC=1 exec </dev/tty >/dev/tty 2>/dev/tty bash "$tmp_script" "$@"
+  fi
+
+  die "Interactive terminal required. Re-run from Terminal app, or download script then run it locally."
+fi
 
 if [ -t 1 ]; then
   BOLD='\033[1m'
@@ -55,6 +69,14 @@ trim() {
   printf '%s' "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
 }
 
+init_input_source() {
+  if [ -t 0 ] && [ -t 1 ]; then
+    return
+  fi
+
+  die "Interactive terminal required. Re-run from Terminal app, or download script then run it locally."
+}
+
 expand_path() {
   case "$1" in
     ~)
@@ -79,12 +101,12 @@ prompt() {
   local value
 
   if [ -n "$default" ]; then
-    printf '%b?%b %s %b[%s]%b: ' "$CYAN" "$RESET" "$label" "$DIM" "$default" "$RESET"
+    printf '%b?%b %s %b[%s]%b: ' "$CYAN" "$RESET" "$label" "$DIM" "$default" "$RESET" >&2
   else
-    printf '%b?%b %s: ' "$CYAN" "$RESET" "$label"
+    printf '%b?%b %s: ' "$CYAN" "$RESET" "$label" >&2
   fi
 
-  IFS= read -r value
+  IFS= read -r value || value=''
   if [ -z "$value" ]; then
     value="$default"
   fi
@@ -102,8 +124,8 @@ confirm() {
     suffix='[y/N]'
   fi
 
-  printf '%b?%b %s %b%s%b: ' "$CYAN" "$RESET" "$label" "$DIM" "$suffix" "$RESET"
-  IFS= read -r reply
+  printf '%b?%b %s %b%s%b: ' "$CYAN" "$RESET" "$label" "$DIM" "$suffix" "$RESET" >&2
+  IFS= read -r reply || reply=''
   reply="$(trim "$reply")"
 
   if [ -z "$reply" ]; then
@@ -170,8 +192,8 @@ ensure_command_line_tools() {
   xcode-select --install >/dev/null 2>&1 || true
 
   until xcode-select -p >/dev/null 2>&1; do
-    printf '%b↳%b Press %bEnter%b once Command Line Tools finish installing... ' "$DIM" "$RESET" "$BOLD" "$RESET"
-    IFS= read -r _
+    printf '%b↳%b Press %bEnter%b once Command Line Tools finish installing... ' "$DIM" "$RESET" "$BOLD" "$RESET" >&2
+    IFS= read -r _ || true
     sleep 2
   done
 
@@ -301,6 +323,7 @@ main() {
   local git_signing_key
 
   require_macos
+  init_input_source
   banner
 
   detected_system="$(detect_system)"
