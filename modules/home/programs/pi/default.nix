@@ -36,7 +36,7 @@
     ext_dir="$HOME/.pi/agent/extensions/nono-sandbox"
     stamp="$ext_dir/.package-json-hash"
     if [ -f "$ext_dir/package.json" ]; then
-      current_hash=$(md5 -q "$ext_dir/package.json")
+      current_hash=$(md5sum "$ext_dir/package.json"); current_hash="''${current_hash%% *}"
       if [ ! -f "$stamp" ] || [ "$current_hash" != "$(cat "$stamp")" ]; then
         run npm install --prefix "$ext_dir" --ignore-scripts
         echo "$current_hash" > "$stamp"
