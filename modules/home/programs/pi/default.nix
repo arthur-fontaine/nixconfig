@@ -30,17 +30,36 @@
     ];
   };
 
-  home.file.".pi/agent/extensions" = { source = ./extensions; recursive = true; };
+  home.file.".pi/agent/extensions/title.ts".source = ./extensions/title.ts;
+  home.file.".pi/agent/extensions/home-dashboard.ts".source = ./extensions/home-dashboard.ts;
+  home.file.".pi/agent/extensions/input-box.ts".source = ./extensions/input-box.ts;
+  home.file.".pi/agent/extensions/message-timestamps.ts".source = ./extensions/message-timestamps.ts;
+  home.file.".pi/agent/extensions/auto-theme.ts".source = ./extensions/auto-theme.ts;
+  home.file.".pi/agent/extensions/pi-rtk-optimizer/config.json".source = ./extensions/pi-rtk-optimizer/config.json;
 
   home.activation.installPiExtensionDeps = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    ext_dir="$HOME/.pi/agent/extensions/nono-sandbox"
-    stamp="$ext_dir/.package-json-hash"
-    if [ -f "$ext_dir/package.json" ]; then
-      current_hash=$(md5sum "$ext_dir/package.json"); current_hash="''${current_hash%% *}"
-      if [ ! -f "$stamp" ] || [ "$current_hash" != "$(cat "$stamp")" ]; then
-        run npm install --prefix "$ext_dir" --ignore-scripts
-        echo "$current_hash" > "$stamp"
-      fi
+    export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+    ext_base="$HOME/.pi/agent/extensions"
+    ext_dir="$ext_base/nono-sandbox"
+    stamp="$HOME/.local/state/pi-nono-sandbox-hash"
+    src="${./extensions/nono-sandbox}"
+    src_hash=$(md5sum "$src/package.json"); src_hash="''${src_hash%% *}"
+
+    # If the parent extensions dir is still a nix-store symlink from the old
+    # home.file entry, replace it with a real directory first. Individual
+    # extension symlinks will be (re)created by linkGenFiles afterwards.
+    if [ -L "$ext_base" ]; then
+      rm "$ext_base"
+      mkdir -p "$ext_base"
+    fi
+
+    if [ ! -d "$ext_dir" ] || [ ! -f "$stamp" ] || [ "$src_hash" != "$(cat "$stamp")" ]; then
+      [ -e "$ext_dir" ] && { chmod -R u+w "$ext_dir" 2>/dev/null || true; rm -rf "$ext_dir"; }
+      cp -r "$src" "$ext_dir"
+      chmod -R u+w "$ext_dir"
+      run npm install --prefix "$ext_dir" --ignore-scripts
+      mkdir -p "$(dirname "$stamp")"
+      echo "$src_hash" > "$stamp"
     fi
   '';
 }
