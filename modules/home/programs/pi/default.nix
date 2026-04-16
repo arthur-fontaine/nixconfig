@@ -30,7 +30,7 @@
     ];
   };
 
-  home.file.".pi/agent/extensions".source = ./extensions;
+  home.file.".pi/agent/extensions" = { source = ./extensions; recursive = true; };
 
   home.activation.installPiExtensionDeps = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     ext_dir="$HOME/.pi/agent/extensions/nono-sandbox"
