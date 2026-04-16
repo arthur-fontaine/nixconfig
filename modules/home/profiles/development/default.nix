@@ -18,9 +18,13 @@ in
     export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
 
     if command -v code >/dev/null 2>&1; then
+      installed_extensions=$(code --list-extensions 2>/dev/null | tr '[:upper:]' '[:lower:]')
       while IFS= read -r extension; do
         [ -n "$extension" ] || continue
-        code --install-extension "$extension" --force || true
+        ext_lower=$(echo "$extension" | tr '[:upper:]' '[:lower:]')
+        if ! echo "$installed_extensions" | grep -qx "$ext_lower"; then
+          code --install-extension "$extension" || true
+        fi
       done <<'EOF'
 ${asLines vscodeExtensions}
 EOF
