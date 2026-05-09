@@ -12,6 +12,7 @@
   "orbstack"
   "powershell"
   "visual-studio-code"
+  "zed"
   "zed@preview"
   "zen"
 ]

@@ -3,6 +3,7 @@
   "1password"
   "1password-cli"
   "chatgpt"
+  "claude"
   "codex"
   "codex-app"
   "opencode-desktop"

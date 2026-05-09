@@ -17,4 +17,5 @@
   "xcodes"
   "anomalyco/tap/opencode"
   "chase/tap/awrit"
+  "f1bonacc1/tap/process-compose"
 ]

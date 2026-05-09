@@ -2,6 +2,7 @@
 [
   "alcove"
   "discord"
+  "figma"
   "handy"
   "keka"
   "obsidian"
