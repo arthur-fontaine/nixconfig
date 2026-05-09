@@ -8,24 +8,25 @@
 // command palette (cmd-shift-p / ctrl-shift-p)
 {
   "outline_panel": {
-    "dock": "right"
+    "dock": "right",
   },
   "collaboration_panel": {
-    "dock": "right"
+    "dock": "right",
   },
   "agent_servers": {
     "pi-acp": {
-      "type": "registry"
+      "type": "registry",
     },
     "opencode": {
-      "favorite_models": [
-        "github-copilot/gpt-5.4"
-      ],
+      "favorite_models": ["github-copilot/gpt-5.4"],
       "default_model": "openai/gpt-5.2-codex",
       "type": "extension",
       "default_config_options": {},
-      "favorite_config_option_values": {}
-    }
+      "favorite_config_option_values": {},
+    },
+    "claude": {
+      "type": "extension",
+    },
   },
   "restore_on_startup": "launchpad",
   "redact_private_values": true,
@@ -44,7 +45,7 @@
   "agent": {
     "inline_assistant_model": {
       "provider": "copilot_chat",
-      "model": "claude-opus-4.5"
+      "model": "claude-opus-4.5",
     },
     "default_model": {
       "provider": "copilot_chat",
