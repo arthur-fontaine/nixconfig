@@ -8,6 +8,7 @@
     ./zed
     ./karabiner
     ./mise
+    ./direnv
     ./codex
     ./opencode
     ./pi
