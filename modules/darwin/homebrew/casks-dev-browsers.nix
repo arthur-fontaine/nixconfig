@@ -1,5 +1,6 @@
 # Developer apps, browsers, and terminals
 [
+  "android-commandlinetools"
   "bruno"
   "claude-code"
   "cyberduck"
