@@ -29,11 +29,17 @@
   },
   "colorize_brackets": true,
   "agent": {
+    "default_model": {
+      "provider": "copilot_chat",
+      "model": "gpt-5-mini",
+      "enable_thinking": true,
+      "effort": "high"
+    },
     "inline_assistant_model": {
       "provider": "copilot_chat",
       "model": "",
     },
-    "default_model": {
+    "commit_message_model": {
       "provider": "copilot_chat",
       "model": "",
     },

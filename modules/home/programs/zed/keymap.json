@@ -111,4 +111,13 @@
       "space c": "agent::ToggleFocus",
     },
   },
+  {
+    "context": "Editor",
+    "bindings": {
+      "cmd-enter": "vim::InsertEmptyLineBelow",
+    },
+    "unbind": {
+      "cmd-enter": "editor::NewlineBelow",
+    },
+  },
 ]

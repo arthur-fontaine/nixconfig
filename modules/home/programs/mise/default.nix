@@ -21,6 +21,7 @@ in
       "npm:typescript" = "latest";
       "npm:@mariozechner/pi-coding-agent" = "latest";
       "npm:osgrep" = "latest";
+      "npm:sfw" = "latest";
     };
 
     settings = {
