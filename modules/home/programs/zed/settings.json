@@ -7,31 +7,20 @@
 // custom settings, run `zed: open default settings` from the
 // command palette (cmd-shift-p / ctrl-shift-p)
 {
+  "cli_default_open_behavior": "existing_window",
+  "edit_predictions": {
+    "disabled_globs": [],
+    "provider": "copilot",
+  },
   "outline_panel": {
     "dock": "right",
   },
   "collaboration_panel": {
-    "dock": "right",
-  },
-  "agent_servers": {
-    "pi-acp": {
-      "type": "registry",
-    },
-    "opencode": {
-      "favorite_models": ["github-copilot/gpt-5.4"],
-      "default_model": "openai/gpt-5.2-codex",
-      "type": "extension",
-      "default_config_options": {},
-      "favorite_config_option_values": {},
-    },
-    "claude": {
-      "type": "extension",
-    },
+    "dock": null,
   },
   "restore_on_startup": "launchpad",
   "redact_private_values": true,
   "tabs": {
-    "close_position": "right",
     "file_icons": true,
     "git_status": true,
   },
@@ -39,26 +28,26 @@
     "dock": "right",
   },
   "colorize_brackets": true,
-  "features": {
-    "edit_prediction_provider": "copilot",
-  },
   "agent": {
     "inline_assistant_model": {
       "provider": "copilot_chat",
-      "model": "claude-opus-4.5",
+      "model": "",
     },
     "default_model": {
       "provider": "copilot_chat",
-      "model": "gpt-5.1-codex",
+      "model": "",
     },
     "dock": "left",
     "model_parameters": [],
+    "flexible": false,
   },
   "git_panel": {
     "tree_view": true,
     "dock": "right",
   },
-  "helix_mode": false,
+  "git": {
+    "worktree_directory": "trees",
+  },
   "telemetry": {
     "diagnostics": false,
     "metrics": false,
@@ -88,7 +77,7 @@
     "enabled": true,
   },
   "minimap": {
-    "show": "never",
+    "show": "always",
     "thumb": "always",
   },
   "cursor_shape": "block",
@@ -98,13 +87,9 @@
     "JetBrains Mono",
     "IBM Plex Mono",
     "Geist Mono",
-    "Consolas",
-    "Courier New",
-    "monospace",
   ],
   "buffer_font_family": "Input Mono Narrow",
   "file_types": {
-    "kaz": ["*.kaz"],
     "dotenv": [".env*"],
     "markdown": ["*.mdc", "*.snap.txt"],
     "tailwindcss": ["*.css"],

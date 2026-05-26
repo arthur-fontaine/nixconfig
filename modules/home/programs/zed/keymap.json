@@ -7,92 +7,108 @@
 // from the command palette.
 [
   {
-    "bindings": {
-      "cmd-p": null,
-      "shift shift": "file_finder::Toggle",
-      "cmd-shift-p": null,
-      "alt alt": "command_palette::Toggle",
-      "cmd-shift-c": "agent::ToggleFocus",
-      "cmd-shift-g": "git_panel::ToggleFocus",
-      "cmd-shift-t": "terminal_panel::ToggleFocus",
-    },
-  },
-  {
-    "context": "Workspace",
-    "bindings": {
-      "cmd-b": "workspace::ToggleRightDock",
-      "cmd-alt-b": "workspace::ToggleLeftDock",
-      "cmd-shift-t": null,
-    },
-  },
-  {
     "context": "Editor",
     "bindings": {
       "cmd-backspace": "editor::DeleteLine",
-      "cmd-o": "editor::ShowCompletions",
-      "alt-cmd-l": "editor::Format",
+    },
+    "unbind": {
+      "cmd-backspace": "editor::DeleteToBeginningOfLine",
     },
   },
   {
-    "context": "Terminal",
-    "bindings": {
-      "cmd-shift-t": "workspace::NewTerminal",
-      "cmd-i": "assistant::InlineAssist",
+    "context": "!AcpThread > Editor && mode == full",
+    "unbind": {
+      "cmd-shift-e": "pane::RevealInProjectPanel",
     },
   },
   {
-    "context": "KeymapEditor",
+    "context": "!AcpThread > Editor && mode == full && vim_mode == normal",
     "bindings": {
-      "cmd-e": null,
+      "space e": "pane::RevealInProjectPanel",
     },
   },
   {
-    "context": "!ContextEditor > (Editor && mode == full)",
-    "bindings": {
-      "cmd-i": "assistant::InlineAssist",
+    "context": "AgentPanel",
+    "unbind": {
+      "cmd-shift-e": "project_panel::ToggleFocus",
     },
   },
   {
-    "context": "(Editor && mode == full)",
+    "context": "AgentPanel && vim_mode == normal",
     "bindings": {
-      "cmd-enter": "editor::NewlineAbove",
-      "alt-cmd-l": null,
+      "space e": "project_panel::ToggleFocus",
     },
   },
   {
-    "context": "Pane",
-    "bindings": {
-      "alt-cmd-l": null,
+    "context": "Workspace",
+    "unbind": {
+      "cmd-shift-e": "project_panel::ToggleFocus",
     },
   },
   {
-    "context": "BufferSearchBar",
+    "context": "Workspace && vim_mode == normal",
     "bindings": {
-      "alt-cmd-l": null,
+      "space e": "project_panel::ToggleFocus",
+    },
+  },
+  {
+    "unbind": {
+      "cmd-o": "workspace::Open",
     },
   },
   {
     "context": "Workspace",
     "bindings": {
-      "cmd-shift-n": null,
+      "cmd-o": "editor::ShowCompletions",
     },
   },
   {
-    "context": "ProjectPanel",
+    "context": "(Editor && vim_mode == normal) || EmptyPane",
     "bindings": {
-      "cmd-shift-n": "project_panel::NewDirectory",
+      "space g g": "git_panel::ToggleFocus",
+      "space g f": "git_graph::Open",
     },
   },
   {
-    "context": "(Editor && edit_prediction)",
+    "context": "GitPanel",
     "bindings": {
-      "cmd-right": "editor::AcceptNextWordEditPrediction",
+      "space g f": "git_graph::Open",
     },
   },
   {
     "bindings": {
-      "cmd-right": "editor::AcceptNextWordEditPrediction",
+      "shift shift": "file_finder::Toggle",
+      "alt alt": "command_palette::Toggle",
     },
-    "context": "(Editor && edit_prediction)",
+  },
+  {
+    "context": "Workspace",
+    "unbind": {
+      "cmd-shift-t": "pane::ReopenClosedItem",
+    },
+  },
+  {
+    "context": "(Workspace && vim_mode == normal) || EmptyPane",
+    "bindings": {
+      "space t": "terminal_panel::Toggle",
+    },
+  },
+  {
+    "context": "Editor && vim_mode == normal && !TerminalPanel",
+    "bindings": {
+      "space t": "terminal_panel::Toggle",
+    },
+  },
+  {
+    "context": "(Workspace && vim_mode == normal) || EmptyPane",
+    "bindings": {
+      "space c": "agent::ToggleFocus",
+    },
+  },
+  {
+    "context": "Editor && vim_mode == normal && !AgentPanel",
+    "bindings": {
+      "space c": "agent::ToggleFocus",
+    },
   },
 ]
