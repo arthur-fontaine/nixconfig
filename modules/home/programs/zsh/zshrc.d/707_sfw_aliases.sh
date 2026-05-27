@@ -13,8 +13,12 @@
 
 if command -v sfw &>/dev/null; then
   alias npm='sfw npm'
+  alias npx='sfw npx'
   alias yarn='sfw yarn'
   alias pnpm='sfw pnpm'
+  alias pnpx='sfw pnpx'
+  alias bun='sfw bun'
+  alias bunx='sfw bunx'
   alias pip='sfw pip'
   alias uv='sfw uv'
   alias cargo='sfw cargo'
