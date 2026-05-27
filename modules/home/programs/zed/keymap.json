@@ -120,4 +120,16 @@
       "cmd-enter": "editor::NewlineBelow",
     },
   },
+  {
+    "context": "Editor && edit_prediction",
+    "bindings": {
+      "cmd-right": "editor::AcceptNextWordEditPrediction",
+    },
+  },
+  {
+    "context": "Editor && edit_prediction",
+    "unbind": {
+      "ctrl-cmd-right": "editor::AcceptNextWordEditPrediction",
+    },
+  },
 ]
