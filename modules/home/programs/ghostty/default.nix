@@ -13,6 +13,7 @@
     keybind = cmd+alt+left=previous_tab
     keybind = cmd+alt+right=next_tab
     keybind = cmd+backspace=text:\x15
+    keybind = alt+delete=text:\x1bd
     keybind = global:cmd+ctrl+t=toggle_quick_terminal
 
     theme = dark:Ayu Mirage,light:Ayu Light

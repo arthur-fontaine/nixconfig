@@ -46,7 +46,7 @@
     },
   },
   {
-    "context": "Workspace && vim_mode == normal",
+    "context": "(Workspace && vim_mode == normal) || EmptyPane",
     "bindings": {
       "space e": "project_panel::ToggleFocus",
     },

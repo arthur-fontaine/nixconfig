@@ -2,7 +2,7 @@
 [
   "android-commandlinetools"
   "bruno"
-  "claude-code"
+  "claude-code@latest"
   "cyberduck"
   "datagrip"
   "gcloud-cli"
