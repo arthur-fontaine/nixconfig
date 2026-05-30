@@ -13,6 +13,11 @@ _git-bclone() {
   _git-bare-clone
 }
 
+_git-binit() {
+  _arguments \
+    '1:name:_files -/'
+}
+
 _git-wt() {
   _arguments \
     '1:branch:__git_branch_names' \

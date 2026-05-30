@@ -28,7 +28,25 @@ in
             echo "  Next: git wt <branch-name> [source-branch]"
           }; f'';
 
-        bclone = ''!git bare-clone "$@"'';
+        # No "$@" here: git appends the alias args automatically, so passing
+        # them explicitly would forward each arg twice (the second copy landed
+        # in bare-clone's optional [dir] slot, making it mkdir the whole URL).
+        bclone = ''!git bare-clone'';
+
+        binit = ''
+          !f() {
+            if [ -z "$1" ]; then
+              echo "Usage: git binit <name>"
+              echo "  Initializes an empty bare repo (.bare + .git pointer) in <name>/, same layout as git bclone"
+              return 1
+            fi
+            local dir="$1"
+            mkdir -p "$dir" && cd "$dir" || return 1
+            git init --bare --initial-branch=main .bare || return 1
+            echo "gitdir: ./.bare" > .git
+            echo "✓ Bare repo initialized in $(pwd)"
+            echo "  Next: git wt <branch-name>"
+          }; f'';
 
         wt = ''
           !f() {
@@ -46,8 +64,11 @@ in
               git worktree add "$name" "$name"
             elif git show-ref --verify --quiet "refs/remotes/origin/$name"; then
               git worktree add --track -b "$name" "$name" "origin/$name"
-            else
+            elif git rev-parse --verify --quiet "$base" >/dev/null; then
               git worktree add "$name" -b "$name" "$base"
+            else
+              # No commits yet (e.g. fresh git binit): start an orphan worktree
+              git worktree add --orphan -b "$name" "$name"
             fi
           }; f'';
       };
