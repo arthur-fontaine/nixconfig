@@ -22,6 +22,10 @@ in
       autoUpdate = true;
       cleanup = "zap";
       upgrade = true;
+      # Homebrew now requires an explicit force flag with `--cleanup`; without it
+      # `brew bundle install --cleanup` aborts during activation. `--force-cleanup`
+      # performs the zap non-interactively without altering install behavior.
+      extraFlags = [ "--force-cleanup" ];
     };
 
     taps = import ./taps.nix;
