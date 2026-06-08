@@ -52,11 +52,11 @@ in
           !f() {
             if [ -z "$1" ]; then
               echo "Usage: git wt <name> [source-branch]"
-              echo "  Creates a worktree, reusing the branch if it exists or creating it from source-branch (default: main)"
+              echo "  Creates a worktree, reusing the branch if it exists or creating it from source-branch (default: the repo's default branch)"
               return 1
             fi
             local name="$1"
-            local base="''${2:-main}"
+            local base="$2"
             local root
             root="$(git rev-parse --path-format=absolute --git-common-dir)/.."
             cd "$root" || return 1
@@ -64,11 +64,24 @@ in
               git worktree add "$name" "$name"
             elif git show-ref --verify --quiet "refs/remotes/origin/$name"; then
               git worktree add --track -b "$name" "$name" "origin/$name"
-            elif git rev-parse --verify --quiet "$base" >/dev/null; then
-              git worktree add "$name" -b "$name" "$base"
-            else
+            elif ! git rev-parse --verify --quiet HEAD >/dev/null 2>&1; then
               # No commits yet (e.g. fresh git binit): start an orphan worktree
               git worktree add --orphan -b "$name" "$name"
+            else
+              # New branch off a base. Default to the repo's actual default
+              # branch instead of a hardcoded "main": when the default was
+              # something else (master, develop, …) "main" failed to resolve
+              # and we silently fell through to an empty --orphan worktree.
+              if [ -z "$base" ]; then
+                base="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"
+                base="''${base#origin/}"
+                [ -z "$base" ] && base="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)"
+              fi
+              if ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null 2>&1; then
+                echo "git wt: base branch '$base' not found" >&2
+                return 1
+              fi
+              git worktree add "$name" -b "$name" "$base"
             fi
           }; f'';
       };
