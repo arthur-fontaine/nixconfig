@@ -60,10 +60,32 @@ in
             local root
             root="$(git rev-parse --path-format=absolute --git-common-dir)/.."
             cd "$root" || return 1
-            if git show-ref --verify --quiet "refs/heads/$name"; then
+            # Ask origin about the branch directly (cheap, single-branch fetch)
+            # so a branch that exists on the remote is found and tracked even
+            # if it was created after our last fetch. Quiet/best-effort: no
+            # origin or no such branch just falls through below.
+            git fetch --quiet origin "+refs/heads/$name:refs/remotes/origin/$name" 2>/dev/null
+            if git show-ref --verify --quiet "refs/remotes/origin/$name"; then
+              # Branch exists on origin: land the worktree on the remote
+              # version and track it. A bare clone mirrors every remote head
+              # into refs/heads, so a (possibly stale) local branch usually
+              # already exists -- reuse it, fast-forward to the remote tip when
+              # possible (never discarding local commits), and set upstream.
+              if git show-ref --verify --quiet "refs/heads/$name"; then
+                git worktree add "$name" "$name" || return 1
+                # Run inside the new worktree with a clean env: git exports
+                # GIT_DIR (the bare repo) for !-aliases, which would otherwise
+                # make these operate on the bare repo instead of the worktree.
+                ( unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+                  cd "$name" || exit
+                  git merge --ff-only "origin/$name" >/dev/null 2>&1
+                  git branch --set-upstream-to="origin/$name" >/dev/null 2>&1 )
+              else
+                git worktree add --track -b "$name" "$name" "origin/$name"
+              fi
+            elif git show-ref --verify --quiet "refs/heads/$name"; then
+              # Local-only branch (never pushed): reuse it.
               git worktree add "$name" "$name"
-            elif git show-ref --verify --quiet "refs/remotes/origin/$name"; then
-              git worktree add --track -b "$name" "$name" "origin/$name"
             elif ! git rev-parse --verify --quiet HEAD >/dev/null 2>&1; then
               # No commits yet (e.g. fresh git binit): start an orphan worktree
               git worktree add --orphan -b "$name" "$name"
