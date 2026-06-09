@@ -22,6 +22,7 @@ If you only want to install the setup on a Mac, start with the root `README.md` 
 - `modules/darwin/default.nix`: shared Darwin wiring
 - `modules/darwin/core/`: macOS defaults and system-level settings
 - `modules/darwin/homebrew/`: Homebrew taps, formulae, and casks grouped by category
+- `modules/darwin/services/`: system-level launchd services (e.g. dnsmasq for `*.localhost`)
 
 ## home-manager layer
 

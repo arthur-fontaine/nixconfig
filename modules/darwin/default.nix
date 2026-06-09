@@ -3,6 +3,7 @@
   imports = [
     ./core
     ./homebrew
+    ./services
   ];
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
