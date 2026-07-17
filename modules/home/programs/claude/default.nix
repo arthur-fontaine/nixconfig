@@ -19,7 +19,8 @@ let
     };
 
     effortLevel = "xhigh";
-    theme = "light";
+    tui = "fullscreen";
+    theme = "auto";
     preferredNotifChannel = "terminal_bell";
     skipDangerousModePermissionPrompt = true;
     skipAutoPermissionPrompt = true;
@@ -34,7 +35,7 @@ in
   # ~/.claude.json, which are left untouched.
   home.activation.claudeConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     claude_dir="${config.home.homeDirectory}/.claude"
-    $DRY_RUN_CMD mkdir -p "$claude_dir/skills/context7-mcp"
+    $DRY_RUN_CMD mkdir -p "$claude_dir/skills/context7-mcp" "$claude_dir/rules"
 
     $DRY_RUN_CMD cp -f ${settingsJson} "$claude_dir/settings.json"
     $DRY_RUN_CMD chmod u+w "$claude_dir/settings.json"
@@ -44,5 +45,8 @@ in
 
     $DRY_RUN_CMD cp -f ${./skills/context7-mcp/SKILL.md} "$claude_dir/skills/context7-mcp/SKILL.md"
     $DRY_RUN_CMD chmod u+w "$claude_dir/skills/context7-mcp/SKILL.md"
+
+    $DRY_RUN_CMD cp -f ${./rules/context7.md} "$claude_dir/rules/context7.md"
+    $DRY_RUN_CMD chmod u+w "$claude_dir/rules/context7.md"
   '';
 }
