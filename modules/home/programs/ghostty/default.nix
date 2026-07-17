@@ -18,7 +18,7 @@
 
     theme = dark:Ayu Mirage,light:Ayu Light
 
-    macos-option-as-alt = left
+    macos-option-as-alt = true
 
     adjust-cell-height = 10
   '';
