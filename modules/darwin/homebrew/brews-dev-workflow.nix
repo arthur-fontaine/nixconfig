@@ -1,6 +1,7 @@
 # Development workflow tools
 [
   "bacon"
+  "cargo-llvm-cov"
   "difftastic"
   "firebase-cli"
   "gh"
