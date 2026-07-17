@@ -12,5 +12,6 @@
     ./codex
     ./opencode
     ./pi
+    ./claude
   ];
 }
