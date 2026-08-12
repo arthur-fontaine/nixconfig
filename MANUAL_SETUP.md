@@ -2,6 +2,22 @@
 
 These steps still need manual handling even after the Nix conversion.
 
+## Secrets
+
+`~/.config/.env` holds secrets that must not live in this repo. Every
+assignment in it is auto-exported into the shell by
+`modules/home/programs/zsh/zshrc.d/902_dotenv.sh`, so it stays plain
+`KEY=VALUE` with no `export` prefixes.
+
+```sh
+install -m 600 /dev/null ~/.config/.env
+```
+
+Keys currently expected:
+
+- `EXCALIDRAW_API_TOKEN` — consumed by the Excalidraw MCP server in
+  `modules/home/programs/claude/default.nix`
+
 ## First-run app setup
 
 ### Raycast
