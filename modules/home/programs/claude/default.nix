@@ -30,13 +30,24 @@ let
     skipAutoPermissionPrompt = true;
     skipWorkflowUsageWarning = true;
   };
+
+  # User-scope MCP servers. Claude Code expands ${VAR} in these at connect
+  # time, so tokens stay in ~/.config/.env (see zshrc.d/902_dotenv.sh) rather
+  # than in this repo.
+  mcpServersJson = (pkgs.formats.json { }).generate "claude-mcp-servers.json" {
+    excalidraw = {
+      type = "http";
+      url = "https://api.excalidraw.com/api/v1/mcp";
+      headers."Authorization" = "Bearer \${EXCALIDRAW_API_TOKEN}";
+    };
+  };
 in
 {
   # Copy settings.json and skills instead of symlinking so Claude Code can
   # write to them (toggling plugins, changing theme via /config, skill-creator
   # adding skills). Managed files reset to this repo's version on each
   # activation; runtime state lives in ~/.claude/settings.local.json and
-  # ~/.claude.json, which are left untouched.
+  # ~/.claude.json, of which only the mcpServers entries below are managed.
   home.activation.claudeConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     claude_dir="${config.home.homeDirectory}/.claude"
     $DRY_RUN_CMD mkdir -p "$claude_dir/skills/context7-mcp" "$claude_dir/rules"
@@ -52,5 +63,26 @@ in
 
     $DRY_RUN_CMD cp -f ${./rules/context7.md} "$claude_dir/rules/context7.md"
     $DRY_RUN_CMD chmod u+w "$claude_dir/rules/context7.md"
+
+    # ~/.claude.json is Claude Code's own runtime state, so merge the managed
+    # MCP servers into it instead of rewriting it. Servers added by hand (via
+    # `claude mcp add`) survive; the managed keys are reset on each activation.
+    # The temp file sits next to the target so the replacement is atomic.
+    claude_json="${config.home.homeDirectory}/.claude.json"
+    if [ ! -e "$claude_json" ]; then
+      $DRY_RUN_CMD ${pkgs.coreutils}/bin/install -m 600 /dev/null "$claude_json"
+      $DRY_RUN_CMD ${pkgs.coreutils}/bin/tee "$claude_json" <<< '{}' > /dev/null
+    fi
+    if ${pkgs.jq}/bin/jq -e . "$claude_json" > /dev/null 2>&1; then
+      merged="$(${pkgs.coreutils}/bin/mktemp "$claude_json.XXXXXX")"
+      if ${pkgs.jq}/bin/jq --slurpfile managed ${mcpServersJson} \
+           '.mcpServers = ((.mcpServers // {}) + $managed[0])' \
+           "$claude_json" > "$merged"; then
+        $DRY_RUN_CMD mv -f "$merged" "$claude_json"
+      fi
+      rm -f "$merged"
+    else
+      echo "warning: $claude_json is not valid JSON, skipping MCP server merge" >&2
+    fi
   '';
 }
