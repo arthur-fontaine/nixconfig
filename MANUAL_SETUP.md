@@ -13,10 +13,11 @@ assignment in it is auto-exported into the shell by
 install -m 600 /dev/null ~/.config/.env
 ```
 
-Keys currently expected:
+Keys currently expected, both consumed by the MCP servers declared in
+`modules/home/programs/claude/default.nix`:
 
-- `EXCALIDRAW_API_TOKEN` — consumed by the Excalidraw MCP server in
-  `modules/home/programs/claude/default.nix`
+- `EXCALIDRAW_API_TOKEN` — Excalidraw Plus workspace API key
+- `CONTEXT7_API_KEY` — Context7 API key
 
 ## First-run app setup
 

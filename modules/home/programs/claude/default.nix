@@ -35,6 +35,12 @@ let
   # time, so tokens stay in ~/.config/.env (see zshrc.d/902_dotenv.sh) rather
   # than in this repo.
   mcpServersJson = (pkgs.formats.json { }).generate "claude-mcp-servers.json" {
+    context7 = {
+      type = "http";
+      url = "https://mcp.context7.com/mcp";
+      headers."CONTEXT7_API_KEY" = "\${CONTEXT7_API_KEY}";
+    };
+
     excalidraw = {
       type = "http";
       url = "https://api.excalidraw.com/api/v1/mcp";
