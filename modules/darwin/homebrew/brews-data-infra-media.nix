@@ -13,5 +13,6 @@
   "nmap"
   "poppler"
   "tesseract"
+  "yt-dlp"
   "hashicorp/tap/terraform"
 ]

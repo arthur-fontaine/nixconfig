@@ -58,7 +58,7 @@
                         ]
                     },
                     {
-                        "description": "Change F5 (Dictation) to control+shift+close_bracket",
+                        "description": "Change F5 (Dictation) to control+f5",
                         "manipulators": [
                             {
                                 "from": {
@@ -67,8 +67,8 @@
                                 },
                                 "to": [
                                     {
-                                        "key_code": "close_bracket",
-                                        "modifiers": ["left_control", "left_shift"]
+                                        "key_code": "f5",
+                                        "modifiers": ["left_control"]
                                     }
                                 ],
                                 "type": "basic"

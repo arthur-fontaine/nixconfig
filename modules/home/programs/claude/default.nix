@@ -2,6 +2,7 @@
 let
   settingsJson = (pkgs.formats.json { }).generate "claude-settings.json" {
     permissions.defaultMode = "auto";
+    model = "opus[1m]";
 
     enabledPlugins = {
       "skill-creator@claude-plugins-official" = true;
@@ -18,10 +19,13 @@ let
       repo = "callstackincubator/agent-skills";
     };
 
-    effortLevel = "xhigh";
+    effortLevel = "medium";
     tui = "fullscreen";
     theme = "auto";
     preferredNotifChannel = "terminal_bell";
+    remoteControlAtStartup = true;
+    inputNeededNotifEnabled = true;
+    agentPushNotifEnabled = true;
     skipDangerousModePermissionPrompt = true;
     skipAutoPermissionPrompt = true;
     skipWorkflowUsageWarning = true;
