@@ -12,6 +12,7 @@
   "lm-studio"
   "orbstack"
   "powershell"
+  "utm"
   "visual-studio-code"
   "zed"
   "zed@preview"
