@@ -12,14 +12,25 @@ let
       "figma@claude-plugins-official" = true;
       "typescript-lsp@claude-plugins-official" = true;
       "frontend-design@claude-plugins-official" = true;
+      "humanizer@humanizer" = true;
+      "swift-lsp@claude-plugins-official" = true;
     };
 
-    extraKnownMarketplaces."callstack-agent-skills".source = {
-      source = "github";
-      repo = "callstackincubator/agent-skills";
+    extraKnownMarketplaces = {
+      "callstack-agent-skills".source = {
+        source = "github";
+        repo = "callstackincubator/agent-skills";
+      };
+
+      "humanizer".source = {
+        source = "github";
+        repo = "blader/humanizer";
+      };
     };
 
+    outputStyle = "ADHD Comms";
     effortLevel = "medium";
+    advisorModel = "fable";
     tui = "fullscreen";
     theme = "auto";
     preferredNotifChannel = "terminal_bell";
@@ -46,6 +57,14 @@ let
       url = "https://api.excalidraw.com/api/v1/mcp";
       headers."Authorization" = "Bearer \${EXCALIDRAW_API_TOKEN}";
     };
+
+    # Binary comes from the lmgrep pi package (see modules/home/programs/pi).
+    lmgrep = {
+      type = "stdio";
+      command = "lmgrep";
+      args = [ "mcp" ];
+      env = { };
+    };
   };
 in
 {
@@ -56,7 +75,7 @@ in
   # ~/.claude.json, of which only the mcpServers entries below are managed.
   home.activation.claudeConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     claude_dir="${config.home.homeDirectory}/.claude"
-    $DRY_RUN_CMD mkdir -p "$claude_dir/skills/context7-mcp" "$claude_dir/rules"
+    $DRY_RUN_CMD mkdir -p "$claude_dir/skills/context7-mcp" "$claude_dir/rules" "$claude_dir/output-styles"
 
     $DRY_RUN_CMD cp -f ${settingsJson} "$claude_dir/settings.json"
     $DRY_RUN_CMD chmod u+w "$claude_dir/settings.json"
@@ -69,6 +88,9 @@ in
 
     $DRY_RUN_CMD cp -f ${./rules/context7.md} "$claude_dir/rules/context7.md"
     $DRY_RUN_CMD chmod u+w "$claude_dir/rules/context7.md"
+
+    $DRY_RUN_CMD cp -f ${./output-styles/adhd-comms.md} "$claude_dir/output-styles/adhd-comms.md"
+    $DRY_RUN_CMD chmod u+w "$claude_dir/output-styles/adhd-comms.md"
 
     # ~/.claude.json is Claude Code's own runtime state, so merge the managed
     # MCP servers into it instead of rewriting it. Servers added by hand (via
