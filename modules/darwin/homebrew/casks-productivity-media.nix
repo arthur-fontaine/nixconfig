@@ -1,6 +1,5 @@
 # Productivity and media apps
 [
-  "alcove"
   "blender"
   "discord"
   "figma"
