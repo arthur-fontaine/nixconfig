@@ -2,8 +2,8 @@
 let
   toml = pkgs.formats.toml { };
   configFile = toml.generate "codex-config.toml" {
-    model = "gpt-5.4";
-    model_reasoning_effort = "high";
+    model = "gpt-5.6-terra";
+    model_reasoning_effort = "medium";
 
     plugins = {
       "google-calendar@openai-curated" = { enabled = true; };
