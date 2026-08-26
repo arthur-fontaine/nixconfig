@@ -14,6 +14,7 @@ let
       "frontend-design@claude-plugins-official" = true;
       "humanizer@humanizer" = true;
       "swift-lsp@claude-plugins-official" = true;
+      "eli5@claude-community" = true;
     };
 
     extraKnownMarketplaces = {
@@ -25,6 +26,11 @@ let
       "humanizer".source = {
         source = "github";
         repo = "blader/humanizer";
+      };
+
+      "claude-community".source = {
+        source = "github";
+        repo = "anthropics/claude-plugins-community";
       };
     };
 
