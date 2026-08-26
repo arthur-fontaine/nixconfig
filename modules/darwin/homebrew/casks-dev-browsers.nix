@@ -17,4 +17,5 @@
   "zed"
   "zed@preview"
   "zen"
+  "nkzw-tech/tap/codiff"
 ]

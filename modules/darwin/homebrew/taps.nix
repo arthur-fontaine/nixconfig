@@ -6,5 +6,6 @@
   "hashicorp/tap"
   "lihaoyun6/tap"
   "mongodb/brew"
+  "nkzw-tech/tap"
   "oven-sh/bun"
 ]

@@ -9,6 +9,7 @@
   "bat"
   "coreutils"
   "eza"
+  "fcp"
   "fd"
   "fx"
   "fzf"

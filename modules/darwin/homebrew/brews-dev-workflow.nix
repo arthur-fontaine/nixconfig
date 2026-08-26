@@ -18,6 +18,7 @@
   "oha"
   "rtk"
   "sem-cli"
+  "swiftlint"
   "xcodegen"
   "xcodes"
   "anomalyco/tap/opencode"
