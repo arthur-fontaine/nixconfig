@@ -9,3 +9,4 @@ Currently it owns:
   - `keyboard.nix`
   - `terminal.nix`
   - `trackpad.nix`
+- `xcode.nix`: updates the Command Line Tools and Xcode before Homebrew runs
