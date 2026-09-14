@@ -17,10 +17,11 @@
         system,
         username,
         homeDirectory ? "/Users/${username}",
+        nixconfigDir ? "${homeDirectory}/nixconfig",
         ...
       }:
         let
-          specialArgs = hostConfig // { inherit inputs hostName homeDirectory; };
+          specialArgs = hostConfig // { inherit inputs hostName homeDirectory nixconfigDir; };
         in
         nix-darwin.lib.darwinSystem {
           inherit system;

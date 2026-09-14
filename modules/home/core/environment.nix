@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ lib, hostName, nixconfigDir, ... }:
 {
   home.sessionPath = [
     "$HOME/.local/bin"
@@ -9,6 +9,8 @@
   home.sessionVariables = {
     CARGO_NET_GIT_FETCH_WITH_CLI = "true";
     CODEX_HOME = "$HOME/.config/codex";
+    NIXCONFIG_REPO_DIR = nixconfigDir;
+    NIXCONFIG_HOST = hostName;
   };
 
   targets.darwin.defaults = {

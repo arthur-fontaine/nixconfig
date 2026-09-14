@@ -7,6 +7,7 @@
 
     # Optional overrides:
     # homeDirectory = "/Users/alice";
+    # nixconfigDir = "/Users/alice/nixconfig"; # where this repo is checked out
     # gitSigningKey = "ssh-ed25519 AAAA...";
   };
 }
