@@ -31,7 +31,7 @@
   "colorize_brackets": true,
   "agent": {
     "button": true,
-    "terminal_init_command": "claude",
+    "terminal_init_command": "claude --add-dir ..",
     "notify_when_agent_waiting": "all_screens",
     "play_sound_when_agent_done": "always",
     "default_model": {
