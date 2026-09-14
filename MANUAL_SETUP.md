@@ -41,7 +41,7 @@ Keys currently expected, both consumed by the MCP servers declared in
 
 - set brightness hotkeys behavior as before
 
-### Ice
+### Thaw
 
 - grant accessibility permission
 - enable launch at login
