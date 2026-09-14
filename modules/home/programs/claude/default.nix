@@ -2,7 +2,7 @@
 let
   settingsJson = (pkgs.formats.json { }).generate "claude-settings.json" {
     permissions.defaultMode = "auto";
-    model = "opus[1m]";
+    model = "claude-fable-5-1[1m]";
 
     enabledPlugins = {
       "skill-creator@claude-plugins-official" = true;
@@ -36,6 +36,12 @@ let
 
     outputStyle = "ADHD Comms";
     effortLevel = "medium";
+
+    modelSettings = {
+      "claude-fable-5-1".effortLevel = "medium";
+      "claude-opus-5".effortLevel = "medium";
+    };
+
     advisorModel = "fable";
     tui = "fullscreen";
     theme = "auto";
