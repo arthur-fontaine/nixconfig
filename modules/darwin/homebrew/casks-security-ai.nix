@@ -5,7 +5,6 @@
   "chatgpt"
   "claude"
   "codex"
-  "codex-app"
   "opencode-desktop"
   "protonvpn"
 ]

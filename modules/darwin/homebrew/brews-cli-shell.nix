@@ -9,7 +9,6 @@
   "bat"
   "coreutils"
   "eza"
-  "fcp"
   "fd"
   "fx"
   "fzf"
@@ -19,7 +18,6 @@
   "qrencode"
   "terminal-notifier"
   "thefuck"
-  "tmate"
   "tree"
   "zellij"
 ]
