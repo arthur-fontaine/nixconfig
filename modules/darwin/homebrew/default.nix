@@ -1,4 +1,4 @@
-{ username, homeDirectory, ... }:
+{ username, homeDirectory, nixconfigDir, ... }:
 let
   brewLists = [
     (import ./brews-cli-shell.nix)
@@ -33,7 +33,14 @@ in
       upgrade = true;
     };
 
-    taps = import ./taps.nix;
+    taps = import ./taps.nix ++ [
+      {
+        name = "nixconfig/casks";
+        clone_target = nixconfigDir;
+        force_auto_update = true;
+        trusted = true;
+      }
+    ];
 
     brews = builtins.concatLists brewLists;
 

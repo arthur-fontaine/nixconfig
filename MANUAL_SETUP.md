@@ -41,9 +41,10 @@ Keys currently expected, both consumed by the MCP servers declared in
 
 - set brightness hotkeys behavior as before
 
-### Thaw
+### Bartender
 
-- grant accessibility permission
+- enter the license key
+- grant screen recording and accessibility permissions
 - enable launch at login
 
 ### Alcove
