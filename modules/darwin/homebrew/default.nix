@@ -1,4 +1,4 @@
-{ ... }:
+{ username, homeDirectory, ... }:
 let
   brewLists = [
     (import ./brews-cli-shell.nix)
@@ -15,6 +15,13 @@ let
   ];
 in
 {
+  # Runs before the homebrew step. Stale cached manifests make brew bundle fail
+  # with "Couldn't find manifest matching bottle checksum"; a refetch fixes it.
+  system.activationScripts.extraActivation.text = ''
+    sudo -u ${username} -H find "${homeDirectory}/Library/Caches/Homebrew/downloads" \
+      -name '*.bottle_manifest.json' -delete 2>/dev/null || true
+  '';
+
   homebrew = {
     enable = true;
 
