@@ -11,7 +11,6 @@
   "httpie-desktop"
   "lm-studio"
   "orbstack"
-  "powershell"
   "utm"
   "visual-studio-code"
   "zed"

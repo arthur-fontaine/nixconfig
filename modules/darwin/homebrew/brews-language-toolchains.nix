@@ -4,5 +4,6 @@
   "cocoapods"
   "go"
   "openjdk"
+  "powershell"
   "pyenv"
 ]

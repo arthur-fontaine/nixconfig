@@ -28,13 +28,7 @@ in
 
     taps = import ./taps.nix;
 
-    # Keep one special formula as an attrset because it must not be linked.
-    brews = [
-      {
-        name = "powershell";
-        link = false;
-      }
-    ] ++ builtins.concatLists brewLists;
+    brews = builtins.concatLists brewLists;
 
     casks = builtins.concatLists caskLists;
   };
