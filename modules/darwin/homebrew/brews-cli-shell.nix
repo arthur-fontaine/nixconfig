@@ -15,6 +15,7 @@
   "fzf"
   "glow"
   "just"
+  "mole"
   "qrencode"
   "terminal-notifier"
   "thefuck"
