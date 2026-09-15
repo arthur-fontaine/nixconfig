@@ -21,7 +21,9 @@ in
   system.activationScripts.extraActivation.text = ''
     (
       as_user() { sudo -u ${username} -H env PATH="${config.homebrew.prefix}/bin:$PATH" NONINTERACTIVE=1 "$@"; }
-      brew_major() { { "${brew}" --version 2>/dev/null || true; } | awk 'NR == 1 { split($2, v, "."); print v[1] }'; }
+      # As root brew prints ">=4.6.0 (shallow or no git repository)" instead of its version.
+      brew_version() { as_user "${brew}" --version 2>/dev/null | head -1 || true; }
+      brew_major() { brew_version | sed -n '1s/^Homebrew[^0-9]*\([0-9][0-9]*\).*/\1/p'; }
 
       echo "checking Homebrew..." >&2
       if [ ! -x "${brew}" ]; then
@@ -31,12 +33,12 @@ in
       fi
       major=$(brew_major)
       if [ -x "${brew}" ] && [ "''${major:-0}" -lt 7 ]; then
-        echo "updating $("${brew}" --version | head -1) to Homebrew 7..." >&2
+        echo "updating $(brew_version) to Homebrew 7..." >&2
         as_user "${brew}" update --force || echo "warning: brew update failed" >&2
         major=$(brew_major)
       fi
       if [ "''${major:-0}" -lt 7 ]; then
-        echo -e "\e[1;31merror: Homebrew 7 is required, found: $("${brew}" --version 2>/dev/null | head -1 || echo "nothing")\e[0m" >&2
+        echo -e "\e[1;31merror: Homebrew 7 is required, found: $(brew_version)\e[0m" >&2
         exit 1
       fi
     )
