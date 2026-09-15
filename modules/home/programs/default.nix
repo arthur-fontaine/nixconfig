@@ -8,6 +8,7 @@
     ./zed
     ./karabiner
     ./openlogi
+    ./droppy
     ./mise
     ./direnv
     ./codex
