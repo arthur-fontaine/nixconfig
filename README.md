@@ -112,3 +112,4 @@ The technical structure was moved out of the main README.
 See:
 
 - [`docs/repository-layout.md`](./docs/repository-layout.md)
+- [`docs/syncing-config.md`](./docs/syncing-config.md): how to copy a setting you changed in an app back into the repo

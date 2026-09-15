@@ -52,6 +52,10 @@ These remain literal files, colocated with the module that owns them:
 - Pi extensions
 - zsh prompt, plugins, completions, and `zshrc.d` fragments
 
+## Syncing changes back
+
+See [`syncing-config.md`](./syncing-config.md) for how each program is managed and how to pull a change made in an app into the repo.
+
 ## Notes
 
 - secrets and auth state are intentionally excluded
