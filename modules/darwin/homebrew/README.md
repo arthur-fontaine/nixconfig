@@ -9,6 +9,9 @@ Principles:
 
 Edit the list files directly when you want to add or remove packages.
 
+Activation installs Homebrew when `brew` is missing and stops if it is older
+than 7, after one `brew update` attempt.
+
 Casks that Homebrew does not ship live in `Casks/` at the repo root. Homebrew
 only reads casks from that directory in a tap, and the tap is this repo itself
 (`nixconfig/casks`, cloned from `nixconfigDir`). Commit a new cask before
