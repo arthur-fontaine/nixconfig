@@ -7,6 +7,7 @@
     ./ghostty
     ./zed
     ./karabiner
+    ./openlogi
     ./mise
     ./direnv
     ./codex

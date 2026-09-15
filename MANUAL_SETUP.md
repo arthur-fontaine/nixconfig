@@ -37,6 +37,17 @@ Keys currently expected, both consumed by the MCP servers declared in
 
 - allow launch in macOS security settings
 
+### OpenLogi
+
+OpenLogi replaces Logi Options+. The managed keys live in
+`modules/home/programs/openlogi/default.nix` and are merged into
+`~/.config/openlogi/config.toml` on each activation, so edit the module.
+
+- grant Input Monitoring to OpenLogi Agent, else the Bluetooth mouse stays hidden
+  (the `+` picker cannot browse into the bundle, so use Go to Folder on
+  `/Applications/OpenLogi.app/Contents/`)
+- the mouse is matched by product id, so no device key needs to be written by hand
+
 ### Lunar
 
 - set brightness hotkeys behavior as before

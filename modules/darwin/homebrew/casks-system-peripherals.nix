@@ -4,7 +4,7 @@
   "nixconfig/casks/bartender@7"
   "betterdisplay"
   "karabiner-elements"
-  "logi-options+"
   "lunar"
   "macmediakeyforwarder"
+  "openlogi"
 ]
