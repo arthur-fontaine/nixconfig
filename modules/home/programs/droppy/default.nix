@@ -83,8 +83,8 @@
     extension_removed_aiCodingHUD = false;
     meetingControls_installed = true;
     meetingControls_enabled = true;
-    meetingControls_actionOrder = [ "toggleMute" "toggleCamera" "toggleShareScreen" "endCall" ];
-    meetingControls_hiddenActions = [ ];
+    meetingControls_actionOrder = builtins.toJSON [ "toggleMute" "toggleCamera" "toggleShareScreen" "endCall" ];
+    meetingControls_hiddenActions = builtins.toJSON [ ];
     extension_removed_meetingControls = false;
     todo_installed = true;
     todo_enabled = true;
