@@ -1,27 +1,35 @@
-cask "smallcast@beta" do
-  version "0.4.0-beta.24"
-  sha256 "7b98fceca866416f1a9456a39e37a6f85492c7b2502777e88efd274da53a49c9"
+require "utils/github"
 
-  url "https://github.com/arthur-fontaine/smallcast/releases/download/v#{version}/Smallcast-#{version}.dmg"
+# Homebrew 7 has no `url do` block, and GitHub has no redirect for the newest prerelease.
+class SmallcastBetaDownloadStrategy < CurlDownloadStrategy
+  RELEASES = "https://api.github.com/repos/arthur-fontaine/smallcast/releases?per_page=100".freeze
+
+  def initialize(_url, name, version, **meta)
+    super(self.class.newest_beta_dmg, name, version, **meta)
+  end
+
+  def self.newest_beta_dmg
+    candidates = GitHub::API.open_rest(RELEASES).filter_map do |release|
+      next if release["draft"] || !release["prerelease"]
+
+      semver = release["tag_name"][/\Av?(\d+(?:\.\d+)+-beta\.\d+)\z/, 1]
+      dmg = release["assets"]&.find { |asset| asset["name"].end_with?(".dmg") }
+      [Gem::Version.new(semver), dmg["browser_download_url"]] if semver && dmg
+    end
+    candidates.max_by(&:first)&.last || raise(Cask::CaskError, "no Smallcast beta release ships a DMG")
+  end
+end
+
+cask "smallcast@beta" do
+  version :latest
+  sha256 :no_check
+
+  url "https://github.com/arthur-fontaine/smallcast/releases",
+      using: SmallcastBetaDownloadStrategy
   name "Smallcast Beta"
   desc "Native launcher, hotkeys, and clipboard history (beta channel)"
   homepage "https://github.com/arthur-fontaine/smallcast"
 
-  # The default strategy drops prereleases, and the beta channel ships only prereleases.
-  livecheck do
-    url :url
-    regex(/^v?(\d+(?:\.\d+)+-beta\.\d+)$/i)
-    strategy :github_releases do |json, regex|
-      json.filter_map do |release|
-        next if release["draft"] || !release["prerelease"]
-
-        release["tag_name"]&.[](regex, 1)
-      end
-    end
-  end
-
-  # The app installs its own updates; without this brew would roll a self-updated copy back.
-  auto_updates true
   depends_on arch: :arm64
   depends_on macos: :tahoe
 
