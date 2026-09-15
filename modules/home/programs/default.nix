@@ -9,6 +9,7 @@
     ./karabiner
     ./openlogi
     ./droppy
+    ./smallcast
     ./mise
     ./direnv
     ./codex
