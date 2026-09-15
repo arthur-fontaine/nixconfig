@@ -136,11 +136,22 @@ let
     os.chmod(tmp, 0o600)
     os.replace(tmp, dest)
   '';
+  # OpenLogi flips the wheel to HID++ diverted reporting and forwards the events
+  # itself. If it died while diverted the wheel is dead, and the flag lives in
+  # the mouse, so it outlives the crash.
+  fixScroll = pkgs.writeShellScript "openlogi-fix-scroll.sh" ''
+    cli=/Applications/OpenLogi.app/Contents/MacOS/openlogi
+    [ -x "$cli" ] || exit 0
+    /usr/bin/pgrep -f openlogi-agent >/dev/null && exit 0
+    "$cli" diag wheel 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "reporting=diverted" || exit 0
+    "$cli" diag wheel --resolution low
+  '';
 in
 {
   home.activation.openlogiConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     config_dir="${config.xdg.configHome}/openlogi"
     $DRY_RUN_CMD mkdir -p "$config_dir"
     $DRY_RUN_CMD ${mergeScript} "$config_dir/config.toml" ${configFile}
+    $DRY_RUN_CMD ${fixScroll}
   '';
 }

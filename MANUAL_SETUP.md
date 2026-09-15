@@ -47,6 +47,8 @@ OpenLogi replaces Logi Options+. The managed keys live in
   (the `+` picker cannot browse into the bundle, so use Go to Folder on
   `/Applications/OpenLogi.app/Contents/`)
 - the mouse is matched by product id, so no device key needs to be written by hand
+- if scrolling dies after OpenLogi quits, the wheel is still diverted to the app.
+  A rebuild hands it back, or run `openlogi diag wheel --resolution low`
 
 ### Lunar
 
