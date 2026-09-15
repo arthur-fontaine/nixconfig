@@ -2,6 +2,7 @@
 [
   "blender"
   "discord"
+  "droppy"
   "figma"
   "fluidvoice"
   "handy"
