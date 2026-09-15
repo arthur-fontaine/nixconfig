@@ -32,7 +32,13 @@ let
       enabled = true;
       invert_scroll = false;
 
-      smartshift.mode = "ratchet";
+      # auto_disengage and tunable_torque read off the device with
+      # `openlogi diag smartshift`; the schema rejects a partial table.
+      smartshift = {
+        mode = "ratchet";
+        auto_disengage = 12;
+        tunable_torque = 0;
+      };
 
       bindings = {
         MiddleClick = "MiddleClick";
