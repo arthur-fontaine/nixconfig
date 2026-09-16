@@ -11,7 +11,8 @@
   "raycast"
   "sony-ps-remote-play"
   "spotify"
-  "nixconfig/casks/smallcast@beta"
+  # `version :latest` casks only upgrade when greedy.
+  { name = "nixconfig/casks/smallcast@beta"; greedy = true; }
   "abue-ammar/tinycast/tinycast"
   "whatsapp"
 ]
