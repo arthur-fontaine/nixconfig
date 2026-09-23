@@ -2,7 +2,7 @@
 let
   settingsJson = (pkgs.formats.json { }).generate "claude-settings.json" {
     permissions.defaultMode = "auto";
-    model = "claude-fable-5-1[1m]";
+    model = "opus[1m]";
 
     enabledPlugins = {
       "skill-creator@claude-plugins-official" = true;
@@ -34,12 +34,12 @@ let
       };
     };
 
-    outputStyle = "ADHD Comms";
     effortLevel = "medium";
 
     modelSettings = {
       "claude-fable-5-1".effortLevel = "medium";
       "claude-opus-5".effortLevel = "medium";
+      "claude-opus-5-5".effortLevel = "high";
     };
 
     advisorModel = "fable";
@@ -87,7 +87,7 @@ in
   # ~/.claude.json, of which only the mcpServers entries below are managed.
   home.activation.claudeConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     claude_dir="${config.home.homeDirectory}/.claude"
-    $DRY_RUN_CMD mkdir -p "$claude_dir/skills/context7-mcp" "$claude_dir/rules" "$claude_dir/output-styles"
+    $DRY_RUN_CMD mkdir -p "$claude_dir/skills/context7-mcp" "$claude_dir/rules"
 
     $DRY_RUN_CMD cp -f ${settingsJson} "$claude_dir/settings.json"
     $DRY_RUN_CMD chmod u+w "$claude_dir/settings.json"
@@ -100,9 +100,6 @@ in
 
     $DRY_RUN_CMD cp -f ${./rules/context7.md} "$claude_dir/rules/context7.md"
     $DRY_RUN_CMD chmod u+w "$claude_dir/rules/context7.md"
-
-    $DRY_RUN_CMD cp -f ${./output-styles/adhd-comms.md} "$claude_dir/output-styles/adhd-comms.md"
-    $DRY_RUN_CMD chmod u+w "$claude_dir/output-styles/adhd-comms.md"
 
     # ~/.claude.json is Claude Code's own runtime state, so merge the managed
     # MCP servers into it instead of rewriting it. Servers added by hand (via

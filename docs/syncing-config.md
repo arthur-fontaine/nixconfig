@@ -40,7 +40,7 @@ Repo module: `modules/home/programs/claude/default.nix`.
 | Live file | How it is managed |
 | --- | --- |
 | `~/.claude/settings.json` | Generated from the Nix attribute set in the module. Port changes by hand. |
-| `~/.claude/CLAUDE.md`, `rules/`, `skills/`, `output-styles/` | Copied from the files next to the module. Copy edits back. |
+| `~/.claude/CLAUDE.md`, `rules/`, `skills/` | Copied from the files next to the module. Copy edits back. |
 | `~/.claude.json` | Claude Code's own state. Only the `mcpServers` entries the module lists are managed. Other servers you add with `claude mcp add` survive. |
 | `~/.claude/settings.local.json` | Not managed. Local only. |
 
@@ -59,7 +59,6 @@ To sync a file you edited under `~/.claude/`:
 
 ```sh
 cp ~/.claude/CLAUDE.md modules/home/programs/claude/CLAUDE.md
-cp ~/.claude/output-styles/adhd-comms.md modules/home/programs/claude/output-styles/
 ```
 
 To keep an MCP server you added with `claude mcp add`, move it into
