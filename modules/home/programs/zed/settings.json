@@ -203,4 +203,20 @@
     "delay_ms": 0,
     "enabled": true,
   },
+  "languages": {
+    "TypeScript": {
+      "language_servers": [
+        "typescript-ls",
+        "!vtsls",
+        "!typescript-language-server",
+      ],
+    },
+    "TSX": {
+      "language_servers": [
+        "typescript-ls",
+        "!vtsls",
+        "!typescript-language-server",
+      ],
+    },
+  },
 }
