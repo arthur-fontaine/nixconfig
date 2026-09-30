@@ -11,6 +11,7 @@
     ./droppy
     ./smallcast
     ./mise
+    ./mbx
     ./direnv
     ./codex
     ./opencode

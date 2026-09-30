@@ -24,6 +24,8 @@ in
       "npm:@mariozechner/pi-coding-agent" = "latest";
       "npm:osgrep" = "latest";
       "npm:sfw" = "latest";
+      # mbx: shared Cargo build cache. Not in the mise registry yet.
+      "github:jdx/mr-boxington" = "latest";
     };
 
     settings = {

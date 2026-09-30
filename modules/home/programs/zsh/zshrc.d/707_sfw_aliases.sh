@@ -11,6 +11,17 @@
 #   pip cache purge
 #   cargo cache --autoclean    # or: rm -rf ~/.cargo/registry/cache
 
+# cargo goes through mbx (shared build cache, see modules/home/programs/mbx)
+# when it's installed. sfw must stay the outer wrapper: mbx passes sfw's proxy
+# env down to the real cargo, the reverse would bypass the firewall. Falls
+# back to plain cargo on a fresh setup.
+cargo_cmd=cargo
+mbx_cargo_shim="$HOME/.local/share/mbx-cargo-shim/cargo"
+if command -v mbx &>/dev/null && [[ -x $mbx_cargo_shim ]]; then
+  cargo_cmd=$mbx_cargo_shim
+  alias cargo="${(q)cargo_cmd}"
+fi
+
 if command -v sfw &>/dev/null; then
   alias npm='sfw npm'
   alias npx='sfw npx'
@@ -21,5 +32,6 @@ if command -v sfw &>/dev/null; then
   alias bunx='sfw bunx'
   alias pip='sfw pip'
   alias uv='sfw uv'
-  alias cargo='sfw cargo'
+  alias cargo="sfw ${(q)cargo_cmd}"
 fi
+unset cargo_cmd mbx_cargo_shim
