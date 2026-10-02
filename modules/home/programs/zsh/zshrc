@@ -11,8 +11,16 @@ export ZSHRCD=~/.config/zsh/zshrc.d
 # Activate Antidote
 source /opt/homebrew/opt/antidote/share/antidote/antidote.zsh
 
-# Run the following command to generate the zsh_plugins.zsh file (make the plugins loading faster and optimized)
-# antidote bundle < ~/.config/zsh/zsh_plugins.txt > ~/.config/zsh/zsh_plugins.zsh
+# zsh_plugins.zsh is generated from zsh_plugins.txt (faster than `antidote load`).
+# Regenerate it when it is missing or references a bundle directory that is not on disk.
+() {
+  local plugins=~/.config/zsh/zsh_plugins.zsh line stale=0
+  [[ -s $plugins ]] || stale=1
+  for line in ${(M)${(f)"$(<$plugins 2>/dev/null)"}:#*fpath+=*}; do
+    [[ -d ${(e)${${line#*\"}%%\"*}} ]] || { stale=1; break }
+  done
+  (( stale )) && antidote bundle < ~/.config/zsh/zsh_plugins.txt >| $plugins
+}
 source ~/.config/zsh/zsh_plugins.zsh
 # If you want to load plugins from zsh_plugins.txt instead of the generated zsh_plugins.zsh file, uncomment the following line:
 # antidote load ~/.config/zsh/zsh_plugins.txt
