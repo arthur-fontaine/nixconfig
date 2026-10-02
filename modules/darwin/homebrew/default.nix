@@ -1,7 +1,8 @@
-{ config, lib, username, homeDirectory, nixconfigDir, ... }:
+{ config, lib, pkgs, username, homeDirectory, nixconfigDir, ... }:
 let
   brew = "${config.homebrew.prefix}/bin/brew";
   declaredTaps = map (t: t.name) config.homebrew.taps;
+  declaredCasks = map (c: c.name) config.homebrew.casks;
   brewLists = [
     (import ./brews-cli-shell.nix)
     (import ./brews-dev-workflow.nix)
@@ -91,6 +92,27 @@ in
         brew_user untap "$tap" || echo "warning: could not untap $tap" >&2
         brew_user untrust --tap "$tap" >/dev/null 2>&1 || true
       done
+    )
+
+    # An app deleted by hand leaves its Caskroom record, so brew bundle treats
+    # the cask as installed and never puts the app back. Drop the record of any
+    # declared cask whose app is gone, and the bundle step installs it again.
+    (
+      brew_user() { sudo -u ${username} -H "${brew}" "$@"; }
+      declared=" ${lib.concatStringsSep " " declaredCasks} "
+      brew_user info --cask --json=v2 --installed 2>/dev/null \
+        | ${pkgs.jq}/bin/jq -r '.casks[] | .full_token as $t
+            | [.artifacts[] | .app? // empty] | flatten
+            # An app entry is a source name, optionally followed by {target}.
+            | reduce .[] as $x ([]; if ($x | type) == "object" then .[:-1] + [$x.target] else . + [$x] end)
+            | .[] | [$t, .] | @tsv' \
+        | while IFS=$'\t' read -r cask app; do
+            case "$declared" in *" $cask "*) ;; *) continue ;; esac
+            case "$app" in /*) path="$app" ;; *) path="/Applications/$app" ;; esac
+            [ -e "$path" ] && continue
+            echo "$cask is installed but $path is missing, reinstalling it..." >&2
+            brew_user uninstall --cask --force "$cask" >/dev/null || echo "warning: could not reset $cask" >&2
+          done
     )
   '';
 
