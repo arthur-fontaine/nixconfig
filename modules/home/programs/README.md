@@ -11,4 +11,4 @@ Principles:
 Examples:
 - `git/` and `gh/` are fully declarative
 - `zsh/`, `ghostty/`, `zed/`, `karabiner/`, and `pi/` keep file payloads beside their module
-- `mise/`, `codex/`, and `opencode/` stay small and declarative
+- `mise/` and `codex/` stay small and declarative

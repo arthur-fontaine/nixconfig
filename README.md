@@ -9,8 +9,8 @@ This repo installs and manages:
 - macOS defaults
 - Homebrew formulae and casks
 - shell setup
-- Git, GitHub CLI, Zed, Ghostty, Karabiner, Pi, Codex, OpenCode, Mise, and more
-- development tooling such as VS Code extensions, Go tools, and Cargo binaries
+- Git, GitHub CLI, Zed, Ghostty, Karabiner, Pi, Codex, Mise, and more
+- development tooling such as Go tools and Cargo binaries
 
 It is designed for Apple Silicon Macs but it might work on Intel Macs too (I have not tested it).
 

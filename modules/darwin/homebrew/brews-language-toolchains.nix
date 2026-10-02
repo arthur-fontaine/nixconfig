@@ -5,5 +5,4 @@
   "go"
   "openjdk"
   "powershell"
-  "pyenv"
 ]

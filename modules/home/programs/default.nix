@@ -14,7 +14,6 @@
     ./mbx
     ./direnv
     ./codex
-    ./opencode
     ./pi
     ./claude
   ];

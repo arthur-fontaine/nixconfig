@@ -21,12 +21,6 @@ Keys currently expected, both consumed by the MCP servers declared in
 
 ## First-run app setup
 
-### Raycast
-
-- open Raycast
-- replace Spotlight
-- enable cloud sync
-
 ### 1Password
 
 - sign in
@@ -51,10 +45,6 @@ OpenLogi replaces Logi Options+. The managed keys live in
 - if scrolling dies after OpenLogi quits, the wheel is still diverted to the app.
   A rebuild relaunches it (or hands the wheel back if it won't start), or run
   `openlogi diag wheel --resolution low`
-
-### Lunar
-
-- set brightness hotkeys behavior as before
 
 ### Bartender
 

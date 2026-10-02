@@ -1,11 +1,5 @@
 { lib, ... }:
 let
-  vscodeExtensions = builtins.concatLists [
-    (import ./vscode-theme-and-ui.nix)
-    (import ./vscode-languages-and-frameworks.nix)
-    (import ./vscode-workflow-and-tools.nix)
-  ];
-
   goTools = import ./go-tools.nix;
   cargoBins = import ./cargo-bins.nix;
 
@@ -16,19 +10,6 @@ in
   # but are still easier to maintain as explicit lists than as many tiny Nix modules.
   home.activation.installDevTools = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
-
-    if command -v code >/dev/null 2>&1; then
-      installed_extensions=$(code --list-extensions 2>/dev/null | tr '[:upper:]' '[:lower:]')
-      while IFS= read -r extension; do
-        [ -n "$extension" ] || continue
-        ext_lower=$(echo "$extension" | tr '[:upper:]' '[:lower:]')
-        if ! echo "$installed_extensions" | grep -qx "$ext_lower"; then
-          code --install-extension "$extension" || true
-        fi
-      done <<'EOF'
-${asLines vscodeExtensions}
-EOF
-    fi
 
     if command -v go >/dev/null 2>&1; then
       while IFS= read -r tool; do

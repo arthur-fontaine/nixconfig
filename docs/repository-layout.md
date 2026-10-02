@@ -29,7 +29,7 @@ If you only want to install the setup on a Mac, start with the root `README.md` 
 - `modules/home/default.nix`: user-level module composition
 - `modules/home/core/`: environment and shared home-manager settings
 - `modules/home/programs/`: one subdirectory per configured program or tool
-- `modules/home/profiles/development/`: grouped development tooling such as VS Code extensions, Go tools, and Cargo installs
+- `modules/home/profiles/development/`: grouped development tooling such as Go tools and Cargo installs
 
 ## Declarative in Nix
 
@@ -40,7 +40,7 @@ These are modeled directly in Nix:
 - shell environment variables and PATH wiring
 - git and gh configuration
 - development tool installation hooks
-- Mise, Codex, OpenCode, and Pi base configuration
+- Mise, Codex, and Pi base configuration
 
 ## Kept as raw config files
 

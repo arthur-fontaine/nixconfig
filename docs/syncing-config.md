@@ -8,7 +8,7 @@ change back into the repo by hand, or the next `rebuild` reverts it.
 
 | Method | What it means | Programs |
 | --- | --- | --- |
-| Symlink | The live file points into the Nix store. It is read-only. Edit the repo, then `rebuild`. | Ghostty, Karabiner, zsh, Pi, OpenCode, Mise, git, gh |
+| Symlink | The live file points into the Nix store. It is read-only. Edit the repo, then `rebuild`. | Ghostty, Karabiner, zsh, Pi, Mise, git, gh |
 | Copy | `rebuild` copies the file and leaves it writable. The app can edit it. `rebuild` resets it. | Zed, Claude Code, Codex |
 | macOS defaults | `rebuild` writes the listed keys with `defaults import`. Keys the module does not list are left alone. | Droppy, Smallcast Beta, screenshots, system settings |
 

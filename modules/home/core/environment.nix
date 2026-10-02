@@ -2,7 +2,6 @@
 {
   home.sessionPath = [
     "$HOME/.local/bin"
-    "/Applications/Visual Studio Code.app/Contents/Resources/app/bin"
     "$HOME/.lmstudio/bin"
   ];
 

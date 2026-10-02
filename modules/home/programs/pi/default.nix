@@ -8,7 +8,6 @@
     quietStartup = true;
     theme = "light";
     packages = [
-      "git:github.com/MasuRii/pi-rtk-optimizer"
       "git:github.com/Aetherall/lmgrep"
       "git:github.com/jonjonrankin/pi-caveman"
     ];
@@ -35,7 +34,6 @@
   home.file.".pi/agent/extensions/input-box.ts".source = ./extensions/input-box.ts;
   home.file.".pi/agent/extensions/message-timestamps.ts".source = ./extensions/message-timestamps.ts;
   home.file.".pi/agent/extensions/auto-theme.ts".source = ./extensions/auto-theme.ts;
-  home.file.".pi/agent/extensions/pi-rtk-optimizer/config.json".source = ./extensions/pi-rtk-optimizer/config.json;
 
   home.activation.installPiExtensionDeps = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"

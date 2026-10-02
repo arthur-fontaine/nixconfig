@@ -16,11 +16,9 @@
   "lazygit"
   "neovim"
   "oha"
-  "rtk"
   "sem-cli"
   "swiftlint"
   "xcodegen"
   "xcodes"
-  "anomalyco/tap/opencode"
   "f1bonacc1/tap/process-compose"
 ]

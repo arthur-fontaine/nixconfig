@@ -1,7 +1,6 @@
 # Developer apps, browsers, and terminals
 [
   "android-commandlinetools"
-  "bruno"
   "claude-code@latest"
   "cyberduck"
   "datagrip"
@@ -12,9 +11,5 @@
   "lm-studio"
   "orbstack"
   "utm"
-  "visual-studio-code"
-  "zed"
   "zed@preview"
-  "zen"
-  "nkzw-tech/tap/codiff"
 ]

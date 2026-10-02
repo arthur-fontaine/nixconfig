@@ -3,7 +3,6 @@
 This profile groups development-oriented installs and activation hooks that span multiple tools.
 
 Contents:
-- grouped VS Code extension lists
 - Go tool installs
 - Cargo binary installs
 
