@@ -136,13 +136,29 @@ let
     os.chmod(tmp, 0o600)
     os.replace(tmp, dest)
   '';
+  # A cask upgrade during brew bundle boots the agent out of launchd and quits
+  # the app, and nothing starts it again. Opening the main app would re-register
+  # it but also shows the window, so open the agent bundle on its own. Its
+  # launchd job only loads through the app's SMAppService registration, so this
+  # run goes unsupervised until the next login.
+  #
   # OpenLogi flips the wheel to HID++ diverted reporting and forwards the events
   # itself. If it died while diverted the wheel is dead, and the flag lives in
   # the mouse, so it outlives the crash.
-  fixScroll = pkgs.writeShellScript "openlogi-fix-scroll.sh" ''
-    cli=/Applications/OpenLogi.app/Contents/MacOS/openlogi
+  ensureRunning = pkgs.writeShellScript "openlogi-ensure-running.sh" ''
+    app=/Applications/OpenLogi.app
+    cli="$app/Contents/MacOS/openlogi"
     [ -x "$cli" ] || exit 0
-    /usr/bin/pgrep -f openlogi-agent >/dev/null && exit 0
+    agent_running() { /usr/bin/pgrep -f openlogi-agent >/dev/null; }
+    agent_running && exit 0
+
+    /usr/bin/open -g "$app/Contents/Library/LoginItems/OpenLogi Agent.app" || true
+    for _ in {1..10}; do
+      agent_running && exit 0
+      /bin/sleep 1
+    done
+
+    echo "openlogi: the agent did not start, handing the wheel back" >&2
     "$cli" diag wheel 2>/dev/null | ${pkgs.gnugrep}/bin/grep -q "reporting=diverted" || exit 0
     "$cli" diag wheel --resolution low
   '';
@@ -152,6 +168,6 @@ in
     config_dir="${config.xdg.configHome}/openlogi"
     $DRY_RUN_CMD mkdir -p "$config_dir"
     $DRY_RUN_CMD ${mergeScript} "$config_dir/config.toml" ${configFile}
-    $DRY_RUN_CMD ${fixScroll}
+    $DRY_RUN_CMD ${ensureRunning}
   '';
 }
