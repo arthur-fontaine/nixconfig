@@ -26,5 +26,6 @@
     ./airbattery
     ./betterdisplay
     ./protonvpn
+    ./handy
   ];
 }
