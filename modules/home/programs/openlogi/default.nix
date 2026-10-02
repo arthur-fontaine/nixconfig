@@ -19,7 +19,7 @@ let
   };
 
   toml = pkgs.formats.toml { };
-  configFile = toml.generate "openlogi-config.toml" {
+  settings = {
     schema_version = 7;
 
     app_settings = {
@@ -77,6 +77,7 @@ let
       };
     };
   };
+  configFile = toml.generate "openlogi-config.toml" settings;
 
   mergeScript = pkgs.writeScript "merge-openlogi-config.py" ''
     #!${pkgs.python3.withPackages (ps: [ ps.toml ])}/bin/python3
@@ -175,6 +176,18 @@ let
   '';
 in
 {
+  nixconfig.sync.openlogi = {
+    method = "toml-merge";
+    managed = settings;
+    live = "~/.config/openlogi/config.toml";
+    repo = "modules/home/programs/openlogi/default.nix";
+    ignore = [
+      "^app_settings\\.update_prompt_seen$"
+      "^keyboard$"
+      "^devices\\.[^.]+\\.(identity|links|disabled_gestures)$"
+    ];
+  };
+
   home.activation.openlogiConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     config_dir="${config.xdg.configHome}/openlogi"
     $DRY_RUN_CMD mkdir -p "$config_dir"

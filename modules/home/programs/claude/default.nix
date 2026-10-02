@@ -57,7 +57,7 @@ let
   # User-scope MCP servers. Claude Code expands ${VAR} in these at connect
   # time, so tokens stay in ~/.config/.env (see zshrc.d/902_dotenv.sh) rather
   # than in this repo.
-  mcpServersJson = (pkgs.formats.json { }).generate "claude-mcp-servers.json" {
+  mcpServers = {
     context7 = {
       type = "http";
       url = "https://mcp.context7.com/mcp";
@@ -78,8 +78,44 @@ let
       env = { };
     };
   };
+  mcpServersJson = (pkgs.formats.json { }).generate "claude-mcp-servers.json" mcpServers;
 in
 {
+  nixconfig.sync = {
+    claude-settings = {
+      method = "copy";
+      managed = settingsJson;
+      live = "~/.claude/settings.json";
+      repo = "modules/home/programs/claude/default.nix (settingsJson)";
+    };
+    claude-md = {
+      method = "copy";
+      managed = ./CLAUDE.md;
+      live = "~/.claude/CLAUDE.md";
+      repo = "modules/home/programs/claude/CLAUDE.md";
+    };
+    claude-rule-context7 = {
+      method = "copy";
+      managed = ./rules/context7.md;
+      live = "~/.claude/rules/context7.md";
+      repo = "modules/home/programs/claude/rules/context7.md";
+    };
+    claude-skill-context7 = {
+      method = "copy";
+      managed = ./skills/context7-mcp/SKILL.md;
+      live = "~/.claude/skills/context7-mcp/SKILL.md";
+      repo = "modules/home/programs/claude/skills/context7-mcp/SKILL.md";
+    };
+    claude-mcp-servers = {
+      method = "json-merge";
+      managed = { inherit mcpServers; };
+      live = "~/.claude.json";
+      repo = "modules/home/programs/claude/default.nix (mcpServers)";
+      # Everything outside mcpServers is Claude Code's own state.
+      ignore = [ "^(?!mcpServers\\.)" ];
+    };
+  };
+
   # Copy settings.json and skills instead of symlinking so Claude Code can
   # write to them (toggling plugins, changing theme via /config, skill-creator
   # adding skills). Managed files reset to this repo's version on each

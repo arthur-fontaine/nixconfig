@@ -1,5 +1,12 @@
 { config, lib, ... }:
 {
+  nixconfig.sync.neovim-lockfile = {
+    method = "copy";
+    managed = ./lazy-lock.json;
+    live = "~/.config/nvim/lazy-lock.json";
+    repo = "modules/home/programs/neovim/lazy-lock.json";
+  };
+
   xdg.configFile."nvim/init.lua".source = ./init.lua;
   xdg.configFile."nvim/lua" = {
     source = ./lua;

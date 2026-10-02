@@ -1,7 +1,7 @@
 { pkgs, lib, config, ... }:
 let
   toml = pkgs.formats.toml { };
-  configFile = toml.generate "codex-config.toml" {
+  settings = {
     model = "gpt-5.6-terra";
     model_reasoning_effort = "medium";
 
@@ -26,6 +26,7 @@ let
       };
     };
   };
+  configFile = toml.generate "codex-config.toml" settings;
 
   mergeScript = pkgs.writeScript "merge-codex-config.py" ''
     #!${pkgs.python3.withPackages (ps: [ ps.toml ])}/bin/python3
@@ -53,6 +54,16 @@ let
   '';
 in
 {
+  nixconfig.sync.codex = {
+    method = "toml-merge";
+    managed = settings;
+    live = "~/.config/codex/config.toml";
+    repo = "modules/home/programs/codex/default.nix";
+    # Trusted project paths, marketplaces, and what the ChatGPT app adds for
+    # computer use are machine state.
+    ignore = [ "^(projects|marketplaces|mcp_servers|notify|shell_environment_policy)$" ];
+  };
+
   home.activation.codexConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     config_dir="${config.xdg.configHome}/codex"
     config_file="$config_dir/config.toml"

@@ -8,14 +8,32 @@ change back into the repo by hand, or the next `rebuild` reverts it.
 
 | Method | What it means | Programs |
 | --- | --- | --- |
-| Symlink | The live file points into the Nix store. It is read-only. Edit the repo, then `rebuild`. | Ghostty, Karabiner, zsh, Pi, Mise, git, gh |
-| Copy | `rebuild` copies the file and leaves it writable. The app can edit it. `rebuild` resets it. | Zed, Claude Code, Codex |
-| macOS defaults | `rebuild` writes the listed keys with `defaults import`. Keys the module does not list are left alone. | Droppy, Smallcast Beta, screenshots, system settings |
+| Symlink | The live file points into the Nix store. It is read-only. Edit the repo, then `rebuild`. | Ghostty, Karabiner, zsh, Pi, Mise, git, gh, Neovim (except its lockfile), ssh |
+| Copy | `rebuild` copies the file and leaves it writable. The app can edit it. `rebuild` resets it. | Zed, Claude Code, Neovim lockfile, pi-caveman, 1Password SSH agent |
+| Merge | `rebuild` merges the listed keys into a file the app also writes. Keys the module does not list are left alone. | Codex, OpenLogi, LM Studio, Claude desktop, Claude Code MCP servers |
+| macOS defaults | `rebuild` writes the listed keys with `defaults import`. Keys the module does not list are left alone. | Droppy, Smallcast Beta, Bartender, Keka, AirBattery, BetterDisplay, ProtonVPN, screenshots, system settings |
+
+## Find what changed
+
+```sh
+scripts/config-drift.py
+```
+
+It compares every managed file and defaults domain with the live Mac and
+names the repo file to edit. `changed` means the live value differs from the
+repo. `unmanaged` lists live keys the repo does not set yet, minus the app
+state each module ignores. Exit status is 1 when anything changed.
+
+Each module registers what it manages in `nixconfig.sync` (see
+`modules/home/lib/default.nix`). A new module needs an entry there to be
+covered.
+
+In Claude Code, the repo's `sync-config` skill walks through the whole loop.
 
 ## The loop
 
 1. Change the setting in the app.
-2. Copy the change into the module (see the program sections below).
+2. Run `scripts/config-drift.py` and copy the change into the module it names (see the program sections below).
 3. Commit and push.
 4. Run `rebuild`.
 5. Restart the app if it did not pick the change up.
@@ -95,8 +113,70 @@ Rules for the module:
 
 - Scalar keys go in `targets.darwin.defaults`.
 - Hotkeys are JSON text. Write them with `builtins.toJSON`.
-- Keys the app stores as `data` (`aiConnections`, `aiDefaultModel`, `extensionAppearances`) go in the `dataKeys` set. The activation step writes them with `defaults write -data`.
+- Keys the app stores as `data` (`aiConnections`, `aiDefaultModel`, `extensionAppearances`) go in the `dataKeys` set, which feeds `nixconfig.defaultsData`. The activation step writes them with `defaults write -data`.
 - Extensions and their preferences live in `~/Library/Application Support/com.smallcast.app.beta/`. They are not managed.
+
+## Bartender 7
+
+Domain: `com.surteesstudios.Bartender`. Repo module: `modules/home/programs/bartender/default.nix`.
+
+Only the behaviour and style settings are managed. The item layout
+(`GoldenGateProfiles`, `GoldenGateHiddenItemOrderKeys`) is not: it lists every
+menu bar item on this Mac by position, including work-managed agents. Arrange
+items in Bartender itself.
+
+## Keka, AirBattery, BetterDisplay, ProtonVPN
+
+Plain defaults domains, one module each under `modules/home/programs/`:
+`com.aone.keka`, `com.lihaoyun6.AirBattery`, `pro.betterdisplay.BetterDisplay`,
+`ch.protonvpn.mac`.
+
+- BetterDisplay keys named `<setting>@Display:<tag>` are tied to displays this Mac has seen. Only app-wide keys are managed.
+- ProtonVPN stores per-account settings under keys suffixed with the account email. Those stay out of the repo.
+- Keka's archive file associations live in `modules/darwin/core/defaults/archives.nix`.
+
+## LM Studio
+
+Repo module: `modules/home/programs/lmstudio/default.nix`. Merged into
+`~/.lmstudio/settings.json` and `~/.lmstudio/.internal/http-server-config.json`.
+
+The server port must match Smallcast's `aiBaseURL`. Hugging Face tokens,
+dismissed popups, and first-run flags stay out. Quit LM Studio before
+`rebuild`, or it may write its in-memory settings back over the merge.
+
+## Claude desktop
+
+Repo module: `modules/home/programs/claude-desktop/default.nix`. Merged into
+`~/Library/Application Support/Claude/claude_desktop_config.json`. Only
+`preferences` keys are managed. The rest is state keyed by account and device.
+
+## Neovim
+
+Live files: `~/.config/nvim/`. Repo files: `modules/home/programs/neovim/`.
+`init.lua` and `lua/` are symlinked. `lazy-lock.json` is copied, because
+`:Lazy update` rewrites it. To keep updated plugin pins:
+
+```sh
+cp ~/.config/nvim/lazy-lock.json modules/home/programs/neovim/
+```
+
+## ssh and the 1Password SSH agent
+
+`~/.ssh/config` comes from `modules/home/programs/ssh/default.nix`. It
+includes `~/.ssh/config.local`, which is not managed: put hosts that do not
+belong in a public repo there.
+
+`~/.config/1Password/ssh/agent.toml` comes from
+`modules/home/programs/onepassword/default.nix`. Git commit signing goes
+through this agent, so check `ssh-add -l` against the agent socket after
+changing the vault list.
+
+## Not managed
+
+- Settings synced to an account: Spotify, Discord, Chrome, Figma, Notion, Linear, Teams, WhatsApp, ChatGPT.
+- Apps with only window state: DataGrip, Cyberduck, HTTPie, OrbStack (its VM settings change with `orb config set`), UTM.
+- Smallcast quicklinks and extensions, which live in SQLite and `~/Library/Application Support/com.smallcast.app.beta/`.
+- The Dock's app list.
 
 ## Homebrew apps
 

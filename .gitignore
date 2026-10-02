@@ -1,3 +1,4 @@
 result
 hosts/local.nix
 hosts/local.nix.bak-*
+__pycache__/

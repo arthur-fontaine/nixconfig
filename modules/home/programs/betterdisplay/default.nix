@@ -1,5 +1,19 @@
 { ... }:
 {
+  nixconfig.sync.betterdisplay = {
+    method = "defaults";
+    live = "pro.betterdisplay.BetterDisplay";
+    repo = "modules/home/programs/betterdisplay/default.nix";
+    ignore = [
+      "@"
+      "^Paddle-"
+      "^menuLevel"
+      "^settings(Pane|Display)"
+      "^(buildNumber|appAlreadyLaunched|displayConfigurationId|displayTagIDs|tagIDCounter|sheetSizeSaveEntries|onboarding[A-Za-z]+)$"
+      "^(AppleTextDirection|NSForceRightToLeftWritingDirection)$"
+    ];
+  };
+
   # Only app-wide settings. Every `<setting>@Display:<tag>` key is bound to a
   # tag BetterDisplay assigns to each display it has seen, so it does not
   # carry over to another Mac.

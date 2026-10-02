@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ ... }:
 let
   domain = "com.smallcast.app.beta";
 
@@ -23,6 +23,16 @@ let
   };
 in
 {
+  nixconfig.sync.smallcast = {
+    method = "defaults";
+    live = "com.smallcast.app.beta";
+    repo = "modules/home/programs/smallcast/default.nix";
+    ignore = [
+      "^bound[A-Za-z]+IDs$"
+      "^(aiInstalledProviders|customCommands|AppleShowScrollBars)$"
+    ];
+  };
+
   targets.darwin.defaults.${domain} = {
     showInMenuBar = true;
     compactMode = true;
@@ -52,5 +62,5 @@ in
     aiWebSearch = true;
   };
 
-  home.activation.smallcastDataDefaults = import ../../lib/defaults-data.nix { inherit lib; } domain dataKeys;
+  nixconfig.defaultsData.${domain} = dataKeys;
 }

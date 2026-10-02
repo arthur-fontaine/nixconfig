@@ -12,6 +12,13 @@
     NIXCONFIG_HOST = hostName;
   };
 
+  nixconfig.sync.screenshots = {
+    method = "defaults";
+    live = "com.apple.screencapture";
+    repo = "modules/home/core/environment.nix";
+    ignore = [ "^last-" "^location-" "^(style|target|target-[a-z]+|video)$" ];
+  };
+
   targets.darwin.defaults = {
     "com.apple.screencapture" = {
       location = "~/Pictures/Screenshots";

@@ -1,6 +1,7 @@
 { username, homeDirectory, ... }:
 {
   imports = [
+    ./lib
     ./core
     ./programs
     ./profiles/development

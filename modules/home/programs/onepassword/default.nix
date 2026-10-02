@@ -9,6 +9,13 @@ let
   };
 in
 {
+  nixconfig.sync.onepassword-ssh-agent = {
+    method = "copy";
+    managed = agentToml;
+    live = "~/.config/1Password/ssh/agent.toml";
+    repo = "modules/home/programs/onepassword/default.nix";
+  };
+
   # Copied with mode 600 instead of symlinked: the Nix store is world-readable
   # and 1Password keeps this directory private.
   home.activation.onepasswordSshAgent = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

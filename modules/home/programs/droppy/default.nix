@@ -1,5 +1,28 @@
 { ... }:
 {
+  nixconfig.sync.droppy = {
+    method = "defaults";
+    live = "iordv.Droppy";
+    repo = "modules/home/programs/droppy/default.nix";
+    ignore = [
+      "^(gumroad|license)"
+      "^Droppy\\."
+      "^(didMigrate|didRepair|didRestore|didSeed|didNormalize|didPreserve|didRegister|didDisable)"
+      "^dropletInstallCounted_"
+      "^extension_removed_"
+      "^extensionsShop\\."
+      "^updateChecker_"
+      "_installed(_cache)?$"
+      "_enabled$"
+      "Tracked$"
+      "Granted$"
+      "^(hasCompletedOnboarding|hasSeenExtraSeatsOnboarding|onboardingResumeScene|appLanguageDefaultSeeded|lastSessionCrashed|lastCleanExitTimestamp|spotifyClientId|focus_filterEverConfigured)$"
+      "^(externalDisplayVisibilityRules|todo_syncRemindersListIDs|terminalNotch_|droppyQuickNotes_v1|ring_|betterMice_scrollSpeed)"
+      "^(pomodoro|voiceTranscribe)"
+      "^(aiBackgroundRemovalInstalled|lastAutoUpdateCheck|thunderstorm_unlocked)$"
+    ];
+  };
+
   # Same keys Droppy's own Settings > Export writes. License, caches, migration
   # flags, and per-machine ids (display and Reminders list UUIDs) stay out.
   targets.darwin.defaults."iordv.Droppy" = {

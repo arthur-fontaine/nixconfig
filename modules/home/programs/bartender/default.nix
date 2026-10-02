@@ -1,8 +1,20 @@
-{ lib, ... }:
+{ ... }:
 let
   domain = "com.surteesstudios.Bartender";
 in
 {
+  nixconfig.sync.bartender = {
+    method = "defaults";
+    live = "com.surteesstudios.Bartender";
+    repo = "modules/home/programs/bartender/default.nix";
+    ignore = [
+      "^GoldenGate(Profiles|HiddenItemOrderKeys|AlwaysHiddenItemOrderKeys|ColdStartCatalogV1|AXOwnerFailureLedgerV1|MoveFailureLedgerV1|SelectedProfileID|ProfileSchemaVersion)$"
+      "^(AdjustedPrefs|BartenderSeven|bartendersix|onboarding_|shouldShow|isNewUser|ResetPermission|SK2?|MenuBarAgentPreferences|MenuBarColoring|FRFeedback|com\\.surteesstudios)"
+      "^NSStatusItem "
+      "^SU(FeedURL)$"
+    ];
+  };
+
   # Item layout (GoldenGateProfiles, *ItemOrderKeys) stays out: it lists every
   # menu bar item on this Mac, including work-managed agents, by position.
   # Trial state, failure ledgers, and per-display coloring stay out too.
@@ -26,7 +38,7 @@ in
     SUSendProfileInfo = false;
   };
 
-  home.activation.bartenderDataDefaults = import ../../lib/defaults-data.nix { inherit lib; } domain {
+  nixconfig.defaultsData.${domain} = {
     GoldenGateNewItemsPlacement = { section = "hidden"; };
     stored_style = {
       baseStyle.standard = { };

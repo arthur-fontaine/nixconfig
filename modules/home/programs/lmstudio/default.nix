@@ -3,7 +3,7 @@ let
   json = pkgs.formats.json { };
 
   # Smallcast's AI provider points at this port (see ../smallcast).
-  httpServer = json.generate "lmstudio-http-server-config.json" {
+  httpServerSettings = {
     autoStartOnLaunch = true;
     port = 49281;
     cors = false;
@@ -18,7 +18,7 @@ let
 
   # First-run flags, dismissed popups, Hugging Face tokens, and the downloads
   # folder stay out.
-  settings = json.generate "lmstudio-settings.json" {
+  appSettings = {
     language = "en";
     sidebar = {
       showButtonNames = false;
@@ -123,11 +123,34 @@ let
     };
   };
 
+  httpServer = json.generate "lmstudio-http-server-config.json" httpServerSettings;
+  settings = json.generate "lmstudio-settings.json" appSettings;
+
   # LM Studio rewrites both files, so merge into them instead of replacing.
   merge = import ../../lib/merge-json.nix { inherit pkgs; };
   lmsHome = "${config.home.homeDirectory}/.lmstudio";
 in
 {
+  nixconfig.sync = {
+    lmstudio-server = {
+      method = "json-merge";
+      managed = httpServerSettings;
+      live = "~/.lmstudio/.internal/http-server-config.json";
+      repo = "modules/home/programs/lmstudio/default.nix (httpServerSettings)";
+    };
+    lmstudio-settings = {
+      method = "json-merge";
+      managed = appSettings;
+      live = "~/.lmstudio/settings.json";
+      repo = "modules/home/programs/lmstudio/default.nix (appSettings)";
+      ignore = [
+        "^(appFirstLoad|pre030ChatsMigrated|appPostUpdateNotificationPending|downloadsFolder|cliInstalled|appIntroAcceptedForBuild|toggledConfigDropdowns)$"
+        "^(dismissed[A-Za-z]+|hf[A-Za-z]+Token)$"
+        "^developer\\.attemptedInstallLmsCliOnStartup$"
+      ];
+    };
+  };
+
   home.activation.lmstudioConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     ${merge httpServer "${lmsHome}/.internal/http-server-config.json"}
     ${merge settings "${lmsHome}/settings.json"}

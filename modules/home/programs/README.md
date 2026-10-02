@@ -12,3 +12,6 @@ Examples:
 - `git/` and `gh/` are fully declarative
 - `zsh/`, `ghostty/`, `zed/`, `karabiner/`, and `pi/` keep file payloads beside their module
 - `mise/` and `codex/` stay small and declarative
+- `droppy/`, `smallcast/`, `bartender/`, `keka/` and the other app modules set macOS defaults
+
+Every module registers what it manages in `nixconfig.sync` so `scripts/config-drift.py` can compare it with the live Mac. Shared helpers live in `../lib/`.

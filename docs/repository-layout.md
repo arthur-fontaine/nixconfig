@@ -29,6 +29,7 @@ If you only want to install the setup on a Mac, start with the root `README.md` 
 - `modules/home/default.nix`: user-level module composition
 - `modules/home/core/`: environment and shared home-manager settings
 - `modules/home/programs/`: one subdirectory per configured program or tool
+- `modules/home/lib/`: shared helpers and the `nixconfig.*` options (plist data keys, the sync manifest, JSON merging)
 - `modules/home/profiles/development/`: grouped development tooling such as Go tools and Cargo installs
 
 ## Declarative in Nix
@@ -51,6 +52,12 @@ These remain literal files, colocated with the module that owns them:
 - Karabiner
 - Pi extensions
 - zsh prompt, plugins, completions, and `zshrc.d` fragments
+
+## Scripts and skills
+
+- `scripts/bootstrap-macos.sh`: first-time setup of a Mac
+- `scripts/config-drift.py`: compares the managed config with the live Mac
+- `.claude/skills/sync-config/`: Claude Code skill that ports app settings back into the repo
 
 ## Syncing changes back
 

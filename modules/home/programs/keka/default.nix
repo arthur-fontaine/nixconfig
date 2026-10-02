@@ -1,5 +1,17 @@
 { ... }:
 {
+  nixconfig.sync.keka = {
+    method = "defaults";
+    live = "com.aone.keka";
+    repo = "modules/home/programs/keka/default.nix";
+    ignore = [
+      "^(Bookmarks|OriginalHandlers|KekaLaunchTimes|Version|OldServicesChecked|LastLogsCompressionDate|WelcomeWindowSafeDelay)$"
+      "^(Already|Selected|DevLog|DevSave)"
+      "Dialog$"
+      "^SetAsDefaultApp$"
+    ];
+  };
+
   # Folder bookmarks, launch counters, and first-run dialogs stay out. The
   # archive file associations live in modules/darwin/core/defaults/archives.nix.
   targets.darwin.defaults."com.aone.keka" = {

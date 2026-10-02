@@ -8,6 +8,13 @@ let
   };
 in
 {
+  nixconfig.sync.pi-caveman = {
+    method = "copy";
+    managed = cavemanJson;
+    live = "~/.pi/agent/caveman.json";
+    repo = "modules/home/programs/pi/default.nix (cavemanJson)";
+  };
+
   home.file.".pi/agent/settings.json".text = builtins.toJSON {
     lastChangelogVersion = "0.66.1";
     defaultProvider = "openai-codex";

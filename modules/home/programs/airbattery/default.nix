@@ -1,5 +1,15 @@
 { ... }:
 {
+  nixconfig.sync.airbattery = {
+    method = "defaults";
+    live = "com.lihaoyun6.AirBattery";
+    repo = "modules/home/programs/airbattery/default.nix";
+    ignore = [
+      "^(deviceName|machineType|neverRemindMe|alertList)$"
+      "^NSStatusItem "
+    ];
+  };
+
   # deviceName and machineType describe this Mac and are detected at launch.
   targets.darwin.defaults."com.lihaoyun6.AirBattery" = {
     launchAtLogin = true;
