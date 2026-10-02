@@ -16,5 +16,15 @@
     ./codex
     ./pi
     ./claude
+    ./claude-desktop
+    ./lmstudio
+    ./neovim
+    ./ssh
+    ./onepassword
+    ./bartender
+    ./keka
+    ./airbattery
+    ./betterdisplay
+    ./protonvpn
   ];
 }

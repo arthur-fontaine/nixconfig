@@ -2,8 +2,7 @@
 let
   domain = "com.smallcast.app.beta";
 
-  # Smallcast reads these three keys with `data(forKey:)`, so they must be
-  # written as plist data; `targets.darwin.defaults` has no data type.
+  # Smallcast reads these three keys with `data(forKey:)`.
   dataKeys = {
     aiConnections = [
       {
@@ -22,11 +21,6 @@ let
       coffee = { tint = "brown"; symbol = "cup.and.heat.waves"; };
     };
   };
-
-  writeData = key: value: ''
-    run /usr/bin/defaults write ${domain} ${key} -data \
-      "$(printf '%s' ${lib.escapeShellArg (builtins.toJSON value)} | /usr/bin/xxd -p | tr -d '\n')"
-  '';
 in
 {
   targets.darwin.defaults.${domain} = {
@@ -58,6 +52,5 @@ in
     aiWebSearch = true;
   };
 
-  home.activation.smallcastDataDefaults = lib.hm.dag.entryAfter [ "setDarwinDefaults" ]
-    (lib.concatStrings (lib.mapAttrsToList writeData dataKeys));
+  home.activation.smallcastDataDefaults = import ../../lib/defaults-data.nix { inherit lib; } domain dataKeys;
 }
