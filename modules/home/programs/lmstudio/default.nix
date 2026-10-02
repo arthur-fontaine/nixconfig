@@ -123,6 +123,26 @@ let
     };
   };
 
+  # Each entry is what `lms ls --json` reports as the model's `path`: Hub models
+  # are `owner/model@variant`, Hugging Face ones `owner/repo/file`.
+  models = [
+    "google/gemma-4-12b-qat@q4_0"
+    "google/gemma-4-e2b@q4_k_m"
+    "liquid/lfm2.5-1.2b@8bit"
+    "qwen/qwen3.5-4b@q4_k_m"
+    "zai-org/glm-4.6v-flash@4bit"
+    "LiquidAI/LFM2.5-VL-1.6B-Extract-GGUF/LFM2.5-VL-1.6B-Extract-Q8_0.gguf"
+    "LiquidAI/LFM2.5-VL-450M-Extract-GGUF/LFM2.5-VL-450M-Extract-Q8_0.gguf"
+    "lmstudio-community/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0.gguf"
+
+    # Embeddings
+    "awhiteside/CodeRankEmbed-Q8_0-GGUF/coderankembed-q8_0.gguf"
+    "keisuke-miyako/harrier-oss-v1-270m-gguf-q8_0/harrier-oss-v1-270m-Q8_0.gguf"
+    "Mungert/nomic-embed-code-GGUF/nomic-embed-code-q8_0.gguf"
+    "nomic-ai/nomic-embed-text-v1.5-GGUF/nomic-embed-text-v1.5.Q4_K_M.gguf"
+    "Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf"
+  ];
+
   httpServer = json.generate "lmstudio-http-server-config.json" httpServerSettings;
   settings = json.generate "lmstudio-settings.json" appSettings;
 
@@ -154,5 +174,34 @@ in
   home.activation.lmstudioConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     ${merge httpServer "${lmsHome}/.internal/http-server-config.json"}
     ${merge settings "${lmsHome}/settings.json"}
+  '';
+
+  # `lms get` takes ~1.5s even for a model that is already there, so only call
+  # it for models missing from `lms ls`. The app installs lms on first launch.
+  home.activation.lmstudioModels = lib.hm.dag.entryAfter [ "lmstudioConfig" ] ''
+    lms="${lmsHome}/bin/lms"
+    if [ -x "$lms" ]; then
+      present="$("$lms" ls --json 2>/dev/null | ${pkgs.jq}/bin/jq -r '.[].path' || true)"
+      while IFS= read -r model; do
+        [ -n "$model" ] || continue
+        printf '%s\n' "$present" | grep -qxF "''${model%@*}" && continue
+
+        case "$model" in
+          */*/*)
+            repo="$(printf '%s' "$model" | cut -d/ -f1-2)"
+            file="$(printf '%s' "$model" | cut -d/ -f3-)"
+            source="https://huggingface.co/$repo/blob/main/$file"
+            ;;
+          *) source="$model" ;;
+        esac
+
+        echo "Downloading LM Studio model $model"
+        run "$lms" get "$source" --yes </dev/null || echo "Failed to download $model" >&2
+      done <<'EOF'
+    ${lib.concatStringsSep "\n" models}
+    EOF
+    else
+      echo "Skipping LM Studio models: launch LM Studio once to install lms"
+    fi
   '';
 }
