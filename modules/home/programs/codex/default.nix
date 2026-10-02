@@ -5,6 +5,15 @@ let
     model = "gpt-5.6-terra";
     model_reasoning_effort = "medium";
 
+    desktop = {
+      conversationDetailMode = "STEPS_PROSE";
+      followUpQueueMode = "queue";
+      dock-icon-preference = "app-default";
+      open-link-in-target-preference = "external-browser";
+    };
+
+    features.js_repl = false;
+
     plugins = {
       "google-calendar@openai-curated" = { enabled = true; };
       "gmail@openai-curated" = { enabled = true; };

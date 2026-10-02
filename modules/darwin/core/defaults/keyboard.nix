@@ -1,4 +1,7 @@
 { ... }:
+let
+  nbsp = builtins.fromJSON ''"\u00a0"'';
+in
 {
   system.defaults.CustomUserPreferences."com.apple.HIToolbox" = {
     AppleCurrentKeyboardLayoutInputSourceID = "com.apple.keylayout.USInternational-PC";
@@ -28,5 +31,12 @@
         InputSourceKind = "Non Keyboard Input Method";
       }
     ];
+  };
+
+  # French guillemets with no-break spaces for smart double quotes.
+  system.defaults.CustomUserPreferences.NSGlobalDomain = {
+    NSUserQuotesArray = [ "«${nbsp}" "${nbsp}»" "‘" "’" ];
+    KB_DoubleQuoteOption = "« abc »";
+    KB_SingleQuoteOption = "‘abc’";
   };
 }

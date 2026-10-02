@@ -122,6 +122,8 @@ in
     };
 
     lfs.enable = true;
+
+    ignores = [ "**/.claude/settings.local.json" ];
   };
 
   programs.delta = {

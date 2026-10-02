@@ -25,7 +25,18 @@ let
     app_settings = {
       launch_at_login = true;
       check_for_updates = false;
+      auto_install_updates = false;
+      show_in_menu_bar = true;
+      capture_mouse_events = true;
+      smooth_scroll = false;
+      vertical_scroll_sensitivity = 14;
+      thumbwheel_sensitivity = 14;
+      app_icon = "openlogi";
+      auto_download_assets = true;
+      asset_source = "automatic";
       appearance = "system";
+      ui_scale = "normal";
+      device_view_mode = "grid";
     };
 
     devices.${devicePlaceholder} = {

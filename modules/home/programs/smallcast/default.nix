@@ -38,11 +38,15 @@ in
     };
     "hotkey.togglePalette" = builtins.toJSON { combo._0 = { carbonKeyCode = 49; carbonModifiers = 256; }; };
     "hotkey.toggleEmoji" = builtins.toJSON { combo._0 = { carbonKeyCode = 80; carbonModifiers = 0; }; };
+    "hotkey.command:search-emoji" = builtins.toJSON { combo._0 = { carbonKeyCode = 80; carbonModifiers = 0; }; };
 
     fallbackCommandsEnabled = true;
     fallbackCommands = [ "search-web" "search-files" "ask-ai" ];
     fileSearchEnabled = true;
     calendarEnabled = true;
+    calendarMenuBarDisplay = 0;
+    quicklinksEnabled = true;
+    emojiSuggestionsEnabled = true;
     windowManagementEnabled = true;
     customCommandsEnabled = false;
     extensionsEnabled = true;

@@ -55,6 +55,7 @@
     hudVolumeColorPreset = "default";
     enableBetterDisplayCompatibility = true;
     enableMultiLiveActivities = true;
+    enableVPNConnectedHUD = true;
 
     # Lock screen
     enableLockScreenFeatures = true;

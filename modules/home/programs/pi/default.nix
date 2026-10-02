@@ -1,4 +1,12 @@
-{ lib, ... }:
+{ lib, pkgs, ... }:
+let
+  # pi-caveman rewrites this file when the level changes, so copy it instead
+  # of symlinking it.
+  cavemanJson = (pkgs.formats.json { }).generate "pi-caveman.json" {
+    defaultLevel = "full";
+    showStatus = true;
+  };
+in
 {
   home.file.".pi/agent/settings.json".text = builtins.toJSON {
     lastChangelogVersion = "0.66.1";
@@ -34,6 +42,12 @@
   home.file.".pi/agent/extensions/input-box.ts".source = ./extensions/input-box.ts;
   home.file.".pi/agent/extensions/message-timestamps.ts".source = ./extensions/message-timestamps.ts;
   home.file.".pi/agent/extensions/auto-theme.ts".source = ./extensions/auto-theme.ts;
+
+  home.activation.piCavemanConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    $DRY_RUN_CMD mkdir -p "$HOME/.pi/agent"
+    $DRY_RUN_CMD cp -f ${cavemanJson} "$HOME/.pi/agent/caveman.json"
+    $DRY_RUN_CMD chmod u+w "$HOME/.pi/agent/caveman.json"
+  '';
 
   home.activation.installPiExtensionDeps = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
