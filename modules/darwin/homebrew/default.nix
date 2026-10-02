@@ -56,6 +56,7 @@ in
       # so unlisted formulae/casks are zapped non-interactively during activation.
       cleanup = "zap";
       upgrade = true;
+      extraFlags = [ "--verbose" ];
     };
 
     taps = import ./taps.nix ++ [
