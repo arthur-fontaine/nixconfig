@@ -23,7 +23,6 @@ in
     quietStartup = true;
     theme = "light";
     packages = [
-      "git:github.com/Aetherall/lmgrep"
       "git:github.com/jonjonrankin/pi-caveman"
     ];
   };
@@ -38,8 +37,6 @@ in
     ];
     readWritePaths = [
       "~/.pi/agent/extensions/"
-      "~/.local/state/lmgrep"
-      "~/Library/Application Support/lmgrep"
       "~/Library/pnpm/.tools/pnpm"
     ];
   };

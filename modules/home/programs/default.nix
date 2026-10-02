@@ -17,7 +17,7 @@
     ./pi
     ./claude
     ./claude-desktop
-    ./lmstudio
+    ./llama
     ./neovim
     ./ssh
     ./onepassword

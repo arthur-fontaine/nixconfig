@@ -7,10 +7,11 @@ let
     aiConnections = [
       {
         id = "3DB7ADBD-1693-417F-80DA-B8437B92C2A3";
-        name = "";
-        provider = "lmStudio";
-        baseURL = "http://localhost:49281/v1";
-        models = [ "liquid/lfm2.5-1.2b" ];
+        name = "Llama";
+        # Llama.app's server (see ../llama).
+        provider = "openAICompatible";
+        baseURL = "http://localhost:9931/v1";
+        models = [ "LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q8_0" ];
         visionModels = [ ];
       }
     ];
@@ -30,6 +31,8 @@ in
     ignore = [
       "^bound[A-Za-z]+IDs$"
       "^(aiInstalledProviders|customCommands|AppleShowScrollBars)$"
+      # Left over from LM Studio; the current build no longer reads them.
+      "^(aiProvider|aiBaseURL)$"
     ];
   };
 
@@ -57,9 +60,7 @@ in
     extensionsEnabled = true;
 
     aiEnabled = true;
-    aiProvider = "lmstudio";
-    aiModel = "liquid/lfm2.5-1.2b";
-    aiBaseURL = "http://localhost:49281/v1";
+    aiModel = "LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q8_0";
     aiWebSearch = true;
   };
 

@@ -2,7 +2,6 @@
 {
   home.sessionPath = [
     "$HOME/.local/bin"
-    "$HOME/.lmstudio/bin"
   ];
 
   home.sessionVariables = {

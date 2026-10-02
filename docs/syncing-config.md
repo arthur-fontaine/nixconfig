@@ -8,9 +8,9 @@ change back into the repo by hand, or the next `rebuild` reverts it.
 
 | Method | What it means | Programs |
 | --- | --- | --- |
-| Symlink | The live file points into the Nix store. It is read-only. Edit the repo, then `rebuild`. | Ghostty, Karabiner, zsh, Pi, Mise, git, gh, Neovim (except its lockfile), ssh |
+| Symlink | The live file points into the Nix store. It is read-only. Edit the repo, then `rebuild`. | Ghostty, Karabiner, zsh, Pi, Mise, git, gh, Neovim (except its lockfile), ssh, Llama model overrides |
 | Copy | `rebuild` copies the file and leaves it writable. The app can edit it. `rebuild` resets it. | Zed, Claude Code, Neovim lockfile, pi-caveman, 1Password SSH agent |
-| Merge | `rebuild` merges the listed keys into a file the app also writes. Keys the module does not list are left alone. | Codex, OpenLogi, LM Studio, Handy, Claude desktop, Claude Code MCP servers |
+| Merge | `rebuild` merges the listed keys into a file the app also writes. Keys the module does not list are left alone. | Codex, OpenLogi, Handy, Claude desktop, Claude Code MCP servers |
 | macOS defaults | `rebuild` writes the listed keys with `defaults import`. Keys the module does not list are left alone. | Droppy, Smallcast Beta, Bartender, Keka, AirBattery, BetterDisplay, ProtonVPN, screenshots, system settings |
 
 ## Find what changed
@@ -135,14 +135,20 @@ Plain defaults domains, one module each under `modules/home/programs/`:
 - ProtonVPN stores per-account settings under keys suffixed with the account email. Those stay out of the repo.
 - Keka's archive file associations live in `modules/darwin/core/defaults/archives.nix`.
 
-## LM Studio
+## Llama
 
-Repo module: `modules/home/programs/lmstudio/default.nix`. Merged into
-`~/.lmstudio/settings.json` and `~/.lmstudio/.internal/http-server-config.json`.
+Repo module: `modules/home/programs/llama/default.nix`. It lists the models
+to keep, and `rebuild` downloads any missing file into the Hugging Face cache
+(`~/.cache/huggingface/hub`), where Llama.app finds it. Install a model in the
+app to try it, then add it to `models` (with its `mmproj-`/`mtp-` files) to
+keep it. Models removed from the list stay on disk: delete them in the app.
 
-The server port must match Smallcast's `aiBaseURL`. Hugging Face tokens,
-dismissed popups, and first-run flags stay out. Quit LM Studio before
-`rebuild`, or it may write its in-memory settings back over the merge.
+Per-model llama.cpp options go in the module's `settings`, which become
+`~/.config/llama/models.user.ini` (read-only). The app's own `models.ini` is
+regenerated on every launch and is not managed.
+
+Smallcast uses the server at `localhost:9931` and names models by their
+`repo:QUANT` id.
 
 ## Handy
 

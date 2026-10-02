@@ -10,7 +10,8 @@ This repo installs and manages:
 - Homebrew formulae and casks
 - shell setup
 - Git, GitHub CLI, ssh, Zed, Neovim, Ghostty, Karabiner, Pi, Codex, Claude, Mise, and more
-- app preferences for Droppy, Smallcast, Bartender, Keka, LM Studio, OpenLogi, and others
+- app preferences for Droppy, Smallcast, Bartender, Keka, OpenLogi, and others
+- local models for Llama.app, downloaded on `rebuild`
 - development tooling such as Go tools and Cargo binaries
 
 It is designed for Apple Silicon Macs but it might work on Intel Macs too (I have not tested it).

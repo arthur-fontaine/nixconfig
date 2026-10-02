@@ -69,14 +69,6 @@ let
       url = "https://api.excalidraw.com/api/v1/mcp";
       headers."Authorization" = "Bearer \${EXCALIDRAW_API_TOKEN}";
     };
-
-    # Binary comes from the lmgrep pi package (see modules/home/programs/pi).
-    lmgrep = {
-      type = "stdio";
-      command = "lmgrep";
-      args = [ "mcp" ];
-      env = { };
-    };
   };
   mcpServersJson = (pkgs.formats.json { }).generate "claude-mcp-servers.json" mcpServers;
 in

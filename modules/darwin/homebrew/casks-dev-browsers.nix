@@ -8,7 +8,7 @@
   "ghostty@tip"
   "google-chrome"
   "httpie-desktop"
-  "lm-studio"
+  "llama-app"
   "orbstack"
   "utm"
   "zed@preview"

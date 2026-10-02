@@ -1,6 +1,6 @@
 ---
 name: sync-config
-description: Sync app settings changed on this Mac back into the nixconfig repo, and bring a new app's config under management. Use when the user says they changed a setting in an app (Zed, Claude Code, Droppy, Smallcast, Bartender, Keka, LM Studio, OpenLogi, Codex, ...), asks to sync, port, or check local config against the repo, asks what drifted, or wants a newly installed app's settings added to the nix config.
+description: Sync app settings changed on this Mac back into the nixconfig repo, and bring a new app's config under management. Use when the user says they changed a setting in an app (Zed, Claude Code, Droppy, Smallcast, Bartender, Keka, Llama, OpenLogi, Codex, ...), asks to sync, port, or check local config against the repo, asks what drifted, or wants a newly installed app's settings added to the nix config.
 ---
 
 # Sync local config into nixconfig
@@ -84,7 +84,7 @@ referenced as `${VAR}`.
    - plist prefs: `targets.darwin.defaults`, plus `nixconfig.defaultsData` for data keys
    - a file the app never writes: `xdg.configFile` or `home.file` (a read-only symlink)
    - a file the app rewrites in full: copy it in a `home.activation` step, like `zed/` or `neovim/`
-   - a file the app rewrites with keys of its own: merge into it with `modules/home/lib/merge-json.nix`, like `lmstudio/`
+   - a file the app rewrites with keys of its own: merge into it with `modules/home/lib/merge-json.nix`, like `handy/`
    - a private file (mode 600): `install -m 600` in an activation step, like `onepassword/`
 3. Create `modules/home/programs/<app>/default.nix` and add it to `modules/home/programs/default.nix`.
 4. Register a `nixconfig.sync.<name>` entry in the same module (options in `modules/home/lib/default.nix`) so the drift report covers it.
