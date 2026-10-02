@@ -37,6 +37,10 @@
                 let
                   script = pkgs.writeShellScript "hm-backup" ''
                     set -e
+                    # home-manager's link check quotes this command in
+                    # backticks inside a log message, which runs it with no
+                    # argument.
+                    [ -n "''${1-}" ] || exit 0
                     backup_dir="$HOME/.hm-backup"
                     file="$1"
                     relative="''${file#"$HOME/"}"

@@ -37,6 +37,7 @@ in
     showInMenuBar = true;
     compactMode = true;
     webSearchTemplate = "https://duckduckgo.com/?q={query}";
+    hiddenLauncherItems = [ "com.anthropic.claude-code-url-handler" ];
     launcherAliases = {
       "system-action:toggle-system-appearance" = "Dark/light mode";
     };
