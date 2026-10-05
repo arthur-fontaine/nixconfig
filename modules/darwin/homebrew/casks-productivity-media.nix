@@ -4,7 +4,6 @@
   "discord"
   "droppy"
   "figma"
-  "handy"
   "keka"
   "sony-ps-remote-play"
   "spotify"

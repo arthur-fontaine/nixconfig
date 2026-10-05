@@ -10,7 +10,7 @@ change back into the repo by hand, or the next `rebuild` reverts it.
 | --- | --- | --- |
 | Symlink | The live file points into the Nix store. It is read-only. Edit the repo, then `rebuild`. | Ghostty, Karabiner, zsh, Pi, Mise, git, gh, Neovim (except its lockfile), ssh, Llama model overrides |
 | Copy | `rebuild` copies the file and leaves it writable. The app can edit it. `rebuild` resets it. | Zed, Claude Code, Neovim lockfile, pi-caveman, 1Password SSH agent |
-| Merge | `rebuild` merges the listed keys into a file the app also writes. Keys the module does not list are left alone. | Codex, OpenLogi, Handy, Claude desktop, Claude Code MCP servers |
+| Merge | `rebuild` merges the listed keys into a file the app also writes. Keys the module does not list are left alone. | Codex, OpenLogi, Claude desktop, Claude Code MCP servers |
 | macOS defaults | `rebuild` writes the listed keys with `defaults import`. Keys the module does not list are left alone. | Droppy, Smallcast Beta, Bartender, Keka, AirBattery, BetterDisplay, ProtonVPN, screenshots, system settings |
 
 ## Find what changed
@@ -155,16 +155,6 @@ Smallcast uses the server at `localhost:9931` and names models by their
 (for decision models) while the installed Llama.app is `appVersion`. Once the
 app updates, the next `rebuild` goes back to the app's own build; check whether
 the new version's pin has what you need, and bump both values if not.
-
-## Handy
-
-Repo module: `modules/home/programs/handy/default.nix`. Merged into
-`~/Library/Application Support/com.pais.handy/settings_store.json`. The
-post-processing prompt lives in `improve-transcriptions.txt` beside the module.
-
-API keys, the provider list Handy ships, and onboarding state stay out. The
-speech model itself is a download: pick it again in Handy on a new Mac. Quit
-Handy before `rebuild`, or it may write its in-memory settings back.
 
 ## Claude desktop
 
