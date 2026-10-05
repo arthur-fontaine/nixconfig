@@ -1,28 +1,28 @@
 { pkgs, lib, config, ... }:
 let
+  # The user-scope plugins to keep installed. Activation uninstalls any other;
+  # set one to false to keep it installed but disabled.
+  enabledPlugins = {
+    "skill-creator@claude-plugins-official" = true;
+    "playwright@claude-plugins-official" = true;
+    "ralph-loop@claude-plugins-official" = true;
+    "rust-analyzer-lsp@claude-plugins-official" = true;
+    "figma@claude-plugins-official" = true;
+    "typescript-lsp@claude-plugins-official" = true;
+    "frontend-design@claude-plugins-official" = true;
+    "humanizer@humanizer" = true;
+    "swift-lsp@claude-plugins-official" = true;
+    "eli5@claude-community" = true;
+    "auto-effort@auto-effort-dev" = true;
+    # Built-in mod, off by default: a side agent that flags what you might miss.
+    "cc-plugin-you-should-know@builtin" = true;
+  };
+
   settingsJson = (pkgs.formats.json { }).generate "claude-settings.json" {
     permissions.defaultMode = "auto";
     model = "opus[1m]";
 
-    enabledPlugins = {
-      "skill-creator@claude-plugins-official" = true;
-      "playwright@claude-plugins-official" = true;
-      "ralph-loop@claude-plugins-official" = true;
-      "rust-analyzer-lsp@claude-plugins-official" = true;
-      "figma@claude-plugins-official" = true;
-      "typescript-lsp@claude-plugins-official" = true;
-      "frontend-design@claude-plugins-official" = true;
-      "humanizer@humanizer" = true;
-      "swift-lsp@claude-plugins-official" = true;
-      "eli5@claude-community" = true;
-      "auto-effort@auto-effort-dev" = true;
-      # Replaced by the local copy in localMods. An installed plugin without an
-      # entry falls back to enabled, so this stays until it's uninstalled with
-      # `claude plugin uninstall image-view@claude-image-view`.
-      "image-view@claude-image-view" = false;
-      # Built-in mod, off by default: a side agent that flags what you might miss.
-      "cc-plugin-you-should-know@builtin" = true;
-    };
+    inherit enabledPlugins;
 
     extraKnownMarketplaces = {
       "callstack-agent-skills".source = {
@@ -128,6 +128,8 @@ let
       files = [ ".claude-plugin/plugin.json" "hooks/hooks.json" "hooks/register.ts" "types/index.d.ts" ];
     };
   };
+
+  declaredPluginsJson = (pkgs.formats.json { }).generate "claude-declared-plugins.json" (lib.attrNames enabledPlugins);
 in
 {
   nixconfig.sync = lib.concatMapAttrs (name: mod: lib.listToAttrs (map (file: {
@@ -181,6 +183,24 @@ in
   home.activation.claudeConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     claude_dir="${config.home.homeDirectory}/.claude"
     $DRY_RUN_CMD mkdir -p "$claude_dir/skills/context7-mcp" "$claude_dir/rules"
+
+    # Uninstall user-scope plugins enabledPlugins doesn't list, as Homebrew's
+    # zap cleanup does for casks. Project and local installs are left alone.
+    # Before settings.json is copied, because uninstalling rewrites it.
+    claude_bin=/opt/homebrew/bin/claude
+    installed="$claude_dir/plugins/installed_plugins.json"
+    if [ -x "$claude_bin" ] && [ -f "$installed" ]; then
+      ${pkgs.jq}/bin/jq -r --slurpfile declared ${declaredPluginsJson} '
+        .plugins // {} | to_entries[]
+        | select(any(.value[]; .scope == "user"))
+        | .key
+        | select(. as $id | $declared[0] | index($id) | not)
+      ' "$installed" | while read -r plugin; do
+        echo "Uninstalling undeclared Claude Code plugin $plugin"
+        $DRY_RUN_CMD ${pkgs.coreutils}/bin/timeout 60 "$claude_bin" plugin uninstall "$plugin" < /dev/null > /dev/null \
+          || echo "warning: could not uninstall $plugin" >&2
+      done
+    fi
 
     $DRY_RUN_CMD cp -f ${settingsJson} "$claude_dir/settings.json"
     $DRY_RUN_CMD chmod u+w "$claude_dir/settings.json"
