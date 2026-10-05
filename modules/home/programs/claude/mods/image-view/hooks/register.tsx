@@ -199,9 +199,28 @@ function readSize(output: ReadImageOutput): Size | null {
   return width && height ? { width, height } : null
 }
 
-function readTile(id: string, path: string, output: ReadImageOutput): Tile {
+function fileTile(id: string, path: string, size: Size | null): Tile {
   const name = path.split('/').pop() ?? path
-  return { id, label: name, alt: `[${name}]`, path, size: readSize(output) }
+  return { id, label: name, alt: `[${name}]`, path, size }
+}
+
+// What SendUserFile and SendUserMessage resolve each attachment to.
+type Attachment = { path?: unknown; isImage?: unknown; scaled?: { original_width?: number; original_height?: number } }
+
+// The images a tool call showed: the file Read loaded, or the ones Claude sent
+// with SendUserFile or SendUserMessage. `path` is Read's, which its result lacks.
+function toolImages(tool: string, output: unknown, path: string | undefined, prefix: string): Tile[] {
+  if (tool === 'Read') {
+    return path !== undefined && isReadImage(output) ? [fileTile(prefix, path, readSize(output))] : []
+  }
+  if (tool !== 'SendUserFile' && tool !== 'SendUserMessage') return []
+  const attachments = (output as { attachments?: unknown } | null)?.attachments
+  if (!Array.isArray(attachments)) return []
+  return (attachments as Attachment[]).flatMap((attachment, i) => {
+    if (attachment.isImage !== true || typeof attachment.path !== 'string' || !attachment.path.startsWith('/')) return []
+    const { original_width: width, original_height: height } = attachment.scaled ?? {}
+    return [fileTile(`${prefix}-${i}`, attachment.path, width && height ? { width, height } : null)]
+  })
 }
 
 type Elements = ReturnType<EngineInterface['ui']['resolve']>
@@ -340,20 +359,20 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // And under a Read result that loaded an image ("Read image (42KB)").
+  // And under a tool result that showed images: a Read that loaded one
+  // ("Read image (42KB)"), or files Claude sent ("› [image] shot.png").
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
-    if (e.surface !== 'terminal' || e.props.tool !== 'Read' || e.props.isErrored || !isReadImage(e.props.output)) return next(e)
-    const path = readPaths.get(e.props.tool_use_id)
-    if (path === undefined) return next(e)
+    if (e.surface !== 'terminal' || e.props.isErrored) return next(e)
+    const tiles = toolImages(e.props.tool, e.props.output, readPaths.get(e.props.tool_use_id), 'tool')
+    if (tiles.length === 0) return next(e)
 
     const ui = $.ui.resolve(e)
-    const tile = readTile('read', path, e.props.output)
-    const cells = fitRow([tile.size], TRANSCRIPT_MAX_ROWS, transcriptColumns(e, RESULT_INDENT))
+    const cells = fitRow(tiles.map(tile => tile.size), TRANSCRIPT_MAX_ROWS, transcriptColumns(e, RESULT_INDENT))
     const result = await next(e)
     return (
       <ui.Box flexDirection="column">
         {result}
-        <ui.Box marginLeft={RESULT_INDENT}>{tileRow($, ui, `read-${e.props.tool_use_id}`, [tile], cells)}</ui.Box>
+        <ui.Box marginLeft={RESULT_INDENT}>{tileRow($, ui, `tool-${e.props.tool_use_id}`, tiles, cells)}</ui.Box>
       </ui.Box>
     )
   })
@@ -362,9 +381,9 @@ export const register: Register = on => {
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
     const tiles = e.props.calls.flatMap((call, i) => {
+      if (call.isErrored) return []
       const path = (call.input as { file_path?: unknown } | null)?.file_path
-      if (call.tool !== 'Read' || call.isErrored || typeof path !== 'string' || !isReadImage(call.output)) return []
-      return [readTile(`read-${i}`, path, call.output)]
+      return toolImages(call.tool, call.output, typeof path === 'string' ? path : undefined, `call-${i}`)
     })
     if (tiles.length === 0) return next(e)
 

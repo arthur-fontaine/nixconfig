@@ -92,7 +92,7 @@ test('an image Claude read as a PNG is drawn from its own file', async ($, on) =
   const ui = await $.ui.mount(result)
   expect(await ui.find({ type: 'Text', text: 'engine ToolResult' })).toBeDefined()
   expect((await ui.find({ type: 'Image' }))?.props).toMatchObject({ source: { file: '/work/shots/chart.png', format: 'png' } })
-  expect(await ui.find({ key: 'open-read' })).toBeDefined()
+  expect(await ui.find({ key: 'open-tool' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -144,8 +144,37 @@ test('image reads folded into a group line get their tiles too', async ($, on) =
     },
   })
   expect(await ui.find({ type: 'Text', text: 'engine ToolGroup' })).toBeDefined()
-  expect((await ui.find({ key: 'image-read-0' }))?.props).toMatchObject({ source: { file: '/work/a.png' } })
-  expect((await ui.find({ key: 'image-read-2' }))?.props).toMatchObject({ source: { file: '/work/b.png' } })
-  expect(await ui.find({ key: 'image-read-1' })).toBeUndefined()
+  expect((await ui.find({ key: 'image-call-0' }))?.props).toMatchObject({ source: { file: '/work/a.png' } })
+  expect((await ui.find({ key: 'image-call-2' }))?.props).toMatchObject({ source: { file: '/work/b.png' } })
+  expect(await ui.find({ key: 'image-call-1' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('images Claude sent with SendUserFile get tiles under the result', async ($, on) => {
+  stubs(on)
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+  const shot = `${DIR}/1.png`
+  const ui = await $.ui.mount({
+    plugin: 'image-view',
+    component: 'ToolResult',
+    requestId: 'toolu_2',
+    surface: 'terminal',
+    viewport: { columns: 100, rows: 40 },
+    props: {
+      tool_use_id: 'toolu_2',
+      tool: 'SendUserFile',
+      isErrored: false,
+      output: {
+        attachments: [
+          { path: shot, size: 319283, isImage: true, scaled: { width: 800, height: 600, original_width: 1600, original_height: 1200 } },
+          { path: '/work/report.pdf', size: 1000, isImage: false },
+        ],
+      },
+    },
+  })
+  expect(await ui.find({ type: 'Text', text: 'engine ToolResult' })).toBeDefined()
+  expect((await ui.find({ key: 'image-tool-0' }))?.props).toMatchObject({ source: { file: shot, format: 'png' } })
+  expect(await ui.find({ key: 'image-tool-1' })).toBeUndefined()
+  expect(await ui.find({ key: 'open-tool-0' })).toBeDefined()
   await ui.unmount()
 })
