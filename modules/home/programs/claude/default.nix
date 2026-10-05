@@ -15,6 +15,10 @@ let
       "humanizer@humanizer" = true;
       "swift-lsp@claude-plugins-official" = true;
       "eli5@claude-community" = true;
+      "auto-effort@auto-effort-dev" = true;
+      "image-view@claude-image-view" = true;
+      # Built-in mod, off by default: a side agent that flags what you might miss.
+      "cc-plugin-you-should-know@builtin" = true;
     };
 
     extraKnownMarketplaces = {
@@ -32,7 +36,21 @@ let
         source = "github";
         repo = "anthropics/claude-plugins-community";
       };
+
+      "auto-effort-dev".source = {
+        source = "github";
+        repo = "arthur-fontaine/cc-mod-auto-effort";
+      };
+
+      "claude-image-view".source = {
+        source = "github";
+        repo = "jarrodwatts/claude-image-view";
+      };
     };
+
+    # auto-effort's local decision model, served by the llama.cpp build in
+    # modules/darwin/llama-cpp.nix. Without a provider the mod does nothing.
+    env.AUTO_EFFORT_PROVIDER = "nisev";
 
     effortLevel = "medium";
 
@@ -71,9 +89,39 @@ let
     };
   };
   mcpServersJson = (pkgs.formats.json { }).generate "claude-mcp-servers.json" mcpServers;
+
+  # Mods that aren't in a marketplace. Claude Code loads every folder in
+  # ~/.claude/skills that has a .claude-plugin/plugin.json, as <name>@skills-dir.
+  localMods = {
+    cache-timer = {
+      src = ./mods/cache-timer;
+      repo = "modules/home/programs/claude/mods/cache-timer";
+      files = [ ".claude-plugin/plugin.json" "hooks/hooks.json" "hooks/register.js" ];
+    };
+
+    # Upstream installs it with degit into ~/.claude/skills; bump `rev` to update.
+    cache-warmer = {
+      src = "${pkgs.fetchFromGitHub {
+        owner = "samyakjain0606";
+        repo = "awesome-learning-material";
+        rev = "b66754081dbf93eedadc7470b9e1f419c06232ff";
+        hash = "sha256-1FhnSXuRkwfvl9/cguobKqznudsK0vh7dZTpdtMwfm4=";
+      }}/cache-warmer";
+      repo = "modules/home/programs/claude/default.nix (localMods.cache-warmer, upstream)";
+      files = [ ".claude-plugin/plugin.json" "hooks/hooks.json" "hooks/register.ts" "types/index.d.ts" ];
+    };
+  };
 in
 {
-  nixconfig.sync = {
+  nixconfig.sync = lib.concatMapAttrs (name: mod: lib.listToAttrs (map (file: {
+    name = "claude-mod-${name}-${file}";
+    value = {
+      method = "copy";
+      managed = "${mod.src}/${file}";
+      live = "~/.claude/skills/${name}/${file}";
+      inherit (mod) repo;
+    };
+  }) mod.files)) localMods // {
     claude-settings = {
       method = "copy";
       managed = settingsJson;
@@ -128,6 +176,15 @@ in
 
     $DRY_RUN_CMD cp -f ${./rules/context7.md} "$claude_dir/rules/context7.md"
     $DRY_RUN_CMD chmod u+w "$claude_dir/rules/context7.md"
+
+    # Replaced whole, so a file dropped upstream doesn't linger. Writable
+    # because Claude Code writes generated types into the mods it loads.
+    ${lib.concatStrings (lib.mapAttrsToList (name: mod: ''
+      $DRY_RUN_CMD rm -rf "$claude_dir/skills/${name}"
+      $DRY_RUN_CMD mkdir -p "$claude_dir/skills/${name}"
+      $DRY_RUN_CMD cp -R ${mod.src}/. "$claude_dir/skills/${name}"
+      $DRY_RUN_CMD chmod -R u+w "$claude_dir/skills/${name}"
+    '') localMods)}
 
     # ~/.claude.json is Claude Code's own runtime state, so merge the managed
     # MCP servers into it instead of rewriting it. Servers added by hand (via

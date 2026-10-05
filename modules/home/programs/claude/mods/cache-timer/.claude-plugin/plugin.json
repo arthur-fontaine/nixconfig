@@ -1,0 +1,13 @@
+{
+  "name": "cache-timer",
+  "version": "0.1.0",
+  "description": "Counts down the prompt cache's lifetime in the prompt footer, so you can tell whether your next message will be a cheap cache read or a full re-send.",
+  "userConfig": {
+    "ttlMinutes": {
+      "type": "number",
+      "description": "Prompt cache lifetime in minutes (60 on a subscription, 5 when billed per token)",
+      "default": 60,
+      "title": "Cache lifetime (minutes)"
+    }
+  }
+}
