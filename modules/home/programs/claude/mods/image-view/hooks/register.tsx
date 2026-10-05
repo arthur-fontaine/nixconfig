@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, UiRenderEvent } from 'claude-code'
 
 import type { PastedImage } from '../types'
 import { halfBlockCells, parseBmp } from './halfblock'
@@ -20,30 +20,77 @@ let shownKey: string | undefined
 let isChecking = false
 const sizes = new Map<string, Size | null>()
 
-// Zed's terminal has no graphics protocol, so an Image there only shows its alt.
-// Tiles are drawn as half-block Rasters instead, from a BMP `sips` scales to the
-// tile. The render hook can't run sips, so it records the tiles it wants and
-// the poll converts them.
+// A thumbnail: a pasted image (`#n`) or an image Claude read. `id` keys its
+// Image and its label's Button within one drawing.
+type Tile = { id: string; label: string; alt: string; path: string | null; size: Size | null }
+
+function pastedTile(image: PastedImage): Tile {
+  return { id: String(image.n), label: `#${image.n}`, alt: `[Image #${image.n}]`, path: image.path, size: image.size }
+}
+
+// Render hooks can't run processes, so each site records the files it needs
+// and the poll makes them with sips:
+// - in Zed, whose terminal has no graphics protocol, a half-block Raster for
+//   each tile size, from a BMP scaled to the tile;
+// - elsewhere, a PNG copy of a JPEG, GIF or WebP, since Image reads PNG files only.
 let isZed = false
-let thumbDir: string | undefined
-type Wanted = Cells & { n: number; path: string }
-let wanted: Wanted[] = []
-// Raster cells by thumbKey; null when the conversion failed.
+let workDir: string | undefined
+let fileCount = 0
+type Wanted = Cells & { path: string }
+// By render site: the band above the prompt, a sent prompt, a Read result.
+const wantedThumbs = new Map<string, Wanted[]>()
+const wantedPngs = new Map<string, string[]>()
+// Raster cells by thumbKey, and PNG copies by source path; null when sips failed.
 const thumbs = new Map<string, string | null>()
+const pngs = new Map<string, string | null>()
 
 function thumbKey({ path, columns, rows }: Wanted): string {
   return `${path}:${columns}x${rows}`
 }
 
+function isPng(path: string): boolean {
+  return /\.png$/i.test(path)
+}
+
+async function scratchFile($: EngineInterface, name: string): Promise<string> {
+  workDir ??= (await $.process.run(['mktemp', '-d'])).stdout.trim()
+  fileCount += 1
+  return `${workDir}/${fileCount}-${name}`
+}
+
 async function thumbnail($: EngineInterface, tile: Wanted): Promise<string | null> {
-  thumbDir ??= (await $.process.run(['mktemp', '-d'])).stdout.trim()
-  const out = `${thumbDir}/${tile.n}-${tile.columns}x${tile.rows}.bmp`
+  const out = await scratchFile($, `${tile.columns}x${tile.rows}.bmp`)
   // -z takes the height first.
   const args = ['-s', 'format', 'bmp', '-z', String(tile.rows * 2), String(tile.columns), tile.path, '--out', out]
   const { exitCode } = await $.process.run(['/usr/bin/sips', ...args])
   if (exitCode !== 0) return null
   const bitmap = parseBmp((await $.fs.read(out, { as: 'bytes' })).base64)
   return bitmap === null ? null : halfBlockCells(bitmap, tile.columns, tile.rows)
+}
+
+async function pngCopy($: EngineInterface, path: string): Promise<string | null> {
+  const out = await scratchFile($, 'copy.png')
+  const { exitCode } = await $.process.run(['/usr/bin/sips', '-s', 'format', 'png', path, '--out', out])
+  return exitCode === 0 ? out : null
+}
+
+async function convertWanted($: EngineInterface) {
+  let isNew = false
+  const tiles = [...wantedThumbs.values()].flat()
+  const tileKeys = new Set(tiles.map(thumbKey))
+  for (const key of thumbs.keys()) if (!tileKeys.has(key)) thumbs.delete(key)
+  for (const tile of tiles) {
+    const key = thumbKey(tile)
+    if (thumbs.has(key)) continue
+    thumbs.set(key, await thumbnail($, tile).catch(() => null))
+    isNew = true
+  }
+  for (const path of new Set([...wantedPngs.values()].flat())) {
+    if (pngs.has(path)) continue
+    pngs.set(path, await pngCopy($, path).catch(() => null))
+    isNew = true
+  }
+  if (isNew) $.ui.invalidate('ui.render')
 }
 
 // Both runs until the Quick Look panel closes, so the previous preview is ended
@@ -69,19 +116,6 @@ async function quickLook($: EngineInterface, path: string) {
       if (preview === child) preview = undefined
     }
   })()
-}
-
-async function convertWanted($: EngineInterface) {
-  const keys = new Set(wanted.map(thumbKey))
-  for (const key of thumbs.keys()) if (!keys.has(key)) thumbs.delete(key)
-  let isNew = false
-  for (const tile of wanted) {
-    const key = thumbKey(tile)
-    if (thumbs.has(key)) continue
-    thumbs.set(key, await thumbnail($, tile).catch(() => null))
-    isNew = true
-  }
-  if (isNew) $.ui.invalidate('ui.render')
 }
 
 // Claude Code caches each paste as <tmp>/<project>/<session>/images/<n>.png. The project
@@ -130,12 +164,121 @@ async function show($: EngineInterface, draft: string) {
   await update($, images, () => list)
 }
 
+// A sent prompt's images, by message id, once every tag has its file.
+const messageImages = new Map<string, PastedImage[]>()
+
+async function imagesOf($: EngineInterface, messageId: string, text: string): Promise<PastedImage[]> {
+  const cached = messageImages.get(messageId)
+  if (cached) return cached
+  const numbers = imageNumbers(text)
+  if (numbers.length === 0) return []
+  const dir = await imagesDir($)
+  const list: PastedImage[] = []
+  for (const n of numbers) list.push(await describe($, dir, n))
+  if (list.every(image => image.path !== null)) messageImages.set(messageId, list)
+  return list
+}
+
+// The file each Read call opened, by tool_use_id: a Read result carries the
+// image but not its path. Filled as calls run, and from their rows on a resume.
+const readPaths = new Map<string, string>()
+
+type ReadImageOutput = {
+  type: 'image'
+  file: { dimensions?: { originalWidth?: number; originalHeight?: number; displayWidth?: number; displayHeight?: number } }
+}
+
+function isReadImage(output: unknown): output is ReadImageOutput {
+  return typeof output === 'object' && output !== null && (output as { type?: unknown }).type === 'image'
+}
+
+function readSize(output: ReadImageOutput): Size | null {
+  const d = output.file?.dimensions
+  const width = d?.originalWidth ?? d?.displayWidth
+  const height = d?.originalHeight ?? d?.displayHeight
+  return width && height ? { width, height } : null
+}
+
+function readTile(id: string, path: string, output: ReadImageOutput): Tile {
+  const name = path.split('/').pop() ?? path
+  return { id, label: name, alt: `[${name}]`, path, size: readSize(output) }
+}
+
+type Elements = ReturnType<EngineInterface['ui']['resolve']>
+
+// One row of tiles, each with its label, which opens the image in Quick Look.
+function tileRow($: EngineInterface, ui: Elements, site: string, tiles: Tile[], cells: Cells[]) {
+  const { Box, Button, Image, Raster, Text } = ui
+  const fit = (i: number) => cells[i] ?? { columns: 4, rows: 1 }
+  const drawn = tiles.flatMap((tile, i) => (tile.path === null ? [] : [{ path: tile.path, ...fit(i) }]))
+  if (isZed) wantedThumbs.set(site, drawn)
+  else wantedPngs.set(site, drawn.map(tile => tile.path).filter(path => !isPng(path)))
+
+  const placeholder = (text: string, columns: number, rows: number) => (
+    <Box width={columns} height={rows} alignItems="center" justifyContent="center">
+      <Text dimColor wrap="truncate">{text}</Text>
+    </Box>
+  )
+
+  const picture = (tile: Tile & { path: string }, columns: number, rows: number) => {
+    if (isZed) {
+      const thumb = thumbs.get(thumbKey({ path: tile.path, columns, rows }))
+      if (thumb) return <Raster key={`image-${tile.id}`} columns={columns} rows={rows} cells={thumb} />
+      return placeholder(thumb === null ? tile.alt : '…', columns, rows)
+    }
+    const file = isPng(tile.path) ? tile.path : pngs.get(tile.path)
+    if (file) {
+      return <Image key={`image-${tile.id}`} source={{ file, format: 'png' }} columns={columns} rows={rows} alt={tile.alt} />
+    }
+    return placeholder(file === null ? tile.alt : '…', columns, rows)
+  }
+
+  return (
+    <Box flexDirection="row" columnGap={1}>
+      {tiles.map((tile, i) => {
+        const { columns, rows } = fit(i)
+        return (
+          <Box flexDirection="column" alignItems="center" borderStyle="round" borderDimColor>
+            {tile.path === null ? placeholder('no preview', columns, rows) : picture({ ...tile, path: tile.path }, columns, rows)}
+            {tile.path === null ? (
+              <Text dimColor>{tile.label}</Text>
+            ) : (
+              // An Image or Raster can't take a press, so the label under it opens the preview.
+              <Button
+                key={`open-${tile.id}`}
+                plain
+                dimColor
+                label={tile.label}
+                onPress={() => void quickLook($, tile.path!)}
+              />
+            )}
+          </Box>
+        )
+      })}
+    </Box>
+  )
+}
+
+// Transcript tiles: up to 6 picture rows plus border and label, past the row's gutter.
+const TRANSCRIPT_MAX_ROWS = 9
+const MESSAGE_INDENT = 2
+const RESULT_INDENT = 5
+
+function transcriptColumns(e: { viewport?: { columns: number } }, indent: number): number {
+  return (e.viewport?.columns ?? 80) - indent * 2
+}
+
+function isOwnPrompt(e: UiRenderEvent & { component: 'UserMessage' }): boolean {
+  const { origin, from } = e.props
+  return origin.kind === 'composer' || (origin.kind === 'unclassified' && from === undefined)
+}
+
 async function check($: EngineInterface) {
   if (isChecking) return
   isChecking = true
   try {
     await show($, (await $.prompt.read()).text)
-    if (isZed) await convertWanted($)
+    await convertWanted($)
   } finally {
     isChecking = false
   }
@@ -148,74 +291,91 @@ export const register: Register = on => {
     return next(e)
   })
 
+  on('tool.call', { tool: 'Read' }, async ($, e, next) => {
+    readPaths.set(e.tool_use_id, e.file_path)
+    return next(e)
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
     const list = await read($, images)
     if (list.length === 0) {
-      wanted = []
+      wantedThumbs.delete('above-prompt')
+      wantedPngs.delete('above-prompt')
       return next(e)
     }
 
-    const { Box, Button, Image, Raster, Text } = $.ui.resolve(e)
+    const ui = $.ui.resolve(e)
     const cells = fitRow(list.map(image => image.size), e.props.maxRows, e.props.bodyColumns)
     const below = await next(e)
-
-    if (isZed) {
-      wanted = list.flatMap((image, i) => (image.path === null ? [] : [{ n: image.n, path: image.path, ...(cells[i] ?? { columns: 4, rows: 1 }) }]))
-    }
-    const picture = (image: PastedImage & { path: string }, columns: number, rows: number) => {
-      if (!isZed) {
-        return (
-          <Image
-            key={`image-${image.n}`}
-            source={{ file: image.path, format: 'png' }}
-            columns={columns}
-            rows={rows}
-            alt={`[Image #${image.n}]`}
-          />
-        )
-      }
-      const thumb = thumbs.get(thumbKey({ n: image.n, path: image.path, columns, rows }))
-      if (thumb) return <Raster key={`image-${image.n}`} columns={columns} rows={rows} cells={thumb} />
-      return (
-        <Box width={columns} height={rows} alignItems="center" justifyContent="center">
-          <Text dimColor wrap="truncate">{thumb === null ? `[Image #${image.n}]` : '…'}</Text>
-        </Box>
-      )
-    }
-
     return (
-      <Box flexDirection="column">
-        <Box flexDirection="row" columnGap={1}>
-          {list.map((image, i) => {
-            const { columns, rows } = cells[i] ?? { columns: 4, rows: 1 }
-            return (
-              <Box flexDirection="column" alignItems="center" borderStyle="round" borderDimColor>
-                {image.path === null ? (
-                  <Box width={columns} height={rows} alignItems="center" justifyContent="center">
-                    <Text dimColor wrap="truncate">no preview</Text>
-                  </Box>
-                ) : (
-                  picture({ ...image, path: image.path }, columns, rows)
-                )}
-                {image.path === null ? (
-                  <Text dimColor>#{image.n}</Text>
-                ) : (
-                  // An Image or Raster can't take a press, so the label under it opens the preview.
-                  <Button
-                    key={`open-${image.n}`}
-                    plain
-                    dimColor
-                    label={`#${image.n}`}
-                    onPress={() => void quickLook($, image.path!)}
-                  />
-                )}
-              </Box>
-            )
-          })}
-        </Box>
+      <ui.Box flexDirection="column">
+        {tileRow($, ui, 'above-prompt', list.map(pastedTile), cells)}
         {below}
-      </Box>
+      </ui.Box>
+    )
+  })
+
+  // The same tiles under a sent prompt, whose text keeps its [Image #n] tags.
+  on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    if (e.surface !== 'terminal' || !isOwnPrompt(e)) return next(e)
+    const list = await imagesOf($, e.requestId, e.props.text)
+    if (list.length === 0) return next(e)
+
+    const ui = $.ui.resolve(e)
+    const cells = fitRow(list.map(image => image.size), TRANSCRIPT_MAX_ROWS, transcriptColumns(e, MESSAGE_INDENT))
+    const message = await next(e)
+    return (
+      <ui.Box flexDirection="column">
+        {message}
+        <ui.Box marginLeft={MESSAGE_INDENT}>{tileRow($, ui, `message-${e.requestId}`, list.map(pastedTile), cells)}</ui.Box>
+      </ui.Box>
+    )
+  })
+
+  // A resumed session ran its Read calls before this module loaded.
+  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    const input = e.props.input as { file_path?: unknown } | null
+    if (e.props.tool === 'Read' && typeof input?.file_path === 'string') readPaths.set(e.props.tool_use_id, input.file_path)
+    return next(e)
+  })
+
+  // And under a Read result that loaded an image ("Read image (42KB)").
+  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+    if (e.surface !== 'terminal' || e.props.tool !== 'Read' || e.props.isErrored || !isReadImage(e.props.output)) return next(e)
+    const path = readPaths.get(e.props.tool_use_id)
+    if (path === undefined) return next(e)
+
+    const ui = $.ui.resolve(e)
+    const tile = readTile('read', path, e.props.output)
+    const cells = fitRow([tile.size], TRANSCRIPT_MAX_ROWS, transcriptColumns(e, RESULT_INDENT))
+    const result = await next(e)
+    return (
+      <ui.Box flexDirection="column">
+        {result}
+        <ui.Box marginLeft={RESULT_INDENT}>{tileRow($, ui, `read-${e.props.tool_use_id}`, [tile], cells)}</ui.Box>
+      </ui.Box>
+    )
+  })
+
+  // Runs of reads fold into one line ("Read 3 files"), with no result rows.
+  on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
+    if (e.surface !== 'terminal') return next(e)
+    const tiles = e.props.calls.flatMap((call, i) => {
+      const path = (call.input as { file_path?: unknown } | null)?.file_path
+      if (call.tool !== 'Read' || call.isErrored || typeof path !== 'string' || !isReadImage(call.output)) return []
+      return [readTile(`read-${i}`, path, call.output)]
+    })
+    if (tiles.length === 0) return next(e)
+
+    const ui = $.ui.resolve(e)
+    const cells = fitRow(tiles.map(tile => tile.size), TRANSCRIPT_MAX_ROWS, transcriptColumns(e, RESULT_INDENT))
+    const group = await next(e)
+    return (
+      <ui.Box flexDirection="column">
+        {group}
+        <ui.Box marginLeft={RESULT_INDENT}>{tileRow($, ui, `group-${e.requestId}`, tiles, cells)}</ui.Box>
+      </ui.Box>
     )
   })
 }
