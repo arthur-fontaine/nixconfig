@@ -9,9 +9,15 @@
 // ping cache-warmer sends. Pings are read from cache-warmer's state rather
 // than by hooking `model.fork`, which would only see them if this mod happened
 // to run before cache-warmer.
+//
+// The label is hidden while a turn runs: each request it sends restarts the
+// clock, so a countdown would only flicker near 60:00.
 
 let ttlMs = 60 * 60_000
 let touchedAt = 0
+// turn.start doesn't say whose turn it is, so subagent turns are dropped once
+// one of their steps names its agent.
+const running = new Set()
 
 function pad(n) {
   return String(n).padStart(2, '0')
@@ -36,8 +42,23 @@ export function register(on, options) {
 
   // Subagents send a different prefix, so their requests leave the main cache
   // as it was.
+  on('turn.start', async ($, e, next) => {
+    running.add(e.turnId)
+    $.ui.invalidate('ui.render')
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    running.delete(e.turnId)
+    $.ui.invalidate('ui.render')
+    return next(e)
+  })
+
   on('turn.step', async function* ($, e, next) {
-    if (e.agentId !== undefined) return yield* next(e)
+    if (e.agentId !== undefined) {
+      running.delete(e.turnId)
+      return yield* next(e)
+    }
     // The cache's lifetime starts when the request is sent, not when its
     // response finishes streaming.
     const sentAt = await $.clock.now()
@@ -48,10 +69,12 @@ export function register(on, options) {
 
   on('session.end', async ($, e, next) => {
     touchedAt = 0
+    running.clear()
     return next(e)
   })
 
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    if (running.size > 0) return next(e)
     const { value: warm } = await $.state.get({ plugin: 'cache-warmer', key: 'warm' })
     const last = Math.max(touchedAt, warm?.lastPingAt ?? 0)
     if (last === 0) return next(e)
