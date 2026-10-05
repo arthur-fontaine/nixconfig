@@ -16,7 +16,10 @@ let
       "swift-lsp@claude-plugins-official" = true;
       "eli5@claude-community" = true;
       "auto-effort@auto-effort-dev" = true;
-      "image-view@claude-image-view" = true;
+      # Replaced by the local copy in localMods. An installed plugin without an
+      # entry falls back to enabled, so this stays until it's uninstalled with
+      # `claude plugin uninstall image-view@claude-image-view`.
+      "image-view@claude-image-view" = false;
       # Built-in mod, off by default: a side agent that flags what you might miss.
       "cc-plugin-you-should-know@builtin" = true;
     };
@@ -44,11 +47,6 @@ let
           repo = "arthur-fontaine/cc-mod-auto-effort";
         };
         autoUpdate = true;
-      };
-
-      "claude-image-view".source = {
-        source = "github";
-        repo = "jarrodwatts/claude-image-view";
       };
     };
 
@@ -101,6 +99,21 @@ let
       src = ./mods/cache-timer;
       repo = "modules/home/programs/claude/mods/cache-timer";
       files = [ ".claude-plugin/plugin.json" "hooks/hooks.json" "hooks/register.js" ];
+    };
+
+    # Copy of jarrodwatts/claude-image-view that also draws in Zed's terminal,
+    # which has no graphics protocol. See its README.
+    image-view = {
+      src = ./mods/image-view;
+      repo = "modules/home/programs/claude/mods/image-view";
+      files = [
+        ".claude-plugin/plugin.json"
+        "hooks/hooks.json"
+        "hooks/register.tsx"
+        "hooks/layout.ts"
+        "hooks/halfblock.ts"
+        "types/index.d.ts"
+      ];
     };
 
     # Upstream installs it with degit into ~/.claude/skills; bump `rev` to update.

@@ -59,7 +59,7 @@ Repo module: `modules/home/programs/claude/default.nix`.
 | --- | --- |
 | `~/.claude/settings.json` | Generated from the Nix attribute set in the module. Port changes by hand. |
 | `~/.claude/CLAUDE.md`, `rules/`, `skills/` | Copied from the files next to the module. Copy edits back. |
-| `~/.claude/skills/<mod>/` | Mods outside a marketplace, from `localMods` in the module. `rebuild` replaces each folder whole. `cache-timer` lives in `mods/` next to the module; `cache-warmer` is pinned upstream. |
+| `~/.claude/skills/<mod>/` | Mods outside a marketplace, from `localMods` in the module. `rebuild` replaces each folder whole. `cache-timer` and `image-view` (a copy of claude-image-view that also draws in Zed) live in `mods/` next to the module; `cache-warmer` is pinned upstream. |
 | `~/.claude.json` | Claude Code's own state. Only the `mcpServers` entries the module lists are managed. Other servers you add with `claude mcp add` survive. |
 | `~/.claude/settings.local.json` | Not managed. Local only. |
 
