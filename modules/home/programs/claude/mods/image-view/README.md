@@ -1,9 +1,13 @@
 # Claude Image View
 
 > **Local copy** of [jarrodwatts/claude-image-view](https://github.com/jarrodwatts/claude-image-view)
-> at `b3c412b`, managed by nixconfig. One change: in Zed's terminal (`TERM_PROGRAM=zed`), which has
-> no graphics protocol, tiles are drawn as half-block pixel art (`hooks/halfblock.ts`) instead of
-> the alt text. Every other terminal still gets the kitty-protocol `Image`.
+> at `b3c412b`, managed by nixconfig. Two changes:
+>
+> - In Zed's terminal (`TERM_PROGRAM=zed`), which has no graphics protocol, tiles are drawn as
+>   half-block pixel art (`hooks/halfblock.ts`) instead of the alt text. Every other terminal still
+>   gets the kitty-protocol `Image`.
+> - Clicking a tile's `#n` label opens the image in macOS Quick Look (`qlmanage -p`). The picture
+>   itself can't take a click: Claude Code's `Image` and `Raster` elements don't accept presses.
 
 A Claude Code mod that shows the images you paste, so you see thumbnails above your prompt instead of bare `[Image #1]` tags.
 
@@ -65,7 +69,7 @@ Claude Code saves every pasted image to a cache folder for the session, as `<tmp
 
 ## Security
 
-Claude Image View is local-only. It makes no network requests and, outside Zed, writes no files. In Zed it runs `/usr/bin/sips` to scale each pasted image into a `mktemp -d` folder as a BMP, and reads its pixels back. It reads the prompt box, lists Claude Code's temp folder to find the current session's image cache, and reads the first bytes of each pasted image. If `CLAUDE_CODE_TMPDIR` isn't set, it runs `id -u` once to find the default temp folder.
+Claude Image View is local-only. It makes no network requests and, outside Zed, writes no files. In Zed it runs `/usr/bin/sips` to scale each pasted image into a `mktemp -d` folder as a BMP, and reads its pixels back. Clicking a tile's label runs `/usr/bin/qlmanage -p` on that image. It reads the prompt box, lists Claude Code's temp folder to find the current session's image cache, and reads the first bytes of each pasted image. If `CLAUDE_CODE_TMPDIR` isn't set, it runs `id -u` once to find the default temp folder.
 
 Run `claude plugin validate` on the repo to see every event it hooks and every call it makes.
 

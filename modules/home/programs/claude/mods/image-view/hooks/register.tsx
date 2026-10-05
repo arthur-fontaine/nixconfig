@@ -46,6 +46,27 @@ async function thumbnail($: EngineInterface, tile: Wanted): Promise<string | nul
   return bitmap === null ? null : halfBlockCells(bitmap, tile.columns, tile.rows)
 }
 
+// `qlmanage -p` shows the Quick Look panel and runs until it closes, so the
+// previous preview is ended before the next one opens.
+let preview: ReturnType<EngineInterface['process']['spawn']> | undefined
+
+function quickLook($: EngineInterface, path: string) {
+  void preview?.return(undefined)
+  const child = $.process.spawn({ argv: ['/usr/bin/qlmanage', '-p', path] })
+  preview = child
+  void (async () => {
+    try {
+      for await (const _ of child) {
+        // Drained only to keep the child alive until the panel closes.
+      }
+    } catch {
+      // Closed, replaced, or qlmanage missing: nothing to show either way.
+    } finally {
+      if (preview === child) preview = undefined
+    }
+  })()
+}
+
 async function convertWanted($: EngineInterface) {
   const keys = new Set(wanted.map(thumbKey))
   for (const key of thumbs.keys()) if (!keys.has(key)) thumbs.delete(key)
@@ -131,7 +152,7 @@ export const register: Register = on => {
       return next(e)
     }
 
-    const { Box, Image, Raster, Text } = $.ui.resolve(e)
+    const { Box, Button, Image, Raster, Text } = $.ui.resolve(e)
     const cells = fitRow(list.map(image => image.size), e.props.maxRows, e.props.bodyColumns)
     const below = await next(e)
 
@@ -173,7 +194,18 @@ export const register: Register = on => {
                 ) : (
                   picture({ ...image, path: image.path }, columns, rows)
                 )}
-                <Text dimColor>#{image.n}</Text>
+                {image.path === null ? (
+                  <Text dimColor>#{image.n}</Text>
+                ) : (
+                  // An Image or Raster can't take a press, so the label under it opens the preview.
+                  <Button
+                    key={`open-${image.n}`}
+                    plain
+                    dimColor
+                    label={`#${image.n}`}
+                    onPress={() => quickLook($, image.path!)}
+                  />
+                )}
               </Box>
             )
           })}

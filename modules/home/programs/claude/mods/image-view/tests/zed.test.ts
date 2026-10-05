@@ -114,8 +114,13 @@ function paste(on: any, term: string) {
     runs.push(e.argv)
     return { value: { exitCode: 0, stdout: e.argv[0] === 'mktemp' ? '/tmp/thumbs\n' : '', stderr: '' } }
   })
+  const spawns: string[][] = []
+  on('process.spawn', async function* ($: any, e: any) {
+    spawns.push(e.argv)
+    return { code: 0, signal: null }
+  })
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['engine band'] }))
-  return { clock, runs }
+  return { clock, runs, spawns }
 }
 
 test('in Zed a tile is a half-block Raster scaled by sips', async ($, on) => {
@@ -153,4 +158,14 @@ test('outside Zed the tile stays a kitty-protocol Image and sips never runs', as
   await ui.unmount()
   await clock.advance(200)
   expect(runs.some(argv => argv[0] === '/usr/bin/sips')).toBe(false)
+})
+
+test("pressing a tile's label opens it in Quick Look", async ($, on) => {
+  const { clock, spawns } = paste(on, 'ghostty')
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+  await clock.advance(200)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'open-1' })
+  await ui.unmount()
+  expect(spawns).toEqual([['/usr/bin/qlmanage', '-p', `${DIR}/1.png`]])
 })
