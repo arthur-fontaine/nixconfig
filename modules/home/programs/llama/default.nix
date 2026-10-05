@@ -77,5 +77,12 @@ in
     ${lib.concatMapStrings (m: ''
       fetchModel ${lib.escapeShellArgs ([ m.repo ] ++ m.files)}
     '') models}
+
+    # Installing the cask doesn't launch the app, and it only registers itself
+    # as a login item on its first launch. Opened after the downloads so its
+    # first cache scan already sees every model.
+    if [ -d /Applications/Llama.app ] && ! /usr/bin/pgrep -xq Llama; then
+      run /usr/bin/open -g -a /Applications/Llama.app || true
+    fi
   '';
 }

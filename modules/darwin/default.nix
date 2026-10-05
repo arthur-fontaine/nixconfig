@@ -4,6 +4,7 @@
     ./core
     ./homebrew
     ./services
+    ./llama-cpp.nix
   ];
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
