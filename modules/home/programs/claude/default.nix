@@ -92,6 +92,15 @@ let
   };
   mcpServersJson = (pkgs.formats.json { }).generate "claude-mcp-servers.json" mcpServers;
 
+  quicklook = pkgs.swiftPackages.stdenv.mkDerivation {
+    pname = "quicklook";
+    version = "0.1.0";
+    src = ./mods/image-view/quicklook;
+    nativeBuildInputs = [ pkgs.swift ];
+    buildPhase = "swiftc -O main.swift -o quicklook";
+    installPhase = "install -Dm755 quicklook $out/bin/quicklook";
+  };
+
   # Mods that aren't in a marketplace. Claude Code loads every folder in
   # ~/.claude/skills that has a .claude-plugin/plugin.json, as <name>@skills-dir.
   localMods = {
@@ -102,9 +111,15 @@ let
     };
 
     # Copy of jarrodwatts/claude-image-view that also draws in Zed's terminal,
-    # which has no graphics protocol. See its README.
+    # which has no graphics protocol, and opens a tile in Quick Look through
+    # its bin/quicklook helper. See its README.
     image-view = {
-      src = ./mods/image-view;
+      src = pkgs.runCommand "claude-mod-image-view" { } ''
+        cp -R ${./mods/image-view} $out
+        chmod -R u+w $out
+        mkdir -p $out/bin
+        cp ${quicklook}/bin/quicklook $out/bin/quicklook
+      '';
       repo = "modules/home/programs/claude/mods/image-view";
       files = [
         ".claude-plugin/plugin.json"

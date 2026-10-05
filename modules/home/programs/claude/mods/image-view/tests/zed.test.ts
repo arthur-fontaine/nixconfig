@@ -90,7 +90,7 @@ function solidBmp(width: number, height: number): string {
 const DIR = '/tmp/claude-501/-work/sess-1/images'
 
 // A pasted square PNG; `term` is the session's TERM_PROGRAM.
-function paste(on: any, term: string) {
+function paste(on: any, term: string, hasHelper = false) {
   const runs: string[][] = []
   const clock = mock.clock(on)
   const draft = 'see [Image #1]'
@@ -99,7 +99,9 @@ function paste(on: any, term: string) {
   on('env.get', ($: any, e: any) => ({ value: e.name === 'TERM_PROGRAM' ? term : '/tmp/claude-501' }))
   on('session.id', () => ({ value: 'sess-1' }))
   on('fs.list', () => ({ value: [{ name: '-work', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
-  on('fs.exists', ($: any, e: any) => ({ value: e.path === DIR || e.path === `${DIR}/1.png` }))
+  on('fs.exists', ($: any, e: any) => ({
+    value: e.path === DIR || e.path === `${DIR}/1.png` || (hasHelper && e.path.endsWith('/bin/quicklook')),
+  }))
   on('fs.read', ($: any, e: any) => {
     const size = /(\d+)x(\d+)\.bmp$/.exec(e.path)
     if (size) return { value: { base64: solidBmp(Number(size[1]), Number(size[2]) * 2) } }
@@ -160,7 +162,7 @@ test('outside Zed the tile stays a kitty-protocol Image and sips never runs', as
   expect(runs.some(argv => argv[0] === '/usr/bin/sips')).toBe(false)
 })
 
-test("pressing a tile's label opens it in Quick Look", async ($, on) => {
+test("pressing a tile's label opens it in Quick Look, through qlmanage without the helper", async ($, on) => {
   const { clock, spawns } = paste(on, 'ghostty')
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
   await clock.advance(200)
@@ -168,4 +170,16 @@ test("pressing a tile's label opens it in Quick Look", async ($, on) => {
   await ui.press({ key: 'open-1' })
   await ui.unmount()
   expect(spawns).toEqual([['/usr/bin/qlmanage', '-p', `${DIR}/1.png`]])
+})
+
+test('the bundled helper is preferred over qlmanage', async ($, on) => {
+  const { clock, spawns } = paste(on, 'ghostty', true)
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+  await clock.advance(200)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'open-1' })
+  await ui.unmount()
+  expect(spawns.length).toBe(1)
+  expect(spawns[0][0]).toMatch(/\/bin\/quicklook$/)
+  expect(spawns[0].slice(1)).toEqual([`${DIR}/1.png`])
 })

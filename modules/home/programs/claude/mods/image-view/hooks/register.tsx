@@ -46,13 +46,17 @@ async function thumbnail($: EngineInterface, tile: Wanted): Promise<string | nul
   return bitmap === null ? null : halfBlockCells(bitmap, tile.columns, tile.rows)
 }
 
-// `qlmanage -p` shows the Quick Look panel and runs until it closes, so the
-// previous preview is ended before the next one opens.
+// Both runs until the Quick Look panel closes, so the previous preview is ended
+// before the next one opens. bin/quicklook (quicklook/main.swift, built by
+// nixconfig) opens without a Dock icon on the display under the pointer;
+// `qlmanage -p` is the fallback when it isn't there.
 let preview: ReturnType<EngineInterface['process']['spawn']> | undefined
 
-function quickLook($: EngineInterface, path: string) {
+async function quickLook($: EngineInterface, path: string) {
   void preview?.return(undefined)
-  const child = $.process.spawn({ argv: ['/usr/bin/qlmanage', '-p', path] })
+  const helper = `${$.plugin.root}/bin/quicklook`
+  const argv = (await $.fs.exists(helper)) ? [helper, path] : ['/usr/bin/qlmanage', '-p', path]
+  const child = $.process.spawn({ argv })
   preview = child
   void (async () => {
     try {
@@ -203,7 +207,7 @@ export const register: Register = on => {
                     plain
                     dimColor
                     label={`#${image.n}`}
-                    onPress={() => quickLook($, image.path!)}
+                    onPress={() => void quickLook($, image.path!)}
                   />
                 )}
               </Box>
