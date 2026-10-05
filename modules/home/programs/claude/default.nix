@@ -37,9 +37,13 @@ let
         repo = "anthropics/claude-plugins-community";
       };
 
-      "auto-effort-dev".source = {
-        source = "github";
-        repo = "arthur-fontaine/cc-mod-auto-effort";
+      # Third-party marketplaces don't auto-update by default; this one is mine.
+      "auto-effort-dev" = {
+        source = {
+          source = "github";
+          repo = "arthur-fontaine/cc-mod-auto-effort";
+        };
+        autoUpdate = true;
       };
 
       "claude-image-view".source = {
