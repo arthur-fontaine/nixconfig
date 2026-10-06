@@ -156,10 +156,11 @@ regenerated on every launch and is not managed.
 Smallcast uses the server at `localhost:9931` and names models by their
 `repo:QUANT` id.
 
-`modules/darwin/llama-cpp.nix` swaps in a llama.cpp dev build from GitHub
-(for decision models) while the installed Llama.app is `appVersion`. Once the
-app updates, the next `rebuild` goes back to the app's own build; check whether
-the new version's pin has what you need, and bump both values if not.
+`modules/darwin/llama-cpp.nix` swaps in Homebrew's `llama.cpp` (for decision
+models) while the installed Llama.app is `appVersion`. `rebuild` upgrades the
+formula, so it tracks the latest llama.cpp release with nothing to bump. Once
+the app updates, the next `rebuild` goes back to the app's own build; check
+whether the new version's pin has what you need, and bump `appVersion` if not.
 
 ## Claude desktop
 
