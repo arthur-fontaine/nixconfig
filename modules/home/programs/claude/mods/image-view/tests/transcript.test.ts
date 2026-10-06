@@ -178,3 +178,34 @@ test('images Claude sent with SendUserFile get tiles under the result', async ($
   expect(await ui.find({ key: 'open-tool-0' })).toBeDefined()
   await ui.unmount()
 })
+
+test("an MCP tool's screenshots get tiles under the result, from the files Claude Code saved", async ($, on) => {
+  stubs(on)
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+  const shot = '/work/tool-results/mcp-argent-blob-1.png'
+  const ui = await $.ui.mount({
+    plugin: 'image-view',
+    component: 'ToolResult',
+    requestId: 'toolu_3',
+    surface: 'terminal',
+    viewport: { columns: 100, rows: 40 },
+    props: {
+      tool_use_id: 'toolu_3',
+      tool: 'mcp__argent__gesture-tap',
+      isErrored: false,
+      output: [
+        { type: 'text', text: '{ "tapped": true }' },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: pngHead(300, 650) } },
+        { type: 'text', text: `[Image: source: ${shot}]` },
+        { type: 'text', text: 'Saved: /var/folders/x/simserver/media/1.png' },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: pngHead(300, 650) } },
+      ],
+    },
+  })
+  expect(await ui.find({ type: 'Text', text: 'engine ToolResult' })).toBeDefined()
+  expect((await ui.find({ key: 'image-tool-1' }))?.props).toMatchObject({ source: { file: shot, format: 'png' } })
+  expect(await ui.find({ key: 'open-tool-1' })).toBeDefined()
+  // An image block with no saved file has no path to draw from.
+  expect(await ui.find({ key: 'image-tool-4' })).toBeUndefined()
+  await ui.unmount()
+})

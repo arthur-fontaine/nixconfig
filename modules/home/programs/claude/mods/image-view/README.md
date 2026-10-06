@@ -4,8 +4,9 @@
 > at `b3c412b`, managed by nixconfig. Three changes:
 >
 > - Tiles also show in the transcript: under each sent prompt with `[Image #n]` tags, and under
->   each image Claude reads with Read (a "Read image" row, or a folded "Read N files" line) or sends
->   you with SendUserFile or SendUserMessage (a "› [image] …" row). A
+>   each image Claude reads with Read (a "Read image" row, or a folded "Read N files" line), sends
+>   you with SendUserFile or SendUserMessage (a "› [image] …" row), or gets back from an MCP tool
+>   (an argent screenshot, say: the file Claude Code saves each image block to). A
 >   JPEG, GIF or WebP is shown from a PNG copy `sips` makes, since `Image` only reads PNG files.
 > - In Zed's terminal (`TERM_PROGRAM=zed`), which has no graphics protocol, tiles are drawn as
 >   half-block pixel art (`hooks/halfblock.ts`) instead of the alt text. Every other terminal still

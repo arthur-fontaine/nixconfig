@@ -207,12 +207,35 @@ function fileTile(id: string, path: string, size: Size | null): Tile {
 // What SendUserFile and SendUserMessage resolve each attachment to.
 type Attachment = { path?: unknown; isImage?: unknown; scaled?: { original_width?: number; original_height?: number } }
 
-// The images a tool call showed: the file Read loaded, or the ones Claude sent
-// with SendUserFile or SendUserMessage. `path` is Read's, which its result lacks.
+type ContentBlock = { type?: unknown; text?: unknown; source?: { media_type?: unknown; data?: unknown } }
+
+const SAVED_IMAGE = /^\[Image: source: (\/.+)\]$/
+
+// An MCP result (an argent screenshot, say) is a list of content blocks, bare or
+// under `content`. Claude Code saves each image block to a file and names it in
+// the text block right after.
+function contentImages(output: unknown, prefix: string): Tile[] {
+  const blocks = Array.isArray(output) ? output : (output as { content?: unknown } | null)?.content
+  if (!Array.isArray(blocks)) return []
+  return (blocks as ContentBlock[]).flatMap((block, i) => {
+    if (block?.type !== 'image') return []
+    const next = blocks[i + 1] as ContentBlock | undefined
+    const path = next?.type === 'text' && typeof next.text === 'string' ? SAVED_IMAGE.exec(next.text)?.[1] : undefined
+    if (path === undefined) return []
+    const { media_type: type, data } = block.source ?? {}
+    const size = type === 'image/png' && typeof data === 'string' ? pngSize(data) : null
+    return [fileTile(`${prefix}-${i}`, path, size)]
+  })
+}
+
+// The images a tool call showed: the file Read loaded, the ones Claude sent
+// with SendUserFile or SendUserMessage, or an MCP tool's image blocks. `path`
+// is Read's, which its result lacks.
 function toolImages(tool: string, output: unknown, path: string | undefined, prefix: string): Tile[] {
   if (tool === 'Read') {
     return path !== undefined && isReadImage(output) ? [fileTile(prefix, path, readSize(output))] : []
   }
+  if (tool.startsWith('mcp__')) return contentImages(output, prefix)
   if (tool !== 'SendUserFile' && tool !== 'SendUserMessage') return []
   const attachments = (output as { attachments?: unknown } | null)?.attachments
   if (!Array.isArray(attachments)) return []
@@ -360,7 +383,8 @@ export const register: Register = on => {
   })
 
   // And under a tool result that showed images: a Read that loaded one
-  // ("Read image (42KB)"), or files Claude sent ("› [image] shot.png").
+  // ("Read image (42KB)"), files Claude sent ("› [image] shot.png"), or an MCP
+  // tool's screenshots.
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
     if (e.surface !== 'terminal' || e.props.isErrored) return next(e)
     const tiles = toolImages(e.props.tool, e.props.output, readPaths.get(e.props.tool_use_id), 'tool')
