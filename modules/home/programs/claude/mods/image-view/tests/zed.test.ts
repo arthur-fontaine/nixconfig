@@ -89,14 +89,16 @@ function solidBmp(width: number, height: number): string {
 
 const DIR = '/tmp/claude-501/-work/sess-1/images'
 
-// A pasted square PNG; `term` is the session's TERM_PROGRAM.
-function paste(on: any, term: string, hasHelper = false) {
+// A pasted square PNG; `term` is the session's TERM_PROGRAM, `env` any other variables set.
+function paste(on: any, term: string, hasHelper = false, env: Record<string, string> = {}) {
   const runs: string[][] = []
   const clock = mock.clock(on)
   const draft = 'see [Image #1]'
   on('session.start', () => ({ cwd: '/work' }))
   on('prompt.read', () => ({ value: { text: draft, cursor: draft.length } }))
-  on('env.get', ($: any, e: any) => ({ value: e.name === 'TERM_PROGRAM' ? term : '/tmp/claude-501' }))
+  on('env.get', ($: any, e: any) => ({
+    value: e.name === 'TERM_PROGRAM' ? term : e.name === 'CLAUDE_CODE_TMPDIR' ? '/tmp/claude-501' : env[e.name],
+  }))
   on('session.id', () => ({ value: 'sess-1' }))
   on('fs.list', () => ({ value: [{ name: '-work', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
   on('fs.exists', ($: any, e: any) => ({
@@ -160,6 +162,27 @@ test('outside Zed the tile stays a kitty-protocol Image and sips never runs', as
   await ui.unmount()
   await clock.advance(200)
   expect(runs.some(argv => argv[0] === '/usr/bin/sips')).toBe(false)
+})
+
+test('a background session gets half blocks too, whatever terminal attaches', async ($, on) => {
+  const { clock } = paste(on, '', false, { CLAUDE_CODE_SESSION_KIND: 'bg' })
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+  await clock.advance(200)
+  await (await $.ui.mount({ ...BAND, surface: 'terminal' })).unmount()
+  await clock.advance(200)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Raster' })).toBeDefined()
+  expect(await ui.find({ type: 'Image' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a background session that forces terminal images keeps the Image', async ($, on) => {
+  const { clock } = paste(on, 'ghostty', false, { CLAUDE_CODE_SESSION_KIND: 'bg', CLAUDE_CODE_FORCE_TERMINAL_IMAGES: '1' })
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+  await clock.advance(200)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Image' })).toBeDefined()
+  await ui.unmount()
 })
 
 test("pressing a tile's label opens it in Quick Look, through qlmanage without the helper", async ($, on) => {

@@ -30,10 +30,10 @@ function pastedTile(image: PastedImage): Tile {
 
 // Render hooks can't run processes, so each site records the files it needs
 // and the poll makes them with sips:
-// - in Zed, whose terminal has no graphics protocol, a half-block Raster for
-//   each tile size, from a BMP scaled to the tile;
+// - where Image can't draw, a half-block Raster for each tile size, from a BMP
+//   scaled to the tile;
 // - elsewhere, a PNG copy of a JPEG, GIF or WebP, since Image reads PNG files only.
-let isZed = false
+let isHalfBlock = false
 let workDir: string | undefined
 let fileCount = 0
 type Wanted = Cells & { path: string }
@@ -253,7 +253,7 @@ function tileRow($: EngineInterface, ui: Elements, site: string, tiles: Tile[], 
   const { Box, Button, Image, Raster, Text } = ui
   const fit = (i: number) => cells[i] ?? { columns: 4, rows: 1 }
   const drawn = tiles.flatMap((tile, i) => (tile.path === null ? [] : [{ path: tile.path, ...fit(i) }]))
-  if (isZed) wantedThumbs.set(site, drawn)
+  if (isHalfBlock) wantedThumbs.set(site, drawn)
   else wantedPngs.set(site, drawn.map(tile => tile.path).filter(path => !isPng(path)))
 
   const placeholder = (text: string, columns: number, rows: number) => (
@@ -263,7 +263,7 @@ function tileRow($: EngineInterface, ui: Elements, site: string, tiles: Tile[], 
   )
 
   const picture = (tile: Tile & { path: string }, columns: number, rows: number) => {
-    if (isZed) {
+    if (isHalfBlock) {
       const thumb = thumbs.get(thumbKey({ path: tile.path, columns, rows }))
       if (thumb) return <Raster key={`image-${tile.id}`} columns={columns} rows={rows} cells={thumb} />
       return placeholder(thumb === null ? tile.alt : '…', columns, rows)
@@ -326,9 +326,20 @@ async function check($: EngineInterface) {
   }
 }
 
+// Image draws nothing in Zed's terminal, which has no graphics protocol, nor in
+// a background session (`claude attach`, agent view), where Claude Code turns
+// terminal images off unless CLAUDE_CODE_FORCE_TERMINAL_IMAGES is set. A
+// background session can't tell which terminal attaches, so it gets half blocks.
+async function needsHalfBlocks($: EngineInterface): Promise<boolean> {
+  if ((await $.env.get('TERM_PROGRAM')) === 'zed') return true
+  if ((await $.env.get('CLAUDE_CODE_SESSION_KIND')) !== 'bg') return false
+  const forced = await $.env.get('CLAUDE_CODE_FORCE_TERMINAL_IMAGES')
+  return forced === undefined || forced === '' || forced === '0' || forced === 'false'
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    isZed = (await $.env.get('TERM_PROGRAM')) === 'zed'
+    isHalfBlock = await needsHalfBlocks($)
     $.clock.every(POLL_MS, () => check($))
     return next(e)
   })

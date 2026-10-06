@@ -9,8 +9,10 @@
 >   (an argent screenshot, say: the file Claude Code saves each image block to). A
 >   JPEG, GIF or WebP is shown from a PNG copy `sips` makes, since `Image` only reads PNG files.
 > - In Zed's terminal (`TERM_PROGRAM=zed`), which has no graphics protocol, tiles are drawn as
->   half-block pixel art (`hooks/halfblock.ts`) instead of the alt text. Every other terminal still
->   gets the kitty-protocol `Image`.
+>   half-block pixel art (`hooks/halfblock.ts`) instead of the alt text. So are they in a background
+>   session (`CLAUDE_CODE_SESSION_KIND=bg`, e.g. one you `claude attach` to), where Claude Code
+>   turns terminal images off, unless `CLAUDE_CODE_FORCE_TERMINAL_IMAGES` turns them back on. Every
+>   other terminal still gets the kitty-protocol `Image`.
 > - Clicking a tile's `#n` label opens the image in macOS Quick Look, through `bin/quicklook`
 >   (built from `quicklook/main.swift` by nixconfig): no Dock icon, and on the display under the
 >   pointer. Without it, the mod falls back to `qlmanage -p`. The picture itself can't take a click:
@@ -96,7 +98,7 @@ Zed shows each picture as colored half blocks, two pixels per cell, so a thumbna
 
 **The tile shows `[Image #1]` text instead of the picture.** Your terminal doesn't support the kitty graphics protocol. See [Requirements](#requirements).
 
-**The tile shows `[Image #1]` text in agent view or a background session, even in Ghostty or kitty.** Claude Code turns terminal images off for background sessions. If you attach from a terminal with the kitty graphics protocol, turn them back on in the `env` block of `~/.claude/settings.json`, then start a new session:
+**The tile shows half-block pixel art in agent view or a background session, even in Ghostty or kitty.** Claude Code turns terminal images off for background sessions, so the mod draws half blocks there. If you attach from a terminal with the kitty graphics protocol, turn them back on in the `env` block of `~/.claude/settings.json`, then start a new session:
 
 ```json
 "env": { "CLAUDE_CODE_FORCE_TERMINAL_IMAGES": "1" }
