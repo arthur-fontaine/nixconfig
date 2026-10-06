@@ -51,6 +51,11 @@ git diff modules/home/programs/zed
 Review the diff before you commit. Zed writes extension lists and language
 server state into `settings.json`. Keep what you want. Drop the rest.
 
+Extensions are declared in `auto_install_extensions` in `settings.json`. Zed
+installs any listed extension that is missing on startup. When you install a
+new extension, add its ID there (the folder name under
+`~/Library/Application Support/Zed/extensions/installed/`).
+
 ## Claude Code
 
 Repo module: `modules/home/programs/claude/default.nix`.
