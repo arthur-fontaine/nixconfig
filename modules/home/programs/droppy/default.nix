@@ -82,7 +82,7 @@
 
     # Lock screen
     enableLockScreenFeatures = true;
-    lockScreenMediaArtworkExpanded = true;
+    lockScreenMediaArtworkExpanded = false;
     lockScreenMediaMaterial = "liquid";
     lockScreenWidgetMaterial = "liquid";
     lockScreenMotionArtworkFullscreen = false;

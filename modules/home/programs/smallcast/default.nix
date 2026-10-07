@@ -2,7 +2,7 @@
 let
   domain = "com.smallcast.app.beta";
 
-  # Smallcast reads these three keys with `data(forKey:)`.
+  # Smallcast reads these keys with `data(forKey:)`.
   dataKeys = {
     aiConnections = [
       {
@@ -17,6 +17,9 @@ let
     ];
     aiDefaultModel = {
       chatGPT = { model = "gpt-5.6-luna"; effort = "medium"; };
+    };
+    quickActionModel = {
+      codex = { model = "gpt-5.6-luna"; effort = "medium"; };
     };
     extensionAppearances = {
       coffee = { tint = "brown"; symbol = "cup.and.heat.waves"; };
@@ -33,6 +36,8 @@ in
       "^(aiInstalledProviders|customCommands|AppleShowScrollBars)$"
       # Left over from LM Studio; the current build no longer reads them.
       "^(aiProvider|aiBaseURL)$"
+      # AVKit's player state, not a Smallcast setting.
+      "^AVDesktopPlaybackControls"
     ];
   };
 
@@ -50,6 +55,7 @@ in
 
     fallbackCommandsEnabled = true;
     fallbackCommands = [ "search-web" "search-files" "ask-ai" ];
+    disabledFallbacks = [ "command:ai-chat" "command:define" ];
     fileSearchEnabled = true;
     calendarEnabled = true;
     calendarMenuBarDisplay = 0;
@@ -58,6 +64,11 @@ in
     windowManagementEnabled = true;
     customCommandsEnabled = false;
     extensionsEnabled = true;
+    currencyRatesEnabled = true;
+
+    dictationEnabled = true;
+    dictationModel = "ultra";
+    "hotkey.dictation" = builtins.toJSON { combo._0 = { carbonKeyCode = 96; carbonModifiers = 4096; }; };
 
     aiEnabled = true;
     aiModel = "LiquidAI/LFM2.5-1.2B-Instruct-GGUF:Q8_0";
