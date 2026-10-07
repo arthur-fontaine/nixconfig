@@ -13,7 +13,7 @@ in
       uv = "latest";
       go = "latest";
       rust = "latest";
-      "npm:pnpm" = "latest";
+      "npm:pnpm" = "12.9.1";
       "npm:bun" = "latest";
       "npm:yarn" = "latest";
       "npm:gitignore.cli" = "latest";
