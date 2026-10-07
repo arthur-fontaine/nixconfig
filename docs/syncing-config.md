@@ -54,7 +54,9 @@ server state into `settings.json`. Keep what you want. Drop the rest.
 Extensions are declared in `auto_install_extensions` in `settings.json`. Zed
 installs any listed extension that is missing on startup. When you install a
 new extension, add its ID there (the folder name under
-`~/Library/Application Support/Zed/extensions/installed/`).
+`~/Library/Application Support/Zed/extensions/installed/`). The
+`zed-extensions` drift entry compares that folder with the list, so an
+extension installed from Zed's UI shows up as `changed`.
 
 ## Claude Code
 

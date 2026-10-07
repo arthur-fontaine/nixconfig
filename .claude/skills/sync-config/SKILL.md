@@ -45,6 +45,11 @@ Edit the file the report names. By method:
 | `json-merge`, `toml-merge` | Port the key into the attrset the entry names. Dotted paths in the report are nested attrs. |
 | `defaults` | Add the key to `targets.darwin.defaults.<domain>`. If the live value is plist data holding JSON, put it in `nixconfig.defaultsData.<domain>` as a Nix value instead. |
 | `macos:<domain>` | Edit the matching file in `modules/darwin/core/defaults/`. |
+| `dir-list` (`zed-extensions`) | A `changed` name is installed but not declared: add `"<name>": true` under the key the entry names (`auto_install_extensions` in Zed's `settings.json`). A `missing` one is declared but not installed, usually because Zed has not started since `rebuild`; Zed installs it on startup. |
+
+Before copying a live file over a repo file, check that the repo side has not
+moved: if the diff drops lines a recent commit added (`git log -p` on the repo
+file), `rebuild` has not run yet. Port only the user's edits by hand.
 
 Match the value type the app stores: `true` and `1` differ, and so do `2` and
 `2.0`. Some apps store JSON as a string (Droppy's `customShelfWidgets`,

@@ -9,6 +9,7 @@
 {
   "auto_install_extensions": {
     "html": true,
+    "sql": true,
     "tsgo": true,
   },
   "diff_view_style": "split",

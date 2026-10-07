@@ -23,13 +23,15 @@ in
       type = types.attrsOf (types.submodule {
         options = {
           method = mkOption {
-            type = types.enum [ "copy" "json-merge" "toml-merge" "defaults" ];
+            type = types.enum [ "copy" "json-merge" "toml-merge" "defaults" "dir-list" ];
             description = ''
               copy: the live file should equal `managed` (a file).
               json-merge, toml-merge: every key in `managed` (a value) should
               match the live file; other live keys are reported as unmanaged.
               defaults: `live` is a domain, compared with the module's
               `targets.darwin.defaults` and `nixconfig.defaultsData` entries.
+              dir-list: the folders in `live` (a directory) should be the names
+              set to true under `managed.key` in `managed.file` (JSON or JSONC).
             '';
           };
           live = mkOption {

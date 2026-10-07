@@ -13,6 +13,12 @@
       live = "~/.config/zed/keymap.json";
       repo = "modules/home/programs/zed/keymap.json";
     };
+    zed-extensions = {
+      method = "dir-list";
+      live = "~/Library/Application Support/Zed/extensions/installed";
+      managed = { file = ./settings.json; key = "auto_install_extensions"; };
+      repo = "modules/home/programs/zed/settings.json";
+    };
   };
 
   # Copy settings.json and keymap.json instead of symlinking so Zed can write to them

@@ -89,6 +89,42 @@ def read_file(path: Path):
     return text
 
 
+def load_jsonc(text: str):
+    """JSON with comments and trailing commas, as Zed writes it."""
+    out: list[str] = []
+    i, n, in_string = 0, len(text), False
+    while i < n:
+        c = text[i]
+        if in_string:
+            out.append(c)
+            if c == "\\":
+                out.append(text[i + 1])
+                i += 1
+            elif c == '"':
+                in_string = False
+        elif c == '"':
+            in_string = True
+            out.append(c)
+        elif text.startswith("//", i):
+            i = text.find("\n", i)
+            if i == -1:
+                break
+            continue
+        elif text.startswith("/*", i):
+            i = text.index("*/", i) + 2
+            continue
+        elif c in "}]":
+            while out and out[-1].isspace():
+                out.pop()
+            if out and out[-1] == ",":
+                out.pop()
+            out.append(c)
+        else:
+            out.append(c)
+        i += 1
+    return json.loads("".join(out))
+
+
 def expand(path: str) -> Path:
     return Path(os.path.expanduser(path))
 
@@ -190,6 +226,25 @@ def check_merge(entry: dict) -> dict:
     return report
 
 
+def check_dir_list(entry: dict) -> dict:
+    """Folders in `live` against the names set to true under `key` in `file`."""
+    report = new_report()
+    live_path = expand(entry["live"])
+    managed = entry["managed"]
+    declared = {
+        name for name, on in load_jsonc(Path(managed["file"]).read_text()).get(managed["key"], {}).items() if on
+    }
+    installed = (
+        {p.name for p in live_path.iterdir() if p.is_dir() and not p.name.startswith(".")}
+        if live_path.is_dir()
+        else set()
+    )
+    report["missing"] += [(name, f"{managed['key']}: not installed") for name in sorted(declared - installed)]
+    # Each folder is a deliberate install, so one the repo lacks is drift.
+    report["changed"] += [(name, "(not in repo)", "installed") for name in sorted(installed - declared)]
+    return report
+
+
 def check_defaults(domain: str, managed: dict) -> dict:
     report = new_report()
     live = read_defaults(domain)
@@ -245,6 +300,8 @@ def main() -> int:
             report = check_copy(entry)
         elif method in ("json-merge", "toml-merge"):
             report = check_merge(entry)
+        elif method == "dir-list":
+            report = check_dir_list(entry)
         else:
             domain = entry["live"]
             managed = dict(manifest["defaults"].get(domain, {}))
