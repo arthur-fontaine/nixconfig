@@ -1,6 +1,7 @@
 # Productivity and media apps
 [
   "blender"
+  "arahim3/tap/digup"
   "discord"
   "droppy"
   "figma"
