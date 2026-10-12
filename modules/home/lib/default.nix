@@ -14,6 +14,15 @@ in
       '';
     };
 
+    claudeMcpServers = mkOption {
+      type = types.attrsOf types.anything;
+      default = { };
+      description = ''
+        User-scope Claude Code MCP servers that program modules contribute.
+        The claude module merges them into ~/.claude.json with its own.
+      '';
+    };
+
     sync = mkOption {
       default = { };
       description = ''

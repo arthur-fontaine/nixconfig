@@ -28,5 +28,6 @@
     ./protonvpn
     ./digup
     ./craft
+    ./blender
   ];
 }

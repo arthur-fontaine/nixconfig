@@ -74,26 +74,11 @@ let
     skipWorkflowUsageWarning = true;
   };
 
-  # A headless and a live server per Craft app; see ../craft/apps.nix.
-  craftApps = import ../craft/apps.nix { inherit (config.home) homeDirectory; };
-  craftServers = lib.concatMapAttrs (name: craft: {
-    ${name} = {
-      type = "stdio";
-      command = "/opt/homebrew/bin/${name}-cli";
-      args = craft.headless;
-    };
-  } // lib.optionalAttrs (craft.live != null) {
-    "${name}-live" = {
-      type = "stdio";
-      command = "/opt/homebrew/bin/${name}-cli";
-      args = craft.live;
-    };
-  }) craftApps;
-
-  # User-scope MCP servers. Claude Code expands ${VAR} in these at connect
+  # User-scope MCP servers, plus those other modules add through
+  # nixconfig.claudeMcpServers. Claude Code expands ${VAR} in these at connect
   # time, so tokens stay in ~/.config/.env (see zshrc.d/902_dotenv.sh) rather
   # than in this repo.
-  mcpServers = craftServers // {
+  mcpServers = config.nixconfig.claudeMcpServers // {
     context7 = {
       type = "http";
       url = "https://mcp.context7.com/mcp";

@@ -16,7 +16,20 @@ let
     ${lib.optionalString (name == "photocraft") ''/bin/mkdir -p "$HOME/Library/Application Support/Photocraft"''}
     exec /usr/bin/open -a "$app" --args ${lib.escapeShellArgs craft.appArgs}
   '';
+
+  # A headless server per app, and a live one where the headless server can't
+  # reach the window itself.
+  server = name: args: {
+    type = "stdio";
+    command = "/opt/homebrew/bin/${name}-cli";
+    inherit args;
+  };
 in
 {
   home.packages = lib.mapAttrsToList launcher apps;
+
+  nixconfig.claudeMcpServers = lib.concatMapAttrs (name: craft:
+    { ${name} = server name craft.headless; }
+    // lib.optionalAttrs (craft.live != null) { "${name}-live" = server name craft.live; }
+  ) apps;
 }
