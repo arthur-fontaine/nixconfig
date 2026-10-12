@@ -27,5 +27,6 @@
     ./betterdisplay
     ./protonvpn
     ./digup
+    ./craft
   ];
 }
