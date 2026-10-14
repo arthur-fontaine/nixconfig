@@ -11,7 +11,7 @@ change back into the repo by hand, or the next `rebuild` reverts it.
 | Symlink | The live file points into the Nix store. It is read-only. Edit the repo, then `rebuild`. | Ghostty, Karabiner, zsh, Pi, Mise, git, gh, Neovim (except its lockfile), ssh, Llama model overrides |
 | Copy | `rebuild` copies the file and leaves it writable. The app can edit it. `rebuild` resets it. | Zed, Claude Code, Neovim lockfile, pi-caveman, 1Password SSH agent |
 | Merge | `rebuild` merges the listed keys into a file the app also writes. Keys the module does not list are left alone. | Codex, OpenLogi, Claude desktop, Claude Code MCP servers |
-| macOS defaults | `rebuild` writes the listed keys with `defaults import`. Keys the module does not list are left alone. | Droppy, Smallcast Beta, Bartender, Keka, AirBattery, BetterDisplay, ProtonVPN, DigUp, screenshots, system settings |
+| macOS defaults | `rebuild` writes the listed keys with `defaults import`. Keys the module does not list are left alone. | Droppy, Smallcast Beta, Keka, AirBattery, BetterDisplay, ProtonVPN, DigUp, screenshots, system settings |
 
 ## Find what changed
 
@@ -123,15 +123,6 @@ Rules for the module:
 - Hotkeys are JSON text. Write them with `builtins.toJSON`.
 - Keys the app stores as `data` (`aiConnections`, `aiDefaultModel`, `extensionAppearances`) go in the `dataKeys` set, which feeds `nixconfig.defaultsData`. The activation step writes them with `defaults write -data`.
 - Extensions and their preferences live in `~/Library/Application Support/com.smallcast.app.beta/`. They are not managed.
-
-## Bartender 7
-
-Domain: `com.surteesstudios.Bartender`. Repo module: `modules/home/programs/bartender/default.nix`.
-
-Only the behaviour and style settings are managed. The item layout
-(`GoldenGateProfiles`, `GoldenGateHiddenItemOrderKeys`) is not: it lists every
-menu bar item on this Mac by position, including work-managed agents. Arrange
-items in Bartender itself.
 
 ## Keka, AirBattery, BetterDisplay, ProtonVPN
 

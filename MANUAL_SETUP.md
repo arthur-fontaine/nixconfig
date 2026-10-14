@@ -46,10 +46,9 @@ OpenLogi replaces Logi Options+. The managed keys live in
   A rebuild relaunches it (or hands the wheel back if it won't start), or run
   `openlogi diag wheel --resolution low`
 
-### Bartender
+### Thaw
 
-- enter the license key
-- grant screen recording and accessibility permissions
+- grant accessibility (screen recording is optional: it adds live item previews and wallpaper tinting)
 - enable launch at login
 
 ### Alcove

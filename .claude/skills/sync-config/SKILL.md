@@ -1,6 +1,6 @@
 ---
 name: sync-config
-description: Sync app settings changed on this Mac back into the nixconfig repo, and bring a new app's config under management. Use when the user says they changed a setting in an app (Zed, Claude Code, Droppy, Smallcast, Bartender, Keka, Llama, OpenLogi, Codex, ...), asks to sync, port, or check local config against the repo, asks what drifted, or wants a newly installed app's settings added to the nix config.
+description: Sync app settings changed on this Mac back into the nixconfig repo, and bring a new app's config under management. Use when the user says they changed a setting in an app (Zed, Claude Code, Droppy, Smallcast, Keka, Llama, OpenLogi, Codex, ...), asks to sync, port, or check local config against the repo, asks what drifted, or wants a newly installed app's settings added to the nix config.
 ---
 
 # Sync local config into nixconfig
@@ -74,7 +74,7 @@ The repo is public. Never commit:
 - security-scoped bookmarks and other `data` blobs you cannot read
 
 If a setting is only reachable through one of these (ProtonVPN keys suffixed
-with the account email, Bartender's item layout), leave it unmanaged and say so
+with the account email, a menu bar manager's item layout), leave it unmanaged and say so
 in the module comment. Machine-only ssh hosts go in `~/.ssh/config.local`,
 which is not in the repo. Tokens for MCP servers go in `~/.config/.env` and are
 referenced as `${VAR}`.
@@ -101,4 +101,4 @@ referenced as `${VAR}`.
 2. Run `scripts/config-drift.py` again. Values you just ported from the live Mac should now report `ok`.
 3. Commit with a Conventional Commit message (`chore(droppy): sync shelf settings`).
 4. Ask before pushing. `rebuild` runs `git pull --ff-only` in `$NIXCONFIG_REPO_DIR` (default `~/nixconfig`), so the commit must be pushed, or present in that checkout, before it applies.
-5. `rebuild` needs sudo. Ask the user to run `! rebuild`, then run the drift report once more. Restart apps that cache prefs in memory (Bartender, Keka, Droppy) if they did not pick the change up.
+5. `rebuild` needs sudo. Ask the user to run `! rebuild`, then run the drift report once more. Restart apps that cache prefs in memory (Keka, Droppy) if they did not pick the change up.

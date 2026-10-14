@@ -21,7 +21,6 @@
     ./neovim
     ./ssh
     ./onepassword
-    ./bartender
     ./keka
     ./airbattery
     ./betterdisplay
