@@ -11,7 +11,7 @@ change back into the repo by hand, or the next `rebuild` reverts it.
 | Symlink | The live file points into the Nix store. It is read-only. Edit the repo, then `rebuild`. | Ghostty, Karabiner, zsh, Pi, Mise, git, gh, Neovim (except its lockfile), ssh, Llama model overrides |
 | Copy | `rebuild` copies the file and leaves it writable. The app can edit it. `rebuild` resets it. | Zed, Claude Code, Neovim lockfile, pi-caveman, 1Password SSH agent |
 | Merge | `rebuild` merges the listed keys into a file the app also writes. Keys the module does not list are left alone. | Codex, OpenLogi, Claude desktop, Claude Code MCP servers |
-| macOS defaults | `rebuild` writes the listed keys with `defaults import`. Keys the module does not list are left alone. | Droppy, Smallcast Beta, Keka, AirBattery, BetterDisplay, ProtonVPN, DigUp, screenshots, system settings |
+| macOS defaults | `rebuild` writes the listed keys with `defaults import`. Keys the module does not list are left alone. | Droppy, Smallcast Beta, Thaw, Keka, AirBattery, BetterDisplay, ProtonVPN, DigUp, screenshots, system settings |
 
 ## Find what changed
 
@@ -123,6 +123,21 @@ Rules for the module:
 - Hotkeys are JSON text. Write them with `builtins.toJSON`.
 - Keys the app stores as `data` (`aiConnections`, `aiDefaultModel`, `extensionAppearances`) go in the `dataKeys` set, which feeds `nixconfig.defaultsData`. The activation step writes them with `defaults write -data`.
 - Extensions and their preferences live in `~/Library/Application Support/com.smallcast.app.beta/`. They are not managed.
+
+## Thaw
+
+Domain: `com.stonerl.Thaw`. Repo module: `modules/home/programs/thaw/default.nix`.
+
+Only the hidden section is managed, in `MenuBarItemManager.savedSectionOrder`.
+It lists items as `<bundle id>:<status item autosave name>`, right to left.
+`rebuild` replaces the whole key, so Thaw's saved order for the visible and
+always-hidden sections is reset each time. Items that aren't listed stay where
+they are. To hide another item, add its identifier to the list. To find it,
+look at the key after moving the item in Thaw.
+
+Thaw reads the key only at launch and writes its in-memory copy back whenever
+the layout changes. Quit Thaw before `rebuild`, or relaunch it afterwards, or
+it overwrites what `rebuild` wrote.
 
 ## Keka, AirBattery, BetterDisplay, ProtonVPN
 

@@ -21,6 +21,7 @@
     ./neovim
     ./ssh
     ./onepassword
+    ./thaw
     ./keka
     ./airbattery
     ./betterdisplay
