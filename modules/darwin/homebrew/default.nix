@@ -97,6 +97,8 @@ in
     # An app deleted by hand leaves its Caskroom record, so brew bundle treats
     # the cask as installed and never puts the app back. Drop the record of any
     # declared cask whose app is gone, and the bundle step installs it again.
+    # --ignore-dependencies: brew otherwise refuses when another cask depends on
+    # this one (the *craft-cli casks need their app), and the record stays.
     (
       brew_user() { sudo -u ${username} -H "${brew}" "$@"; }
       declared=" ${lib.concatStringsSep " " declaredCasks} "
@@ -111,7 +113,7 @@ in
             case "$app" in /*) path="$app" ;; *) path="/Applications/$app" ;; esac
             [ -e "$path" ] && continue
             echo "$cask is installed but $path is missing, reinstalling it..." >&2
-            brew_user uninstall --cask --force "$cask" >/dev/null || echo "warning: could not reset $cask" >&2
+            brew_user uninstall --cask --force --ignore-dependencies "$cask" >/dev/null || echo "warning: could not reset $cask" >&2
           done
     )
   '';
