@@ -3,7 +3,7 @@ let
   apps = import ./apps.nix { inherit (config.home) homeDirectory; };
 
   # A Dock launch opens no port. `<name>-live` starts the app with its control
-  # port so the `<name>-live` MCP server (or VectorCraft's own) can drive it.
+  # port so the `<name>-live` MCP server can drive it.
   launcher = name: craft: pkgs.writeShellScriptBin "${name}-live" ''
     app="/Applications/${craft.app}.app"
     if /usr/bin/nc -z 127.0.0.1 ${toString craft.port} 2>/dev/null; then
@@ -17,8 +17,6 @@ let
     exec /usr/bin/open -a "$app" --args ${lib.escapeShellArgs craft.appArgs}
   '';
 
-  # A headless server per app, and a live one where the headless server can't
-  # reach the window itself.
   server = name: args: {
     type = "stdio";
     command = "/opt/homebrew/bin/${name}-cli";
@@ -28,8 +26,8 @@ in
 {
   home.packages = lib.mapAttrsToList launcher apps;
 
-  nixconfig.claudeMcpServers = lib.concatMapAttrs (name: craft:
-    { ${name} = server name craft.headless; }
-    // lib.optionalAttrs (craft.live != null) { "${name}-live" = server name craft.live; }
-  ) apps;
+  nixconfig.claudeMcpServers = lib.concatMapAttrs (name: craft: {
+    ${name} = server name craft.headless;
+    "${name}-live" = server name craft.live;
+  }) apps;
 }

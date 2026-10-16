@@ -30,14 +30,14 @@ in
     live = [ "mcp" "--connect" "127.0.0.1:7980" ];
   };
 
-  # With no mode flag the server uses the app when its port answers and falls
-  # back to headless, so one server covers both.
+  # Pin both modes: with no flag the server picks the app or headless once, at
+  # startup, and Claude Code starts it before the app is up.
   vectorcraft = {
     app = "VectorCraft";
     port = 7979;
     appArgs = [ "--control" "7979" ];
-    headless = [ "mcp" ];
-    live = null;
+    headless = [ "mcp" "--headless" ];
+    live = [ "mcp" "--connect" "127.0.0.1:7979" ];
   };
 
   filmcraft = {
