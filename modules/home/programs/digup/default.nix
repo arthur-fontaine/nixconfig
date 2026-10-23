@@ -19,4 +19,15 @@
     SUAutomaticallyUpdate = true;
     SUEnableAutomaticChecks = true;
   };
+
+  # DigUp's own "Launch at login" is an SMAppService login item, which no
+  # preference controls. A launch this soon after login still counts as one
+  # for DigUp, so the search window stays closed.
+  launchd.agents.digup = {
+    enable = true;
+    config = {
+      ProgramArguments = [ "/usr/bin/open" "-a" "DigUp" ];
+      RunAtLoad = true;
+    };
+  };
 }
