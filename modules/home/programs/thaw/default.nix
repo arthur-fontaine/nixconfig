@@ -9,6 +9,16 @@ in
     repo = "modules/home/programs/thaw/default.nix";
   };
 
+  # Thaw's "Launch at login" is an SMAppService login item, which no
+  # preference controls.
+  launchd.agents.thaw = {
+    enable = true;
+    config = {
+      ProgramArguments = [ "/usr/bin/open" "-a" "Thaw" ];
+      RunAtLoad = true;
+    };
+  };
+
   # Hidden section, imported from Bartender 7's GoldenGateHiddenItemOrderKeys.
   # Entries are `<bundle id>:<status item autosave name>`, right to left, the
   # order Thaw saves them in. When the menu bar doesn't match this, Thaw moves

@@ -49,7 +49,6 @@ OpenLogi replaces Logi Options+. The managed keys live in
 ### Thaw
 
 - grant accessibility (screen recording is optional: it adds live item previews and wallpaper tinting)
-- enable launch at login
 
 ### Alcove
 
