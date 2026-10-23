@@ -14,6 +14,7 @@ let
     "swift-lsp@claude-plugins-official" = true;
     "eli5@claude-community" = true;
     "auto-effort@auto-effort-dev" = true;
+    "auto-compact@auto-compact-dev" = true;
     # Built-in mod, off by default: a side agent that flags what you might miss.
     "cc-plugin-you-should-know@builtin" = true;
   };
@@ -48,11 +49,21 @@ let
         };
         autoUpdate = true;
       };
+
+      "auto-compact-dev" = {
+        source = {
+          source = "github";
+          repo = "arthur-fontaine/cc-mod-auto-compact";
+        };
+        autoUpdate = true;
+      };
     };
 
-    # auto-effort's local decision model, served by the llama.cpp build in
-    # modules/darwin/llama-cpp.nix. Without a provider the mod does nothing.
+    # auto-effort's and auto-compact's local decision models, served by the
+    # llama.cpp build in modules/darwin/llama-cpp.nix. Without a provider
+    # these mods do nothing.
     env.AUTO_EFFORT_PROVIDER = "nisev";
+    env.AUTO_COMPACT_PROVIDER = "spisev";
 
     effortLevel = "medium";
 
