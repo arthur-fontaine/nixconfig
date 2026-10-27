@@ -23,7 +23,7 @@ in
     ignore = [
       "^(?!preferences\\.)"
       "ByAccount$"
-      "^preferences\\.(epitaxyPrefs|launchPreview[A-Za-z]+|coworkLegacyRootGrantsPruned|coworkHipaaRestricted|orgWorkAcrossAppsDisabled|remoteToolsDeviceName|sidebarMode)$"
+      "^preferences\\.(epitaxyPrefs|launchPreview[A-Za-z]+|coworkLegacyRootGrantsPruned|coworkHipaaRestricted|orgWorkAcrossAppsDisabled|remoteToolsDeviceName|remoteSessionFolderGrants|sidebarMode)$"
       "Latched$"
     ];
   };
