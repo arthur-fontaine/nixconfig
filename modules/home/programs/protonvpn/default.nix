@@ -29,4 +29,6 @@
 
     SUAutomaticallyUpdate = true;
   };
+
+  nixconfig.defaultsData."ch.protonvpn.mac".VpnProtocol.rawValue = 0;
 }
