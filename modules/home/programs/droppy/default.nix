@@ -21,7 +21,6 @@
       "^(pomodoro|voiceTranscribe)"
       "^(aiBackgroundRemovalInstalled|lastAutoUpdateCheck|thunderstorm_unlocked)$"
       "^droplet\\."
-      "^thaw(InstalledAppPath|InstalledVersion|LatestVersion)$"
       "^(aiCodingHUD_usageAlertedWindows|settingsWindowContent(Height|Width))$"
     ];
   };
