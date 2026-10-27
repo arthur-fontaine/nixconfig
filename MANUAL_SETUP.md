@@ -46,9 +46,11 @@ OpenLogi replaces Logi Options+. The managed keys live in
   A rebuild relaunches it (or hands the wheel back if it won't start), or run
   `openlogi diag wheel --resolution low`
 
-### Thaw
+### Mixologist
 
-- grant accessibility (screen recording is optional: it adds live item previews and wallpaper tinting)
+- grant Accessibility. If a new build loses the grant while System Settings
+  still shows it on, use **Reset Permission** in Mixologist's settings and grant
+  it again
 
 ### Alcove
 

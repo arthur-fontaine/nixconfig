@@ -20,3 +20,9 @@ only reads casks from that directory in a tap, and the tap is this repo itself
 (`nixconfig/casks`, cloned from `nixconfigDir`). Commit a new cask before
 rebuilding: `brew tap` sees committed content only. Reference it as
 `nixconfig/casks/<token>` in a cask list.
+
+Personal apps (Mixologist, Some Browser) keep their cask in their own repo,
+under `Casks/`, and publish a DMG with the same name in every GitHub release.
+Their repo is declared as a tap with a `clone_target` in `default.nix`, and the
+cask as `{ name = "arthur-fontaine/<repo>/<token>"; greedy = true; }`, since a
+`version :latest` cask only upgrades when greedy.

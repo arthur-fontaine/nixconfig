@@ -101,4 +101,4 @@ referenced as `${VAR}`.
 2. Run `scripts/config-drift.py` again. Values you just ported from the live Mac should now report `ok`.
 3. Commit with a Conventional Commit message (`chore(droppy): sync shelf settings`).
 4. Ask before pushing. `rebuild` runs `git pull --ff-only` in `$NIXCONFIG_REPO_DIR` (default `~/nixconfig`), so the commit must be pushed, or present in that checkout, before it applies.
-5. `rebuild` needs sudo. Ask the user to run `! rebuild`, then run the drift report once more. Restart apps that cache prefs in memory (Thaw, Keka, Droppy) if they did not pick the change up.
+5. `rebuild` needs sudo. Ask the user to run `! rebuild`, then run the drift report once more. Restart apps that cache prefs in memory (Keka, Droppy) if they did not pick the change up.

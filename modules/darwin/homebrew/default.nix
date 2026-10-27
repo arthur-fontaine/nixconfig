@@ -137,6 +137,13 @@ in
         force_auto_update = true;
         trusted = true;
       }
+      # Personal apps whose repo doubles as their tap.
+      {
+        name = "arthur-fontaine/mixologist";
+        clone_target = "https://github.com/arthur-fontaine/mixologist";
+        force_auto_update = true;
+        trusted = true;
+      }
     ];
 
     brews = builtins.concatLists brewLists;
