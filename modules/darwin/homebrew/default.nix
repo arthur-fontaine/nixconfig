@@ -144,6 +144,12 @@ in
         force_auto_update = true;
         trusted = true;
       }
+      {
+        name = "arthur-fontaine/somebrowser";
+        clone_target = "https://github.com/arthur-fontaine/somebrowser";
+        force_auto_update = true;
+        trusted = true;
+      }
     ];
 
     brews = builtins.concatLists brewLists;

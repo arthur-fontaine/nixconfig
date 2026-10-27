@@ -22,6 +22,7 @@
     ./ssh
     ./onepassword
     ./mixologist
+    ./somebrowser
     ./keka
     ./airbattery
     ./betterdisplay
