@@ -18,6 +18,11 @@ These apply across all my projects.
 
 - Use `pnpm`, never `npm` — `pnpm install`, `pnpm add`, `pnpm run …`.
 
+## My Mac
+
+- Never change my Mac's settings or apps directly (`defaults write`/`import`, editing app prefs or dotfiles, `brew install`, removing apps, `killall` to apply a change). Make the change in my nixconfig repo and ask me to run `! rebuild`.
+- If something can't be managed there, tell me and let me do it.
+
 ## Session start
 
 - In your first reply of each session, confirm in one line that you've read these rules.
