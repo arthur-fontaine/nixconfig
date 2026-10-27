@@ -24,8 +24,12 @@ in
       "npm:@mariozechner/pi-coding-agent" = "latest";
       "npm:osgrep" = "latest";
       "npm:sfw" = "latest";
-      # mbx: shared Cargo build cache. Not in the mise registry yet.
-      "github:jdx/mr-boxington" = "latest";
+      # mbx: shared Cargo build cache. Not in the mise registry yet. Pinned:
+      # once a version is installed, mise keeps resolving `latest` to it.
+      "github:jdx/mr-boxington" = "1.28.0";
+      # blaze's engine, `ra-jit`, which mbx's blaze setting runs dev builds
+      # through. Only nightly builds are published so far.
+      "github:indexable-inc/blaze" = "nightly";
     };
 
     settings = {
