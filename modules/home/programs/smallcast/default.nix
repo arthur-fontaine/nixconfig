@@ -24,6 +24,24 @@ let
     extensionAppearances = {
       coffee = { tint = "brown"; symbol = "cup.and.heat.waves"; };
     };
+    quickPrompts = [
+      {
+        id = "64D0E352-6E92-41C6-90A9-E539A0944F37";
+        name = "Translate";
+        iconSymbol = "translate";
+        template = "Translate\n\n~~~\n{argument name=\"text\"}\n~~~\n\nto {argument name=\"language\"}";
+        isEnabled = true;
+        showsInRootSearch = true;
+      }
+    ];
+    fallbackPresets = [
+      {
+        id = "92D46321-889A-4066-882D-D3165037A608";
+        name = "Translate to English";
+        target.quickPrompt._0 = "64D0E352-6E92-41C6-90A9-E539A0944F37";
+        values.language = "english";
+      }
+    ];
   };
 in
 {
@@ -44,6 +62,8 @@ in
   targets.darwin.defaults.${domain} = {
     showInMenuBar = true;
     compactMode = true;
+    paletteTheme = "liquidGlass";
+    supportReminders = false;
     webSearchTemplate = "https://duckduckgo.com/?q={query}";
     hiddenLauncherItems = [ "com.anthropic.claude-code-url-handler" ];
     launcherAliases = {
@@ -56,7 +76,19 @@ in
     fallbackCommandsEnabled = true;
     fallbackCommands = [ "search-web" "search-files" "ask-ai" ];
     disabledFallbacks = [ "command:ai-chat" "command:define" ];
+    # Ids are the quick prompt and fallback preset in dataKeys, and a quicklink.
+    fallbackOrder = [
+      "command:ai-chat"
+      "fallback-preset:92d46321-889a-4066-882d-d3165037a608"
+      "command:search-files"
+      "command:run-shell-command"
+      "command:define"
+      "quick-prompt:64d0e352-6e92-41c6-90a9-e539a0944f37"
+      "quicklink:0371236b-43ce-4e41-b741-8d3b614d2317"
+    ];
+    launcherSectionOrder = [ "results" "fallbacks" "files" ];
     fileSearchEnabled = true;
+    fileSearchEngine = "content";
     calendarEnabled = true;
     calendarMenuBarDisplay = 0;
     quicklinksEnabled = true;
