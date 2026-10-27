@@ -24,6 +24,17 @@ LISTS = {
     "resources/list": ("resources", "resources"),
     "resources/templates/list": ("resources", "resourceTemplates"),
 }
+# Only these open the app. Anything else the stand-in can't answer, such as the
+# `server/discover` probe Claude Code sends before `initialize`, gets "method
+# not found" instead of opening every app with each session.
+APP_METHODS = {
+    "tools/call",
+    "resources/read",
+    "resources/subscribe",
+    "resources/unsubscribe",
+    "prompts/get",
+    "completion/complete",
+}
 LIST_CHANGED = {
     "tools/list": "notifications/tools/list_changed",
     "prompts/list": "notifications/prompts/list_changed",
@@ -309,6 +320,9 @@ class Proxy:
         elif method in LISTS and not (msg.get("params") or {}).get("cursor"):
             key = LISTS[method][1]
             send({"jsonrpc": "2.0", "id": msg["id"], "result": self.lists.get(method, {key: []})})
+        elif method not in APP_METHODS and method not in LISTS:
+            send({"jsonrpc": "2.0", "id": msg["id"], "error": {
+                "code": -32601, "message": f"Method not found: {method}"}})
         else:
             error = self.open_app() or self.start_live()
             if error:
