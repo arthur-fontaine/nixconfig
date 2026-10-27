@@ -65,6 +65,10 @@ let
     env.AUTO_EFFORT_PROVIDER = "nisev";
     env.AUTO_COMPACT_PROVIDER = "spisev";
 
+    # Compact every session cache-warmer kept warm when its warm window ends,
+    # not only those above its 500k default.
+    pluginConfigs.cache-warmer.options.minCompactContextK = 100;
+
     effortLevel = "medium";
 
     modelSettings = {
