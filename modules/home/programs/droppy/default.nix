@@ -20,6 +20,9 @@
       "^(externalDisplayVisibilityRules|todo_syncRemindersListIDs|terminalNotch_|droppyQuickNotes_v1|ring_|betterMice_scrollSpeed)"
       "^(pomodoro|voiceTranscribe)"
       "^(aiBackgroundRemovalInstalled|lastAutoUpdateCheck|thunderstorm_unlocked)$"
+      "^droplet\\."
+      "^thaw(InstalledAppPath|InstalledVersion|LatestVersion)$"
+      "^(aiCodingHUD_usageAlertedWindows|settingsWindowContent(Height|Width))$"
     ];
   };
 
@@ -92,6 +95,12 @@
     mediaWidgetLiveArtwork = false;
     liveAudioVisualizer = false;
     autoOpenMediaHUDOnShelfExpand = false;
+    mediaPlaybackControlPresets = builtins.toJSON {
+      appleMusic.leftButtons = [ "playingNext" ];
+      kaset.leftButtons = [ "playingNext" ];
+      nowPlaying.leftButtons = [ ];
+      spotify.leftButtons = [ "shuffle" ];
+    };
 
     # Clipboard
     clipboardHistoryLimit = 50;
