@@ -1,5 +1,6 @@
 import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER, type EditorTheme, renderFakeCursor, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { type AutocompleteProvider, CURSOR_MARKER, type EditorTheme, renderFakeCursor, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { commandName, paintCommand } from "./command.ts";
 import { ReplayFilter } from "./history.ts";
 import { wantsPrediction } from "./prediction.ts";
 import type { Predictor } from "./predictor.ts";
@@ -14,6 +15,8 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 export interface GhostOptions {
 	predictor: Predictor;
 	style: (text: string) => string;
+	// For a slash command Pi knows, like Claude Code's prompt input.
+	commandStyle: (text: string) => string;
 }
 
 export class GhostEditor extends CustomEditor {
@@ -28,6 +31,8 @@ export class GhostEditor extends CustomEditor {
 	private paused = false;
 	private disposed = false;
 	private replay = new ReplayFilter([]);
+	private provider?: AutocompleteProvider;
+	private commands = new Map<string, boolean>();
 
 	constructor(tui: TUI, theme: EditorTheme, keys: KeybindingsManager, options: GhostOptions) {
 		// As Pi builds its own editor; padding, autocomplete provider and border
@@ -88,8 +93,16 @@ export class GhostEditor extends CustomEditor {
 		this.changed();
 	}
 
+	// Pi's provider lists every command it offers (built-in, extensions, skills, prompts),
+	// which its exports don't, so it answers whether a name is one.
+	override setAutocompleteProvider(provider: AutocompleteProvider): void {
+		this.provider = provider;
+		this.commands = new Map();
+		super.setAutocompleteProvider(provider);
+	}
+
 	override render(width: number): string[] {
-		const lines = super.render(width);
+		const lines = this.paintCommand(super.render(width));
 		const text = this.suggestions[this.selected] ?? (this.pending ? "…" : "");
 		if (!text || !this.ghost || this.isShowingAutocomplete() || !this.atEnd()) return lines;
 		const row = lines.findIndex((line) => line.includes(END_CURSOR));
@@ -106,6 +119,32 @@ export class GhostEditor extends CustomEditor {
 		const drawn = head + CURSOR_MARKER + this.ghost.style(renderFakeCursor(cell) + preview.slice(cell.length));
 		lines[row] = drawn + " ".repeat(Math.max(0, width - visibleWidth(drawn)));
 		return lines;
+	}
+
+	private paintCommand(lines: string[]): string[] {
+		const name = commandName(this.getLines()[0] ?? "");
+		if (!name || !this.ghost) return lines;
+		const known = this.commands.get(name);
+		if (known === undefined) this.lookUpCommand(name);
+		// Row 0 is the top border; row 1 shows the first line unless the editor scrolled.
+		const painted = known && lines[1] !== undefined ? paintCommand(lines[1], name, this.ghost.commandStyle) : undefined;
+		if (painted !== undefined) lines[1] = painted;
+		return lines;
+	}
+
+	private lookUpCommand(name: string): void {
+		const provider = this.provider;
+		if (!provider) return;
+		this.commands.set(name, false);
+		const draft = `/${name}`;
+		provider
+			.getSuggestions([draft], 0, draft.length, { signal: AbortSignal.timeout(2_000) })
+			.then((found) => {
+				if (this.provider !== provider || !found?.items.some((item) => item.value === name)) return;
+				this.commands.set(name, true);
+				this.tui.requestRender();
+			})
+			.catch(() => this.commands.delete(name));
 	}
 
 	pause(): void {

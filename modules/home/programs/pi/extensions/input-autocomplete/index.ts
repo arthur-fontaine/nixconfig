@@ -18,6 +18,7 @@ export default function (pi: ExtensionAPI) {
 			const next = new GhostEditor(tui, theme, keys, {
 				predictor: current,
 				style: (text) => ctx.ui.theme.fg("dim", text),
+				commandStyle: (text) => ctx.ui.theme.fg("accent", text),
 			});
 			const session = ctx.sessionManager;
 			next.seedHistory(prompts(session.getBranch()), prompts(session.buildContextEntries()));
