@@ -151,6 +151,8 @@ in
     # Claude Code's permission mode "auto", which Claude Code runs in (settings.json).
     ".pi/agent/extensions/auto-mode".source = ./extensions/auto-mode;
     ".pi/agent/extensions/intercom".source = ./extensions/intercom;
+    # Ctrl+B or `background: true` sends a bash call to the background.
+    ".pi/agent/extensions/background-tools".source = ./extensions/background-tools;
   } // lib.mapAttrs' (name: src: lib.nameValuePair ".pi/agent/skills/${name}" { source = src; }) pluginSkills;
 
   # Pi writes settings.json itself (/model, /settings), so merge into a
