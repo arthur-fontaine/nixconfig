@@ -854,7 +854,10 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		if (pi.getFlag("remote-control") === true && !rc) await start(ctx);
+		// remoteControlAtStartup is Claude Code's setting for the same: every interactive
+		// session starts connected. Print and RPC runs (scripts, subagents) only with the flag.
+		const atStartup = ctx.mode === "tui" && (pi.getSettings() as { remoteControlAtStartup?: boolean }).remoteControlAtStartup === true;
+		if ((pi.getFlag("remote-control") === true || atStartup) && !rc) await start(ctx);
 	});
 
 	pi.on("session_shutdown", async (event) => {

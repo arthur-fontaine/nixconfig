@@ -4,6 +4,8 @@ Shows a Pi session in claude.ai/code and the Claude apps, like
 `claude --remote-control` does, so it can be followed and steered from there.
 
 - `/remote-control` toggles it for the current session.
+- `"remoteControlAtStartup": true` in `settings.json` (Claude Code's setting)
+  starts it with every interactive session.
 - `pi --remote-control` starts it with the session. Pi reads the word after
   an extension flag as its value, so don't put a prompt right after it:
   `pi --remote-control -p "…"`, not `pi -p --remote-control "…"`.
