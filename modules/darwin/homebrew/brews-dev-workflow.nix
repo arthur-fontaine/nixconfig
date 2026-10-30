@@ -16,6 +16,7 @@
   "lazygit"
   "neovim"
   "oha"
+  "pi-coding-agent"
   "sem-cli"
   "swiftlint"
   "xcodegen"
