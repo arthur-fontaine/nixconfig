@@ -17,7 +17,9 @@ import { allowed, blocked, type Denials, fresh, limitPrompt, overLimit } from ".
 import { fastPath } from "./fastpath.ts";
 import * as msg from "./messages.ts";
 import { destroysWork, parsePorcelain } from "./meta.ts";
+import { allowedIn, withVerdict } from "./note.ts";
 import { buildSystemPrompt, claudeMdMessage, loadTemplates, type Rules, thresholdsFor, userIdentity } from "./prompt.ts";
+import { noteRenderer } from "./render.ts";
 import { callLine, claudeName, defang, type Entry, indent, metaLine, project, transcriptLines } from "./transcript.ts";
 
 const STATUS_KEY = "auto-mode";
@@ -79,12 +81,15 @@ export default function (pi: ExtensionAPI) {
 	let checking = 0;
 	let queue: Promise<unknown> = Promise.resolve();
 	let system: { key: string; text: string } | undefined;
+	// Calls the classifier allowed, for their rows' "Allowed by auto mode". Also kept apart from
+	// the result's details because background-tools draws a detached call from its own record.
+	const allowedCalls = new Set<string>();
 
 	function render(ctx: ExtensionContext) {
 		if (!ctx.hasUI) return;
-		const text = !enabled ? undefined : checking > 0 ? "auto mode: checking" : "auto mode";
-		const styled = text && ctx.mode === "tui" ? ctx.ui.theme.fg("dim", "│ ") + ctx.ui.theme.fg(checking > 0 ? "dim" : "accent", text) : text;
-		ctx.ui.setStatus(STATUS_KEY, styled);
+		const text = !enabled ? "auto mode off" : checking > 0 ? "auto mode: checking" : "auto mode";
+		const color = enabled && checking === 0 ? "dim" : "muted";
+		ctx.ui.setStatus(STATUS_KEY, ctx.mode === "tui" ? ctx.ui.theme.fg(color, text) : text);
 	}
 
 	function systemPrompt(severity: boolean): string {
@@ -180,6 +185,8 @@ export default function (pi: ExtensionAPI) {
 		switch (verdict.kind) {
 			case "allow":
 				denials = allowed(denials);
+				// Nested calls (codemode scripts) have no row of their own.
+				if (!event.parentToolCallId) allowedCalls.add(event.toolCallId);
 				return undefined;
 			case "block":
 			case "parse_failure": {
@@ -220,11 +227,33 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	function restore(ctx: ExtensionContext) {
+		allowedCalls.clear();
+		for (const entry of ctx.sessionManager.getBranch()) {
+			const message = entry.type === "message" ? entry.message : undefined;
+			if (message?.role === "toolResult" && allowedIn(message.details)) allowedCalls.add(message.toolCallId);
+		}
+	}
+
 	pi.on("session_start", async (_event, ctx) => {
 		denials = fresh();
 		checking = 0;
+		restore(ctx);
 		render(ctx);
 	});
+
+	pi.on("session_tree", async (_event, ctx) => {
+		restore(ctx);
+	});
+
+	// Kept on the result so the note survives a resume; Pi never sends details to the model.
+	pi.on("tool_result", async (event) => {
+		if (!allowedCalls.has(event.toolCallId)) return undefined;
+		const details = withVerdict(event.details);
+		return details && { details };
+	});
+
+	pi.registerToolRenderer(noteRenderer((toolCallId) => allowedCalls.has(toolCallId)));
 
 	pi.on("tool_call", async (event, ctx) => {
 		if (!enabled) return undefined;

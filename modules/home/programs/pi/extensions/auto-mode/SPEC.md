@@ -300,6 +300,47 @@ Messages to the model are the denied tool's result, verbatim:
 The user sees the denied call in the transcript with its reason, and a
 "checking" status for a check that takes over 4 s (`d2e`, `OLo` = 4000).
 
+### The tool row
+
+- **Allowed.** When a permission check ends in `allow` with
+  `decisionReason: {type: "classifier", classifier: "auto-mode"}`, the
+  call's id is put in the in-memory app state
+  `classifierApprovals.approvals` (`jKs`, called from the permission flow
+  next to `logDecision`). Only the classifier path returns that reason: the
+  acceptEdits and allowlist fast paths (and the Desktop-forward skip) return
+  `{type: "mode", mode: "auto"}`, rules `{type: "rule"}`, a person's answer
+  its own source, so none of them is recorded. The "Tool declares no
+  classifier-relevant input" short-circuit (`T_n`, `classifierRan: false`)
+  does return the classifier reason, so it is recorded too, as are the
+  `noVerdict` allows of tools declared `onBlock: "flag"` (delivered with a
+  note or warning; n/a in Pi).
+- The success renderer of a tool result (`Ya`) reads the entry once when the
+  row mounts (`BFo`, as a `useState` initializer) and deletes it from the
+  store in an effect (`jFo`). If it was there and the tool is not `Agent`,
+  it draws one more line under the tool's own result, `height: 1`, dim:
+  `Allowed by auto mode` (the only spelling in the bundle; no variant for a
+  user rule). The error renderer (`wt`) and the rejected renderer never draw
+  it, so a call the classifier allowed that then fails shows nothing. Since
+  the state is in memory and consumed on mount, a resumed session shows no
+  note.
+- **Blocked.** The denied row reads, dim, `Blocked by auto mode ·
+  /permissions to review · see https://code.claude.com/docs/s/claude-code-auto-mode`
+  (`pg`; the `/permissions` part only when it has a recent-denials entry),
+  with the reason under it; a call that got no verdict reads `Not run · auto
+  mode's check had no usable answer` (`mn`). A notification also says
+  `TOOL blocked by auto mode` (or `N recent blocks by auto mode`), red, with
+  `· /permissions`.
+- A per-row "checking" flag (`classifierApprovals.checking`, `yp`) exists,
+  but its value is unused by the row in this build.
+- **SDK and Remote Control.** No text is sent. Each tool-result user message
+  carries `tool_result_meta: [{id, permission_decision: {decision,
+  source, reason_type}}]` (`$o`, "@internal Display metadata"); for an
+  auto-mode allow that is `{decision: "accept", source: "config",
+  reason_type: "classifier"}`, per the schema's own description. The same
+  serializer (`rGn`) feeds the Remote Control bridge (`gr`, next to its
+  `session_ingress_token` handling) and the stream-json output (`Tye`).
+  What the apps draw from it is not in the CLI.
+
 ## 4. Limits
 
 Denial tracking (`Rq = {maxConsecutive: 3, maxTotal: 20}`), per session

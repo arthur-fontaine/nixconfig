@@ -8,8 +8,10 @@ and the call against Claude Code's own security rules. A risky call is blocked
 and the model is told why. After 3 blocks in a row, or 20 in a session, you are
 asked instead.
 
-The footer shows `│ auto mode` (`│ auto mode: checking` while the classifier
-runs). `/auto-mode` toggles it, `/auto-mode on|off` sets it. It starts on.
+The footer shows `auto mode` (`auto mode: checking` while the classifier
+runs, `auto mode off` when off). `/auto-mode` toggles it, `/auto-mode on|off`
+sets it. It starts on. A call the classifier allowed ends its row with
+`Allowed by auto mode`, beside bash's `Took 0.1s`.
 
 [SPEC.md](SPEC.md) is what Claude Code 2.1.314 does, read from its bundled
 JavaScript (Claude Code is not open source). `prompts/system.md` and
@@ -80,7 +82,8 @@ every piece.
 | `requiresUserInteraction` tools (AskUserQuestion) never classified | `ask_user_question` runs directly | Read. |
 | Calls made from a script (Workflow) | Pi `codemode` is classified on its input like any tool; each tool call its script makes is checked again (fast paths, then the classifier with the script call as the last history entry) | Not exact: Claude Code's script calls are handled by its server-side classifier path. Checking each nested call is the fail-safe choice and costs more calls. |
 | Permission rules (`allow`/`deny`/`ask`), plan mode, safety checks with `classifierApprovable: false`, sandbox, server-side classifier, Slack/email/projects, Chrome/computer use, sub-agent hand-back review, telemetry | Not ported | No Pi counterpart, or outside a local CLI session (SPEC.md §6). |
-| "Checking" notice after 4 s | Footer `│ auto mode: checking` at once | Simplified. |
+| "Checking" notice after 4 s | Footer `auto mode: checking` at once | Simplified. |
+| Dim `Allowed by auto mode` line under a successful result the classifier allowed (not fast paths, not a person's answer, not errors, not `Agent`; the no-relevant-input allow included) | Same calls (`render.ts`, `note.ts`): the verdict is kept per call id and as `details.autoMode` on the result; any renderer chain (Pi's, bash-changes, syntax-highlighting, background-tools, image-view) is wrapped and the note goes on bash's `Took Xs` line, two spaces after it, else as the last line after a blank one | Not exact: Claude Code puts it on its own line and forgets it on resume; here it stays on resume because Pi has no separate note line to keep it beside. `details` never reaches the model. A tool registered without a result renderer (some extension tools; not bash, read, edit, write or MCP tools, which have one) gets no note: Pi draws those results with its own fallback, which it doesn't export, and adding a renderer would replace it for every call. |
 | Opt-in dialog (`skipAutoPermissionPrompt`) | None: loading the extension is the opt-in | — |
 
 ## Tests
@@ -94,7 +97,9 @@ strip, rule names), transcript lines (escaping, projections, history cut at
 the call, nested calls, summaries, answers), the two-stage decision table with
 a scripted model (retries, refusals, timeouts, stage-2 failures, block
 format), the fast paths (allowlist, protected paths, symlinks, lexer, read-only
-and file commands) and the denial counters.
+and file commands), the denial counters, and the row note (details merge,
+placement beside `Took`, below it when too narrow, last line otherwise, which
+definitions are left as they are).
 
 Checked end to end in a scratch Pi 1.4.0 with pi-claude-code: an
 `echo > file` allowed by stage 1 (severity 2) and an upload of a missing file
@@ -102,3 +107,10 @@ to a `.invalid` host escalated to stage 2 and allowed there (severity 12,
 the user had asked for it); the footer and `/auto-mode off` in the TUI.
 A live block was not provoked (it needs a harmful-looking action); the block
 path is covered by the tests.
+
+The row note was checked in a scratch Pi 1.4.0 TUI with the classifier
+replaced by a scripted `claude-code` provider: on allowed bash and write rows,
+not on a blocked one, after a resume, for a call detached with Ctrl+B, and with
+auto-mode loaded both before and after bash-changes, syntax-highlighting and
+background-tools; on a tool with its own result renderer but not on one
+without, whose rows came out byte for byte as without auto-mode.
