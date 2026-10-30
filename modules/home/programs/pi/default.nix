@@ -8,6 +8,14 @@ let
     defaultModel = "claude-opus-5-5";
     defaultThinkingLevel = "high";
 
+    # The cache-warmer extension keeps idle caches warm, like the Claude Code
+    # mod. Pi's own warming is off: it takes claude-code models' cache for
+    # 5 minutes (it is 1 hour) and would replay long runs through `claude -p`.
+    cacheWarming = "off";
+    # As Claude Code's pluginConfigs.cache-warmer: compact every session it
+    # kept warm when its warm window ends, not only those above 500k.
+    cacheWarmer.minCompactContextK = 100;
+
     # Pinned: Pi runs package code, so bump the commit after reading the diff.
     packages = [
       "git:github.com/earendil-works/pi-claude-code@70abb65186592ca788b29b3db22c3160d629c41f"
@@ -107,6 +115,8 @@ in
     ".pi/agent/extensions/remote-control".source = ./extensions/remote-control;
     ".pi/agent/extensions/auto-effort".source = ./extensions/auto-effort;
     ".pi/agent/extensions/auto-compact".source = ./extensions/auto-compact;
+    ".pi/agent/extensions/cache-timer".source = ./extensions/cache-timer;
+    ".pi/agent/extensions/cache-warmer".source = ./extensions/cache-warmer;
   } // lib.mapAttrs' (name: src: lib.nameValuePair ".pi/agent/skills/${name}" { source = src; }) pluginSkills;
 
   # Pi writes settings.json itself (/model, /settings), so merge into a
