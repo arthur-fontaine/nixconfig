@@ -4,7 +4,9 @@ Shows a Pi session in claude.ai/code and the Claude apps, like
 `claude --remote-control` does, so it can be followed and steered from there.
 
 - `/remote-control` toggles it for the current session.
-- `pi --remote-control` starts it with the session.
+- `pi --remote-control` starts it with the session. Pi reads the word after
+  an extension flag as its value, so don't put a prompt right after it:
+  `pi --remote-control -p "…"`, not `pi -p --remote-control "…"`.
 
 It signs in with Claude Code's login (macOS Keychain item
 `Claude Code-credentials`, else `~/.claude/.credentials.json`), including the
