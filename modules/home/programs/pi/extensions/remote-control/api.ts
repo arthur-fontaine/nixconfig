@@ -129,6 +129,29 @@ export async function downloadFile(creds: Credentials, fileUuid: string): Promis
 	return { data: Buffer.from(await res.arrayBuffer()), mimeType: res.headers.get("content-type")?.split(";")[0] ?? "application/octet-stream" };
 }
 
+// Claude Code's limit for files sent to the apps (SendUserFile).
+export const MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
+
+// What SendUserFile uploads to: the apps fetch the file back by its file_uuid.
+export async function uploadFile(creds: Credentials, name: string, mimeType: string, data: Buffer): Promise<string> {
+	const form = new FormData();
+	form.append("file", new Blob([new Uint8Array(data)], { type: mimeType }), name);
+	const res = await fetch(`${API}/api/oauth/file_upload`, {
+		method: "POST",
+		headers: { Authorization: `Bearer ${creds.accessToken}`, "User-Agent": USER_AGENT },
+		body: form,
+		signal: AbortSignal.timeout(120_000),
+	});
+	const text = await res.text();
+	let body: any;
+	try {
+		body = JSON.parse(text);
+	} catch {}
+	if (res.status !== 201 && res.status !== 200) throw new HttpError(res.status, body ?? text, "Uploading the file");
+	if (typeof body?.file_uuid !== "string") throw new Error("The upload returned no file_uuid");
+	return body.file_uuid;
+}
+
 export interface WorkerGrant {
 	jwt: string;
 	baseUrl: string;

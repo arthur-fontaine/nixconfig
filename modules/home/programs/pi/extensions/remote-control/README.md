@@ -47,6 +47,12 @@ Tested from the Claude iOS app:
 - Photos reach the model; other files are saved under the system temp
   directory and their path is given to Pi.
 - `/compact` compacts Pi's conversation. Other slash commands get a notice.
+- Pi's tools show as Claude Code's (`read` as Read, `edit` as Edit with its
+  diff, `find` as Glob, …), with the structured output the apps render, so a
+  read image appears under its Read like in Claude Code.
+- `send_user_file` is Claude Code's SendUserFile, offered while Remote Control
+  is on: it uploads files to `POST /api/oauth/file_upload` (30 MiB each) and
+  the apps show a card for each, opened from its `file_uuid`.
 - Questionnaires from `ask_user_question`
   ([@juicesharp/rpiv-ask-user-question](https://www.npmjs.com/package/@juicesharp/rpiv-ask-user-question))
   show as Claude Code's AskUserQuestion prompt, through the package's

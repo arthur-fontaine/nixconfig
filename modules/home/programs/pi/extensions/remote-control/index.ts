@@ -3,9 +3,10 @@
 // steered from there. Start it with /remote-control or `pi --remote-control`.
 import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	archiveSession,
@@ -18,7 +19,10 @@ import {
 	type InboundEvent,
 	loadCredentials,
 	Worker,
+	MAX_UPLOAD_BYTES,
+	uploadFile,
 } from "./api.ts";
+import { claudeToolUse, claudeToolUseResult, isImageFile, mimeType } from "./claude-tools.ts";
 
 // The worker version claude.ai sees; it gates features on it like on a real Claude Code.
 const CLAUDE_CODE_VERSION = "2.1.314";
@@ -38,7 +42,6 @@ const ASK_PROMPT = "rpiv:ask-user:prompt";
 const ASK_BLOCKED = "rpiv:ask-user:blocked";
 const ASK_ANSWER = "rpiv:ask-user:answer";
 const ASK_ANSWER_RESULT = "rpiv:ask-user:answer-result";
-const ASK_TOOL = "ask_user_question";
 
 interface AskQuestion {
 	question: string;
@@ -233,8 +236,7 @@ class RemoteControl {
 		for (const block of message.content ?? []) {
 			if (block.type === "text" && block.text) content.push({ type: "text", text: block.text });
 			else if (block.type === "thinking" && block.thinking && !block.redacted) content.push({ type: "thinking", thinking: block.thinking, signature: "" });
-			else if (block.type === "toolCall")
-				content.push({ type: "tool_use", id: block.id, name: block.name === ASK_TOOL ? "AskUserQuestion" : block.name, input: block.arguments ?? {} });
+			else if (block.type === "toolCall") content.push({ type: "tool_use", id: block.id, ...claudeToolUse(block.name, block.arguments ?? {}) });
 		}
 		// An interrupted turn ends on an abort error; the result says so instead.
 		const interrupted = message.stopReason === "aborted" || this.ctx.signal?.aborted === true;
@@ -283,7 +285,31 @@ class RemoteControl {
 			...this.base(),
 			parent_tool_use_id: null,
 			message: { role: "user", content: [{ type: "tool_result", tool_use_id: message.toolCallId, content, is_error: message.isError === true }] },
+			...withToolUseResult(claudeToolUseResult(message.toolName, message.content ?? [], message.details)),
 		});
+	}
+
+	// SendUserFile: uploads the files where the apps fetch them, and returns what
+	// its tool_use_result carries (the apps draw a card per attachment).
+	async sendFiles(files: string[], cwd: string) {
+		const attachments = [];
+		for (const file of files) {
+			const full = path.resolve(cwd, file.replace(/^~(?=\/|$)/, os.homedir()));
+			const media_type = mimeType(full);
+			const base = { path: full, isImage: isImageFile(full), media_type };
+			try {
+				const { size } = await stat(full);
+				if (size > MAX_UPLOAD_BYTES) {
+					attachments.push({ ...base, size, upload_error: `${(size / 1048576).toFixed(1)} MiB exceeds the 30 MiB upload limit` });
+					continue;
+				}
+				const file_uuid = await uploadFile(await this.credentials(), path.basename(full), media_type, await readFile(full));
+				attachments.push({ ...base, size, file_uuid });
+			} catch (e) {
+				attachments.push({ ...base, size: 0, upload_error: e instanceof Error ? e.message : String(e) });
+			}
+		}
+		return attachments;
 	}
 
 	// Replays the conversation so far, so a session started mid-way isn't blank on the phone.
@@ -735,6 +761,18 @@ class RemoteControl {
 	}
 }
 
+const SEND_FILE_TOOL = "send_user_file";
+// SendUserFile's instructions in Claude Code 2.1.314, for Pi's tool.
+const SEND_FILE_DESCRIPTION =
+	"Send files to the user, who follows this session in the Claude app. Use this for any file the user would want to see — a generated diagram, a report, a screenshot, a built artifact — and you want it surfaced, not just mentioned. Send deliverables as they are produced, not batched at the end of the task: a complete draft or a meaningfully updated version of the thing the user asked for is worth sending mid-task, so they can follow progress and redirect early. Do NOT send routine working files — scratch files, debug output, partial fragments, or every incremental save of something you're still actively editing; each call renders a file card in the conversation, and a stream of cards for one file is noise. Re-send a file only when it has meaningfully changed since the last send. Paths can be absolute or relative to the current working directory.\n\n" +
+	'Add a `caption` when a one-liner of context helps ("the failing case is row 42", "before vs after"). Skip it if the file speaks for itself.\n\n' +
+	"Set `status` on every call. Use `proactive` when you're initiating — the user is away and you want this to reach their phone (build artifact ready, report generated). Use `normal` when replying to something the user just said.\n\n" +
+	"Set `display` to choose how the file is presented. Use `'render'` when the user should see the content inline right now — a chart, a rendered HTML page, a diagram, an image. Use `'attach'` when the file is something they'll save and open elsewhere — source code, a spreadsheet, a document for another app — and an inline preview would just be noise. Leave it unset to let the client decide by file type.\n\n" +
+	"Files must already exist on the local filesystem — the tool sends files, it doesn't fetch URLs or render content. When unsure of a path, verify with ls first; absolute paths avoid ambiguity about the working directory.\n\n" +
+	'Example: send_user_file({ files: ["report.md"], caption: "Here\'s the report.", status: "normal" })';
+
+const withToolUseResult = (result: unknown) => (result === undefined ? {} : { tool_use_result: result });
+
 function sleep(ms: number) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -751,14 +789,55 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 		rc = next;
+		offerSendFile(true);
 		ctx.ui.notify(`Remote Control on: ${next.url}`, "info");
 	}
 
-	async function stop() {
+	async function stop({ quitting = false } = {}) {
 		const current = rc;
 		rc = undefined;
+		if (current && !quitting) offerSendFile(false);
 		await current?.stop();
 	}
+
+	// Claude Code's SendUserFile, offered while Remote Control is on, as Claude Code
+	// offers it only in remote sessions. Its instructions are Claude Code's.
+	pi.registerTool({
+		name: SEND_FILE_TOOL,
+		label: "Send file",
+		description: SEND_FILE_DESCRIPTION,
+		defaultActive: false,
+		parameters: Type.Object({
+			files: Type.Array(Type.String(), {
+				minItems: 1,
+				description: "File paths (absolute or relative to cwd) to send to the user. Always pass an array, even for a single file.",
+			}),
+			caption: Type.Optional(Type.String({ description: "Optional short caption for the file(s)." })),
+			status: Type.Union([Type.Literal("normal"), Type.Literal("proactive")], {
+				description: "normal when replying to something the user just said; proactive when initiating and the user is away.",
+			}),
+			display: Type.Optional(Type.Union([Type.Literal("render"), Type.Literal("attach")], {
+				description: "render to show the content inline, attach for a file to save and open elsewhere; unset lets the client decide by file type.",
+			})),
+		}),
+		async execute(_id, params, _signal, _update, ctx) {
+			if (!rc) throw new Error("Remote Control is off, so there is no app to send files to.");
+			const attachments = await rc.sendFiles(params.files, ctx.cwd);
+			const sent = attachments.filter((a) => "file_uuid" in a);
+			const failed = attachments.filter((a) => "upload_error" in a);
+			if (sent.length === 0) throw new Error(failed.map((a) => `${a.path}: ${(a as { upload_error: string }).upload_error}`).join("\n"));
+			const lines = [`Sent ${sent.length} ${sent.length === 1 ? "file" : "files"} to the user:`, ...sent.map((a) => `  ${a.path} → file_uuid: ${(a as { file_uuid: string }).file_uuid}`)];
+			if (failed.length) lines.push("Not sent:", ...failed.map((a) => `  ${a.path}: ${(a as { upload_error: string }).upload_error}`));
+			return {
+				content: [{ type: "text", text: lines.join("\n") }],
+				details: { ...(params.caption && { caption: params.caption }), ...(params.display && { display: params.display }), attachments },
+			};
+		},
+	});
+	const offerSendFile = (on: boolean) => {
+		const others = pi.getActiveTools().filter((name) => name !== SEND_FILE_TOOL);
+		pi.setActiveTools(on ? [...others, SEND_FILE_TOOL] : others);
+	};
 
 	pi.registerFlag("remote-control", { description: "Start Remote Control (claude.ai/code and the Claude apps) with the session", type: "boolean" });
 
@@ -780,7 +859,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async (event) => {
 		debug(`session_shutdown ${event.reason} active=${rc !== undefined}`);
-		await stop();
+		await stop({ quitting: true });
 	});
 
 	pi.on("agent_start", async (_event, ctx) => {
