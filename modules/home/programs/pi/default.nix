@@ -135,6 +135,7 @@ in
     ".pi/agent/extensions/cache-timer".source = ./extensions/cache-timer;
     ".pi/agent/extensions/cache-warmer".source = ./extensions/cache-warmer;
     ".pi/agent/extensions/image-view".source = imageView;
+    ".pi/agent/extensions/you-should-know".source = ./extensions/you-should-know;
   } // lib.mapAttrs' (name: src: lib.nameValuePair ".pi/agent/skills/${name}" { source = src; }) pluginSkills;
 
   # Pi writes settings.json itself (/model, /settings), so merge into a
