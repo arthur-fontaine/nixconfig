@@ -1,5 +1,18 @@
 import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
-import { type AutocompleteProvider, CURSOR_MARKER, type EditorTheme, renderFakeCursor, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	type AutocompleteProvider,
+	CURSOR_MARKER,
+	type Component,
+	type EditorTheme,
+	type OverlayHandle,
+	type OverlayOptions,
+	renderFakeCursor,
+	type TUI,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
+	truncateToWidth,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 import { commandName, paintCommand } from "./command.ts";
 import { ReplayFilter } from "./history.ts";
 import { wantsPrediction } from "./prediction.ts";
@@ -11,6 +24,11 @@ export const DEBOUNCE_MS = 1_200;
 // Where Pi's editor draws the cursor when it sits after the last character.
 const END_CURSOR = CURSOR_MARKER + renderFakeCursor(" ");
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+// What Pi's Editor keeps of its last render; private in its types, plain fields at run time.
+interface RenderedRows {
+	renderedAutocompleteHeight: number;
+}
 
 export interface GhostOptions {
 	predictor: Predictor;
@@ -33,6 +51,8 @@ export class GhostEditor extends CustomEditor {
 	private replay = new ReplayFilter([]);
 	private provider?: AutocompleteProvider;
 	private commands = new Map<string, boolean>();
+	private popupRows = 0;
+	private popup?: { handle: OverlayHandle; options: OverlayOptions; lines: string[]; editorRows: number };
 
 	constructor(tui: TUI, theme: EditorTheme, keys: KeybindingsManager, options: GhostOptions) {
 		// As Pi builds its own editor; padding, autocomplete provider and border
@@ -103,22 +123,85 @@ export class GhostEditor extends CustomEditor {
 
 	override render(width: number): string[] {
 		const lines = this.paintCommand(super.render(width));
+		this.drawGhost(lines, width);
+		return this.popupAbove(lines, width);
+	}
+
+	// Pi draws the slash and @ popup under the editor, inside its height, which pushes
+	// the input line and the chat up while it's open. Instead it floats over the chat,
+	// just above the editor; where the editor's place on screen is unknown, it's drawn
+	// above the top border, which still keeps the input line in place.
+	private popupAbove(lines: string[], width: number): string[] {
+		this.popupRows = (this as unknown as RenderedRows).renderedAutocompleteHeight ?? 0;
+		if (this.popupRows <= 0) {
+			this.hidePopup();
+			return lines;
+		}
+		const editor = lines.slice(0, lines.length - this.popupRows);
+		const popup = lines.slice(editor.length);
+		const top = this.screenTop(editor.length, width);
+		if (top === undefined) {
+			this.hidePopup();
+			return [...popup, ...editor];
+		}
+		const row = Math.max(0, top - popup.length);
+		if (this.popup) {
+			Object.assign(this.popup.options, { row, width });
+			this.popup.lines = popup;
+			this.popup.editorRows = editor.length;
+		} else {
+			const options: OverlayOptions = { row, col: 0, width, nonCapturing: true };
+			const view: Component = {
+				render: () => this.popup?.lines ?? [],
+				invalidate() {},
+				// The list's own rows, where Pi's Editor expects them: under its rows.
+				handleMouse: (event) => super.handleMouse({ ...event, y: (this.popup?.editorRows ?? 0) + event.y }),
+			};
+			this.popup = { options, lines: popup, editorRows: editor.length, handle: this.tui.showOverlay(view, options) };
+		}
+		return editor;
+	}
+
+	// The editor's first row on screen in fullscreen mode, where Pi docks it at the
+	// bottom: the terminal's height less its rows and those of what Pi docks under it.
+	private screenTop(editorRows: number, width: number): number | undefined {
+		if (this.tui.mode !== "fullscreen") return undefined;
+		const docked = this.tui.children;
+		const index = docked.findIndex((child) => child === this || (child as { children?: Component[] }).children?.includes(this));
+		if (index < 0) return undefined;
+		const below = docked.slice(index + 1).reduce((rows, child) => rows + child.render(width).length, 0);
+		return this.tui.terminal.rows - below - editorRows;
+	}
+
+	private hidePopup(): void {
+		this.popup?.handle.hide();
+		this.popup = undefined;
+	}
+
+	// Rows as Pi's Editor laid them out, when the popup is drawn above the top border.
+	override handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		const popup = this.popupRows;
+		if (popup <= 0 || this.popup || !this.isShowingAutocomplete()) return super.handleMouse(event);
+		const editorRows = event.height - popup;
+		return super.handleMouse({ ...event, y: event.y < popup ? editorRows + event.y : event.y - popup });
+	}
+
+	private drawGhost(lines: string[], width: number): void {
 		const text = this.suggestions[this.selected] ?? (this.pending ? "…" : "");
-		if (!text || !this.ghost || this.isShowingAutocomplete() || !this.atEnd()) return lines;
+		if (!text || !this.ghost || this.isShowingAutocomplete() || !this.atEnd()) return;
 		const row = lines.findIndex((line) => line.includes(END_CURSOR));
-		if (row < 0) return lines;
+		if (row < 0) return;
 		const line = lines[row]!;
 		const head = line.slice(0, line.indexOf(END_CURSOR));
 		const [first = ""] = text.split("\n", 1);
 		const whole = (text.includes("\n") ? `${first} ↵` : first).replace(/\t/gu, "    ");
 		const preview = truncateToWidth(whole, width - visibleWidth(head), "…");
-		if (!preview) return lines;
+		if (!preview) return;
 		// The cursor sits on the suggestion's first character, where Tab will
 		// insert it, rather than on a blank cell that shifts it right by one.
 		const cell = graphemes.segment(preview)[Symbol.iterator]().next().value?.segment ?? "";
 		const drawn = head + CURSOR_MARKER + this.ghost.style(renderFakeCursor(cell) + preview.slice(cell.length));
 		lines[row] = drawn + " ".repeat(Math.max(0, width - visibleWidth(drawn)));
-		return lines;
 	}
 
 	private paintCommand(lines: string[]): string[] {
@@ -161,6 +244,7 @@ export class GhostEditor extends CustomEditor {
 
 	dispose(): void {
 		this.disposed = true;
+		this.hidePopup();
 		this.pause();
 	}
 
