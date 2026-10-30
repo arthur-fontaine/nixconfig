@@ -165,7 +165,11 @@ export class Worker {
 		return request(method, `${this.grant.baseUrl}${suffix}`, headers(this.grant.jwt), body, what);
 	}
 
-	setState(state: { worker_status?: "idle" | "running" | "requires_action"; external_metadata?: Record<string, unknown> }) {
+	setState(state: {
+		worker_status?: "idle" | "running" | "requires_action";
+		requires_action_details?: Record<string, unknown>;
+		external_metadata?: Record<string, unknown>;
+	}) {
 		return this.call("PUT", "/worker", { worker_epoch: this.grant.epoch, ...state }, "Updating the worker state");
 	}
 

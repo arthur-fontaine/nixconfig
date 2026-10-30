@@ -32,6 +32,40 @@ function debug(message: string) {
 	if (file) appendFileSync(file, `${new Date().toISOString()} ${message}\n`);
 }
 
+// @juicesharp/rpiv-ask-user-question's event contract, for answering its
+// questionnaires from the apps.
+const ASK_PROMPT = "rpiv:ask-user:prompt";
+const ASK_BLOCKED = "rpiv:ask-user:blocked";
+const ASK_ANSWER = "rpiv:ask-user:answer";
+const ASK_ANSWER_RESULT = "rpiv:ask-user:answer-result";
+const ASK_TOOL = "ask_user_question";
+
+interface AskQuestion {
+	question: string;
+	header: string;
+	multiSelect: boolean;
+	options: { label: string; description: string }[];
+}
+
+// Claude Code's AskUserQuestion answers (`answers: {question: label | labels | text}`)
+// as the package's answer entries.
+function toAnswerEntries(questions: AskQuestion[], answers: Record<string, unknown>) {
+	const indexOf = (q: AskQuestion, label: string) => q.options.findIndex((o) => o.label === label.trim());
+	return questions.map((q, questionIndex) => {
+		const value = answers[q.question];
+		const given = (Array.isArray(value) ? value : value === undefined ? [] : [value]).map(String);
+		if (!q.multiSelect) {
+			const i = given.length === 1 ? indexOf(q, given[0]!) : -1;
+			return i >= 0 ? { questionIndex, optionIndexes: [i] } : { questionIndex, text: given.join(", ") };
+		}
+		// Multi-select answers can come as one comma-separated string.
+		const parts = given.flatMap((v) => (indexOf(q, v) >= 0 ? [v] : v.split(/,\s*/)));
+		const optionIndexes = [...new Set(parts.map((p) => indexOf(q, p)).filter((i) => i >= 0))];
+		const text = parts.filter((p) => indexOf(q, p) < 0 && p.trim()).join(", ");
+		return { questionIndex, optionIndexes, ...(text && { text }) };
+	});
+}
+
 type Content = string | ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[];
 
 function toClaudeBlocks(content: Content): any[] {
@@ -92,6 +126,8 @@ class RemoteControl {
 	// Controller messages wait here, not in Pi's own queue, so the apps can still cancel them.
 	private queue: { eventId: string; uuid?: string; content: Content }[] = [];
 	private processingIds: string[] = [];
+	// Questionnaires put to the apps, by control request id.
+	private asks = new Map<string, { toolCallId: string; questions: AskQuestion[]; request: any }>();
 	private remoteTexts: string[] = [];
 	private run?: { startedAt: number; turns: number; input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; lastText: string; error?: string };
 
@@ -197,7 +233,8 @@ class RemoteControl {
 		for (const block of message.content ?? []) {
 			if (block.type === "text" && block.text) content.push({ type: "text", text: block.text });
 			else if (block.type === "thinking" && block.thinking && !block.redacted) content.push({ type: "thinking", thinking: block.thinking, signature: "" });
-			else if (block.type === "toolCall") content.push({ type: "tool_use", id: block.id, name: block.name, input: block.arguments ?? {} });
+			else if (block.type === "toolCall")
+				content.push({ type: "tool_use", id: block.id, name: block.name === ASK_TOOL ? "AskUserQuestion" : block.name, input: block.arguments ?? {} });
 		}
 		// An interrupted turn ends on an abort error; the result says so instead.
 		const interrupted = message.stopReason === "aborted" || this.ctx.signal?.aborted === true;
@@ -402,7 +439,78 @@ class RemoteControl {
 			this.deliverNext();
 		} else if (payload?.type === "control_request") {
 			void this.control(payload);
+		} else if (payload?.type === "control_response") {
+			this.askAnswered(payload.response);
 		}
+	}
+
+	// ---- questionnaires (ask_user_question) ----
+
+	// Shows a questionnaire in the apps as Claude Code's AskUserQuestion prompt.
+	ask(toolCallId: string, questions: AskQuestion[]) {
+		const requestId = randomUUID();
+		const request = {
+			type: "control_request",
+			...this.base(),
+			request_id: requestId,
+			request: {
+				subtype: "can_use_tool",
+				tool_name: "AskUserQuestion",
+				display_name: "AskUserQuestion",
+				input: { questions },
+				tool_use_id: toolCallId,
+				description: questions[0]?.question,
+				requires_user_interaction: true,
+			},
+		};
+		this.asks.set(requestId, { toolCallId, questions, request });
+		this.send(request);
+		this.worker
+			.setState({
+				worker_status: "requires_action",
+				requires_action_details: {
+					tool_name: "AskUserQuestion",
+					display_tool_name: "AskUserQuestion",
+					action_description: questions[0]?.question ?? "",
+					request_id: requestId,
+					tool_use_id: toolCallId,
+				},
+			})
+			.catch(() => {});
+	}
+
+	private askAnswered(response: any) {
+		const ask = this.asks.get(response?.request_id);
+		if (!ask) return;
+		this.asks.delete(response.request_id);
+		this.setWorkerState("running");
+		const answers = response.response?.updatedInput?.answers;
+		const allowed = response.subtype === "success" && response.response?.behavior === "allow";
+		// An empty answer map is how the apps dismiss the prompt.
+		if (!allowed || !answers || Object.keys(answers).length === 0) {
+			this.pi.events.emit(ASK_ANSWER, { toolCallId: ask.toolCallId, requestId: response.request_id, cancel: true });
+			return;
+		}
+		this.pi.events.emit(ASK_ANSWER, {
+			toolCallId: ask.toolCallId,
+			requestId: response.request_id,
+			answers: toAnswerEntries(ask.questions, answers),
+		});
+	}
+
+	// The questionnaire closed in Pi (answered in the terminal, or the turn stopped): withdraw it from the apps.
+	askClosed(toolCallId: string) {
+		for (const [requestId, ask] of this.asks) {
+			if (ask.toolCallId !== toolCallId) continue;
+			this.asks.delete(requestId);
+			this.send({ type: "control_cancel_request", ...this.base(), request_id: requestId });
+			if (this.run) this.setWorkerState("running");
+		}
+	}
+
+	askRejected(requestId: string, reason: string) {
+		this.notice(`Pi didn't take that answer: ${reason}. Answer in the terminal instead.`);
+		debug(`ask answer ${requestId} rejected: ${reason}`);
 	}
 
 	// The apps send these as plain messages; Claude Code runs them as its own commands.
@@ -523,7 +631,7 @@ class RemoteControl {
 							inbound_read_receipts: true,
 							session_state: this.run ? "running" : "idle",
 						},
-						pending_permission_requests: [],
+						pending_permission_requests: [...this.asks.values()].map((ask) => ask.request),
 						pending_user_dialog_requests: [],
 					});
 					this.send(this.initEvent());
@@ -690,6 +798,18 @@ export default function (pi: ExtensionAPI) {
 		if (message.role === "assistant") rc.assistantEvent(message);
 		else if (message.role === "toolResult") rc.toolResultEvent(message);
 		else if (message.role === "user" && !rc.consumeRemote(message.content)) rc.userEvent(message.content);
+	});
+
+	pi.events.on(ASK_PROMPT, (data: any) => {
+		if (typeof data?.toolCallId === "string" && Array.isArray(data.questions)) rc?.ask(data.toolCallId, data.questions);
+	});
+
+	pi.events.on(ASK_BLOCKED, (data: any) => {
+		if (data?.active === false && typeof data.toolCallId === "string") rc?.askClosed(data.toolCallId);
+	});
+
+	pi.events.on(ASK_ANSWER_RESULT, (data: any) => {
+		if (data?.ok === false && typeof data.requestId === "string") rc?.askRejected(data.requestId, String(data.reason ?? data.code));
 	});
 
 	pi.on("session_before_compact", async () => {

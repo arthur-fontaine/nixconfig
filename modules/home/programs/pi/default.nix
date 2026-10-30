@@ -11,6 +11,9 @@ let
     # Pinned: Pi runs package code, so bump the commit after reading the diff.
     packages = [
       "git:github.com/earendil-works/pi-claude-code@70abb65186592ca788b29b3db22c3160d629c41f"
+      # The ask_user_question tool. The remote-control extension answers it
+      # from the Claude apps through the package's rpiv:ask-user:* events.
+      "npm:@juicesharp/rpiv-ask-user-question@2.15.0"
     ];
   };
   settingsJson = (pkgs.formats.json { }).generate "pi-settings.json" settings;
