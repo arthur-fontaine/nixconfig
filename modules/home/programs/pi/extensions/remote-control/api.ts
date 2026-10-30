@@ -111,6 +111,16 @@ export async function archiveSession(creds: Credentials, id: string) {
 	);
 }
 
+// Files the apps attach to a message (`file_attachments[].file_uuid`).
+export async function downloadFile(creds: Credentials, fileUuid: string): Promise<{ data: Buffer; mimeType: string }> {
+	const res = await fetch(`${API}/api/oauth/files/${encodeURIComponent(fileUuid)}/content`, {
+		headers: { Authorization: `Bearer ${creds.accessToken}`, "User-Agent": USER_AGENT },
+		signal: AbortSignal.timeout(60_000),
+	});
+	if (!res.ok) throw new HttpError(res.status, await res.text().catch(() => ""), "Downloading an attachment");
+	return { data: Buffer.from(await res.arrayBuffer()), mimeType: res.headers.get("content-type")?.split(";")[0] ?? "application/octet-stream" };
+}
+
 export interface WorkerGrant {
 	jwt: string;
 	baseUrl: string;
@@ -151,13 +161,8 @@ export class Worker {
 		return this.call("PUT", "/worker", { worker_epoch: this.grant.epoch, ...state }, "Updating the worker state");
 	}
 
-	heartbeat(release = false) {
-		return this.call(
-			"POST",
-			"/worker/heartbeat",
-			{ session_id: this.sessionId, worker_epoch: this.grant.epoch, ...(release && { release_lease: true }) },
-			"Heartbeat",
-		);
+	heartbeat() {
+		return this.call("POST", "/worker/heartbeat", { session_id: this.sessionId, worker_epoch: this.grant.epoch }, "Heartbeat");
 	}
 
 	postEvents(payloads: unknown[]) {

@@ -2,6 +2,9 @@
 // Claude apps like `claude --remote-control` does, so it can be followed and
 // steered from there. Start it with /remote-control or `pi --remote-control`.
 import { randomUUID } from "node:crypto";
+import { appendFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -9,6 +12,7 @@ import {
 	bridge,
 	type CodeSession,
 	createSession,
+	downloadFile,
 	HttpError,
 	type InboundEvent,
 	loadCredentials,
@@ -20,6 +24,12 @@ const CLAUDE_CODE_VERSION = "2.1.314";
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 const MAX_TOOL_RESULT_CHARS = 30_000;
 const STATUS_KEY = "remote-control";
+
+// Set PI_REMOTE_CONTROL_DEBUG to a file path to log the bridge's lifecycle there.
+function debug(message: string) {
+	const file = process.env.PI_REMOTE_CONTROL_DEBUG;
+	if (file) appendFileSync(file, `${new Date().toISOString()} ${message}\n`);
+}
 
 type Content = string | ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[];
 
@@ -41,8 +51,25 @@ function fromClaudeContent(content: unknown): Content {
 	return out;
 }
 
+// The text of a message, for matching Pi's copy of a remote message against what
+// arrived. Pi adds "[Image …]" notes to messages with images, so those are left out.
 function textOf(content: Content) {
-	return typeof content === "string" ? content : content.map((c) => (c.type === "text" ? c.text : "[image]")).join("\n");
+	const texts = typeof content === "string" ? [content] : content.flatMap((c) => (c.type === "text" ? [c.text] : []));
+	return texts
+		.join("\n")
+		.split("\n")
+		.filter((line) => !/^\[Image[ :]/.test(line.trim()))
+		.join("\n")
+		.trim();
+}
+
+// The apps' file route serves attachments as application/octet-stream.
+function imageType(data: Buffer, fallback: string) {
+	if (data[0] === 0xff && data[1] === 0xd8) return "image/jpeg";
+	if (data.subarray(0, 4).toString("hex") === "89504e47") return "image/png";
+	if (data.subarray(0, 4).toString("ascii") === "GIF8") return "image/gif";
+	if (data.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
+	return fallback.startsWith("image/") ? fallback : "image/jpeg";
 }
 
 function truncate(text: string) {
@@ -101,12 +128,10 @@ class RemoteControl {
 		clearTimeout(this.heartbeatTimer);
 		clearTimeout(this.regrantTimer);
 		this.setStatus(undefined);
-		// Archive first and skip the outbox: Pi can exit before slow teardown
-		// handlers finish (RPC mode exits on a second shutdown request).
-		await Promise.allSettled([
-			this.session && archiveSession(loadCredentials(), this.session.id),
-			this.worker?.heartbeat(true),
-		]);
+		debug(`stop ${this.session?.id}`);
+		// Archive right away, skipping the outbox: Pi may exit soon after this handler starts.
+		const archived = await Promise.allSettled([this.session && archiveSession(loadCredentials(), this.session.id)]);
+		debug(`stopped: ${archived[0].status === "rejected" ? String(archived[0].reason) : "archived"}`);
 	}
 
 	setContext(ctx: ExtensionContext) {
@@ -140,7 +165,7 @@ class RemoteControl {
 			permissionMode: "bypassPermissions",
 			tools: this.pi.getActiveTools(),
 			mcp_servers: [],
-			slash_commands: [],
+			slash_commands: ["compact"],
 			claude_code_version: CLAUDE_CODE_VERSION,
 			apiKeySource: "none",
 			output_style: "normal",
@@ -166,7 +191,9 @@ class RemoteControl {
 			else if (block.type === "thinking" && block.thinking && !block.redacted) content.push({ type: "thinking", thinking: block.thinking, signature: "" });
 			else if (block.type === "toolCall") content.push({ type: "tool_use", id: block.id, name: block.name, input: block.arguments ?? {} });
 		}
-		if (message.errorMessage) content.push({ type: "text", text: `Error: ${message.errorMessage}` });
+		// An interrupted turn ends on an abort error; the result says so instead.
+		const interrupted = message.stopReason === "aborted" || this.ctx.signal?.aborted === true;
+		if (message.errorMessage && !interrupted) content.push({ type: "text", text: `Error: ${message.errorMessage}` });
 		if (content.length === 0) return;
 		const usage = message.usage ?? {};
 		this.send({
@@ -198,7 +225,7 @@ class RemoteControl {
 			this.run.cost += usage.cost?.total ?? 0;
 			const text = content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
 			if (text) this.run.lastText = text;
-			if (message.errorMessage) this.run.error = message.errorMessage;
+			if (message.errorMessage && !interrupted) this.run.error = message.errorMessage;
 		}
 	}
 
@@ -235,6 +262,8 @@ class RemoteControl {
 		const run = this.run;
 		this.run = undefined;
 		if (!run) return;
+		// What Claude Code adds to the transcript when a turn is stopped.
+		if (aborted) this.userEvent("[Request interrupted by user]");
 		const durationMs = Date.now() - run.startedAt;
 		const failed = aborted || run.error !== undefined;
 		this.send({
@@ -330,7 +359,7 @@ class RemoteControl {
 					backoff = 1000;
 					if (event.sequence_num <= this.lastSequenceNum) continue;
 					this.lastSequenceNum = event.sequence_num;
-					this.handle(event);
+					await this.handle(event);
 				}
 			} catch (e) {
 				if (this.stopped.signal.aborted) return;
@@ -342,12 +371,16 @@ class RemoteControl {
 		}
 	}
 
-	private handle(event: InboundEvent) {
+	private async handle(event: InboundEvent) {
 		const payload = event.payload;
 		if (payload?.type === "user") {
-			const content = fromClaudeContent(payload.message?.content);
-			if (typeof content === "string" ? !content.trim() : content.length === 0) return;
+			let content = fromClaudeContent(payload.message?.content);
+			const attachments = Array.isArray(payload.file_attachments) ? payload.file_attachments : [];
+			const slash = attachments.length === 0 ? /^\/(\S+)\s*([\s\S]*)$/.exec(textOf(content).trim()) : null;
+			if (attachments.length === 0 && !textOf(content).trim()) return;
 			this.ack([event.event_id], "received");
+			if (slash) return this.slashCommand(event.event_id, slash[1], slash[2]);
+			if (attachments.length > 0) content = await this.withAttachments(content, attachments);
 			// The apps mark a message `later` to wait for the turn to end; any other
 			// priority joins the running turn, as it does in Claude Code.
 			if (this.run && payload.priority !== "later") {
@@ -362,6 +395,82 @@ class RemoteControl {
 		} else if (payload?.type === "control_request") {
 			void this.control(payload);
 		}
+	}
+
+	// The apps send these as plain messages; Claude Code runs them as its own commands.
+	private slashCommand(eventId: string, name: string, args: string) {
+		this.ack([eventId], "processing");
+		const done = (text: string) => {
+			this.notice(text);
+			this.ack([eventId], "processed");
+		};
+		if (name !== "compact") return done(`Pi can't run /${name} from Remote Control.`);
+		// Progress and the boundary come from Pi's compaction events (see compacting/compacted).
+		this.ctx.compact({
+			customInstructions: args.trim() || undefined,
+			onComplete: () => this.ack([eventId], "processed"),
+			onError: (e) => {
+				this.compactStatus(null);
+				done(`Compaction failed: ${e.message}`);
+			},
+		});
+	}
+
+	compactStatus(status: "compacting" | null) {
+		this.send({ type: "system", subtype: "status", ...this.base(), status, permissionMode: "bypassPermissions" });
+	}
+
+	// How Claude Code marks a compaction in the transcript.
+	compacted(reason: "manual" | "threshold" | "overflow", tokensBefore: number) {
+		this.compactStatus(null);
+		this.send({
+			type: "system",
+			subtype: "compact_boundary",
+			...this.base(),
+			compact_metadata: { trigger: reason === "manual" ? "manual" : "auto", pre_tokens: tokensBefore },
+		});
+	}
+
+	// A message shown in the apps only, as Claude Code shows a local command's output.
+	private notice(text: string) {
+		this.send({
+			type: "assistant",
+			...this.base(),
+			parent_tool_use_id: null,
+			message: {
+				id: `msg_${randomUUID().replace(/-/g, "")}`,
+				type: "message",
+				role: "assistant",
+				model: "<synthetic>",
+				content: [{ type: "text", text }],
+				stop_reason: "end_turn",
+				stop_sequence: null,
+				usage: { input_tokens: 0, output_tokens: 0 },
+			},
+		});
+	}
+
+	// Images go to the model inline; other files are saved where Pi's tools can read them.
+	private async withAttachments(content: Content, attachments: any[]): Promise<Content> {
+		const parts: Exclude<Content, string> = typeof content === "string" ? (content ? [{ type: "text", text: content }] : []) : [...content];
+		const dir = path.join(os.tmpdir(), "pi-remote-control", this.session.id);
+		for (const attachment of attachments) {
+			const name = path.basename(String(attachment?.file_name ?? attachment?.file_uuid ?? "attachment"));
+			try {
+				const file = await downloadFile(loadCredentials(), String(attachment.file_uuid));
+				if (attachment.is_image || file.mimeType.startsWith("image/")) {
+					parts.push({ type: "image", data: file.data.toString("base64"), mimeType: imageType(file.data, file.mimeType) });
+				} else {
+					await mkdir(dir, { recursive: true });
+					const filePath = path.join(dir, `${String(attachment.file_uuid).slice(0, 8)}-${name}`);
+					await writeFile(filePath, file.data);
+					parts.push({ type: "text", text: `[Attached file: ${filePath}]` });
+				}
+			} catch (e) {
+				parts.push({ type: "text", text: `[Attachment ${name} could not be downloaded: ${e instanceof Error ? e.message : String(e)}]` });
+			}
+		}
+		return parts;
 	}
 
 	private async control(payload: any) {
@@ -406,11 +515,10 @@ class RemoteControl {
 					const wanted = request.model;
 					if (wanted == null || wanted === "default") return reply({ subtype: "success" });
 					const [provider, id] = String(wanted).includes("/") ? String(wanted).split("/", 2) : [undefined, String(wanted)];
-					const model = provider
-						? this.ctx.modelRegistry.find(provider, id)
-						: (this.ctx.modelRegistry.getAvailable().find((m) => m.id === id && m.provider === this.ctx.model?.provider) ??
-							this.ctx.modelRegistry.getAvailable().find((m) => m.id === id));
-					if (!model) return reply({ subtype: "error", error: `Pi has no model ${wanted}` });
+					// Stay on the current provider: switching provider would change how requests are billed.
+					const current = this.ctx.model?.provider;
+					const model = current && (!provider || provider === current) ? this.ctx.modelRegistry.find(current, id) : undefined;
+					if (!model) return reply({ subtype: "error", error: `Pi's ${current ?? "current"} provider has no model ${id}` });
 					if (!(await this.pi.setModel(model))) return reply({ subtype: "error", error: `Pi has no credentials for ${wanted}` });
 					return reply({ subtype: "success" });
 				}
@@ -536,7 +644,8 @@ export default function (pi: ExtensionAPI) {
 		if (pi.getFlag("remote-control") === true && !rc) await start(ctx);
 	});
 
-	pi.on("session_shutdown", async () => {
+	pi.on("session_shutdown", async (event) => {
+		debug(`session_shutdown ${event.reason} active=${rc !== undefined}`);
 		await stop();
 	});
 
@@ -556,6 +665,18 @@ export default function (pi: ExtensionAPI) {
 		if (message.role === "assistant") rc.assistantEvent(message);
 		else if (message.role === "toolResult") rc.toolResultEvent(message);
 		else if (message.role === "user" && !rc.consumeRemote(message.content)) rc.userEvent(message.content);
+	});
+
+	pi.on("session_before_compact", async () => {
+		rc?.compactStatus("compacting");
+	});
+
+	pi.on("session_compact", async (event) => {
+		rc?.compacted(event.reason, event.compactionEntry.tokensBefore);
+	});
+
+	pi.on("session_compact_failed", async () => {
+		rc?.compactStatus(null);
 	});
 
 	pi.on("model_select", async (_event, ctx) => {
