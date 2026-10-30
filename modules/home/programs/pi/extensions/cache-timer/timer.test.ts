@@ -21,18 +21,21 @@ test("nothing is shown before the first request", () => {
 	assert.equal(label(touch({ type: "model_change" }, { type: "thinking_level_change" }, user), 60 * MIN, T), undefined);
 });
 
-test("counts down from when the last request was sent", () => {
+test("shows nothing until the last five minutes, counted from when the last request was sent", () => {
 	const t = touch(user, assistant(T));
-	assert.equal(label(t, 60 * MIN, T + 11_000)?.text, "cache 59:49");
-	assert.equal(label(t, 60 * MIN, T + 60 * MIN)?.text, "cache cold");
+	assert.equal(label(t, 60 * MIN, T + 11_000), undefined);
+	assert.equal(label(t, 60 * MIN, T + 54 * MIN), undefined);
+	assert.deepEqual(label(t, 60 * MIN, T + 55 * MIN), { text: "cache expires in 5 min", tone: "warning" });
+	assert.deepEqual(label(t, 60 * MIN, T + 56.5 * MIN), { text: "cache expires in 4 min", tone: "warning" });
 });
 
-test("the label turns to a warning in the last ten minutes, red once cold", () => {
+test("under a minute it reads 1 min, then nothing once expired", () => {
 	const t = touch(user, assistant(T));
-	assert.deepEqual(label(t, 60 * MIN, T + 49 * MIN), { text: "cache 11:00", tone: "dim" });
-	assert.deepEqual(label(t, 60 * MIN, T + 50 * MIN), { text: "cache 10:00", tone: "warning" });
-	assert.deepEqual(label(t, 5 * MIN, T + 4.5 * MIN), { text: "cache 00:30", tone: "warning" });
-	assert.deepEqual(label(t, 60 * MIN, T + 61 * MIN), { text: "cache cold", tone: "error" });
+	assert.equal(label(t, 60 * MIN, T + 59.5 * MIN)?.text, "cache expires in 1 min");
+	assert.equal(label(t, 60 * MIN, T + 60 * MIN), undefined);
+	assert.equal(label(t, 60 * MIN, T + 61 * MIN), undefined);
+	// A 5-minute cache warns from the start.
+	assert.equal(label(t, 5 * MIN, T + 30_000)?.text, "cache expires in 5 min");
 });
 
 test("cache-warmer's pings and Pi's own refreshes restart the clock", () => {
@@ -47,11 +50,12 @@ test("a request that failed before reaching the model doesn't count", () => {
 	assert.deepEqual(t, { kind: "touched", at: T });
 });
 
-test("a compaction or another model makes the next request a full re-send", () => {
-	assert.equal(label(touch(user, assistant(T), { type: "compaction" }), 60 * MIN, T + MIN)?.text, "cache cold");
-	assert.equal(label(touch(user, assistant(T), { type: "model_change" }), 60 * MIN, T + MIN)?.text, "cache cold");
+test("after a compaction or another model there is no cache left to count down", () => {
+	assert.deepEqual(touch(user, assistant(T), { type: "compaction" }), { kind: "reset" });
+	assert.equal(label(touch(user, assistant(T), { type: "compaction" }), 5 * MIN, T + MIN), undefined);
+	assert.equal(label(touch(user, assistant(T), { type: "model_change" }), 5 * MIN, T + MIN), undefined);
 	// …until a request warms the new prefix.
-	assert.equal(label(touch(user, assistant(T), { type: "compaction" }, user, assistant(T + MIN)), 60 * MIN, T + MIN)?.text, "cache 60:00");
+	assert.equal(label(touch(user, assistant(T), { type: "compaction" }, user, assistant(T + MIN)), 5 * MIN, T + 2 * MIN)?.text, "cache expires in 4 min");
 });
 
 test("the lifetime comes from settings.json's cacheTimer.ttlMinutes, 60 by default", () => {

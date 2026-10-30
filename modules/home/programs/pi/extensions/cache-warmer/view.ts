@@ -52,20 +52,25 @@ export function windowEnd(s: WarmState, cfg: Config): { at: number; compacts: bo
 	return { at: s.lastActivityAt + cfg.warmWindowMs, compacts: s.contextTokens >= cfg.minCompactTokens };
 }
 
+// Plain words, dim like the footer's other quiet items: when something went
+// wrong, the widget says it in color, with the details.
 export function footer(s: WarmState): Line | undefined {
+	const text = footerText(s);
+	return text === undefined ? undefined : { text, tone: "dim" };
+}
+
+function footerText(s: WarmState): string | undefined {
 	switch (s.phase) {
 		case "warming":
-			return s.errors > 0
-				? { text: `warm · retry ${hhmm(s.nextPingAt)}`, tone: "warning" }
-				: { text: `warm · next ${hhmm(s.nextPingAt)}`, tone: "dim" };
+			return s.errors > 0 ? "retrying to keep cache warm" : "keeping cache warm";
 		case "compacted":
-			return { text: "warm · compacted", tone: "success" };
+			return "compacted while idle";
 		case "cold":
-			return { text: "warm · cold", tone: "warning" };
+			return "cache went cold";
 		case "stopped":
-			return { text: "warm · stopped", tone: "warning" };
+			return "stopped keeping cache warm";
 		case "paused":
-			return { text: "warm · off", tone: "muted" };
+			return "cache warming off";
 		default:
 			return undefined;
 	}

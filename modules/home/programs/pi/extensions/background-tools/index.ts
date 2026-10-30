@@ -71,7 +71,7 @@ export default function (pi: ExtensionAPI) {
 		if (ctx?.mode !== "tui") return;
 		const count = detachedCalls().length;
 		const theme = ctx.ui.theme;
-		ctx.ui.setStatus(STATUS_KEY, count ? theme.fg("dim", "│ ") + theme.fg("warning", `${count} in background`) : undefined);
+		ctx.ui.setStatus(STATUS_KEY, count ? theme.fg("muted", `${count} command${count === 1 ? "" : "s"} in background`) : undefined);
 	}
 
 	function remember(record: DetachedRecord) {

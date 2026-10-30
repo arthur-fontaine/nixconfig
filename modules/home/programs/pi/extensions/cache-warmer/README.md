@@ -26,16 +26,16 @@ widgets, so the state is split by how much it matters right now:
 
 | Where | When | Example |
 | --- | --- | --- |
-| Footer status (key `cache-warmer`) | Always, once there is something to say | `warm · next 16:16` (dim), `warm · retry 16:21`, `warm · cold`, `warm · stopped` (yellow), `warm · compacted` (green), `warm · off` (grey) |
+| Footer status (key `cache-warmer`) | Always, once there is something to say | `keeping cache warm`, `retrying to keep cache warm`, `cache went cold`, `stopped keeping cache warm`, `compacted while idle`, `cache warming off`, all dim |
 | One line under the editor (widget `cache-warmer`) | Only when something needs knowing before the next message: a failed ping and its retry, why it stopped or found the cache cold, the warm window's last wake (it will compact or let the cache cool at that time), and the compaction's result | `cache-warmer: warm window ends · compacting 225k at 02:40 (≥ 100k)` |
 | Notification | The same moments as the original's toasts: compaction done, budget reached, cache found cold | |
 | `/warm` | On demand: the full status, including when the warm window ends and what happens then | |
 
 The footer entry stays a few words long because other extensions share
-that line (cache-timer's countdown sits just before it). The widget line
+that line (cache-timer's warning sits just before it), and stays dim: when
+something went wrong, the widget says what in color. The widget line
 appears only while idle and goes away as soon as you send a message, so a
-normal warm session shows nothing under the editor. When the timer and the
-warmer are both on, the footer reads `cache 42:10 warm · next 16:16`.
+normal warm session shows nothing under the editor.
 
 ## Features and how they map
 

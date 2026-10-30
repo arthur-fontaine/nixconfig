@@ -1,33 +1,33 @@
 # cache-timer for Pi
 
 Port of the Claude Code mod `modules/home/programs/claude/mods/cache-timer`.
-It shows how long the session's prompt cache has left, so you can tell
-whether your next message will be a cheap cache read or a full re-send.
+It warns when the session's prompt cache is about to expire, so you can
+send your next message while it is still a cheap cache read.
 
 ```
-cache 42:10              dim: time left
-cache 08:31              warning: the last sixth of the lifetime, 10 minutes at most
-cache cold               red: the next message re-sends the whole context
+cache expires in 3 min   warning: the last five minutes of the lifetime
 ```
+
+Nothing shows before that, and nothing once the cache has expired.
 
 ## Where it shows, and why
 
 One short entry in Pi's footer status line (`ctx.ui.setStatus`, key
 `cache-timer`), next to the other extensions' statuses. The footer is
-always visible but never takes room from the conversation, and a countdown
-needs no more than that. Its color carries the urgency, so it stays quiet
-for most of the hour. In Claude Code the mod could only append a word to
-the mode labels, with no color.
+always visible but never takes room from the conversation, and a warning
+needs no more than that. It shows only when there is something to act on,
+so the footer stays quiet for most of the hour. In Claude Code the mod
+could only append a word to the mode labels, with no color.
 
-Pi sorts statuses by key, so cache-warmer's entry (`cache-warmer`) comes
-right after it: `cache 42:10 warm · next 16:16`.
+The footer extension places it after the context fullness, before
+cache-warmer's entry.
 
 ## Features and how they map
 
 | Claude Code mod | Pi |
 | --- | --- |
-| `cache MM:SS` appended to the footer's mode labels | Footer status `cache MM:SS`, colored by time left. |
-| `cache cold` once the lifetime has passed | Same, in red. |
+| `cache MM:SS` appended to the footer's mode labels | Footer status `cache expires in N min`, in the last five minutes only. |
+| `cache cold` once the lifetime has passed | Nothing. |
 | Clock restarts on every main-thread request, from when it was **sent** | The last assistant message on the branch with non-zero usage. Its `timestamp` is set when the request starts streaming (claude-code: before `claude -p` is spawned), so it is the send time. A request that failed before the provider read the prompt (zero usage) doesn't count. |
 | Clock restarts on cache-warmer's pings (read from its state) | cache-warmer records each ping on the session (a `cache-warmer` custom entry with `lastPingAt`) and emits `cache-warmer:state` on `pi.events`, so the label updates at once. |
 | Subagent requests ignored | Nothing to filter: Pi runs no subagents in the session; subagent extensions use their own sessions. |
@@ -41,8 +41,8 @@ right after it: `cache 42:10 warm · next 16:16`.
 
 - Pi's own cache refreshes (`usage` entries of kind `cache_warm`, from its
   built-in `cacheWarming`) restart the clock too.
-- After a compaction or a model switch the label reads `cache cold`: the
-  next request can't reuse the old prefix. Claude Code's label kept counting.
+- After a compaction or a model switch the label goes away: the next
+  request can't reuse the old prefix. Claude Code's label kept counting.
 - A resumed session shows the real time left: the label comes from the
   session's entries, not from memory.
 

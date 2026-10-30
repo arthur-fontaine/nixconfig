@@ -191,7 +191,7 @@ class RemoteControl {
 		this.scheduleHeartbeat(20);
 		this.scheduleRegrant();
 		void this.readLoop();
-		this.setStatus("RC");
+		this.setStatus("on");
 		// Renamed while the session was being created, or since the session was left.
 		if (resumed || this.title() !== title) await this.rename(this.pi.getSessionName());
 	}
@@ -477,7 +477,7 @@ class RemoteControl {
 					break;
 				} catch (e) {
 					if (this.stopped.signal.aborted || attempt >= 4) {
-						this.setStatus("RC ⚠");
+						this.setStatus("offline");
 						break;
 					}
 					if (e instanceof HttpError && (e.status === 401 || e.status === 409)) await this.regrant().catch(() => {});
@@ -794,9 +794,9 @@ class RemoteControl {
 			try {
 				const res = await this.worker.heartbeat();
 				if (typeof res?.heartbeat_interval_seconds === "number") next = res.heartbeat_interval_seconds;
-				this.setStatus("RC");
+				this.setStatus("on");
 			} catch (e) {
-				this.setStatus("RC ⚠");
+				this.setStatus("offline");
 				if (e instanceof HttpError && (e.status === 401 || e.status === 409)) await this.regrant().catch(() => {});
 			}
 			if (!this.stopped.signal.aborted) this.scheduleHeartbeat(next);
@@ -806,7 +806,7 @@ class RemoteControl {
 	private scheduleRegrant() {
 		clearTimeout(this.regrantTimer);
 		const inMs = Math.max(60_000, this.worker.grant.expiresAt - Date.now() - 10 * 60_000);
-		this.regrantTimer = setTimeout(() => void this.regrant().catch(() => this.setStatus("RC ⚠")), inMs);
+		this.regrantTimer = setTimeout(() => void this.regrant().catch(() => this.setStatus("offline")), inMs);
 	}
 
 	private regranting?: Promise<void>;
@@ -824,9 +824,11 @@ class RemoteControl {
 		return this.regranting;
 	}
 
-	private setStatus(text: string | undefined) {
-		// Pi joins the extensions' footer entries with a space; a dim bar keeps them apart.
-		if (this.ctx.hasUI) this.ctx.ui.setStatus(STATUS_KEY, text && this.ctx.mode === "tui" ? this.ctx.ui.theme.fg("dim", "│ ") + text : text);
+	// "offline": posting events, a heartbeat or a token renewal failed.
+	private setStatus(state: "on" | "offline" | undefined) {
+		if (!this.ctx.hasUI) return;
+		const text = state && `remote control ${state}`;
+		this.ctx.ui.setStatus(STATUS_KEY, text && this.ctx.mode === "tui" ? this.ctx.ui.theme.fg(state === "on" ? "dim" : "warning", text) : text);
 	}
 }
 

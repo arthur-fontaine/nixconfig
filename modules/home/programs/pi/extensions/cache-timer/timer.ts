@@ -54,22 +54,15 @@ export function lastTouch(newestFirst: Iterable<Entry>): Touch {
 	return at > 0 ? { kind: "touched", at } : { kind: "none" };
 }
 
-function pad(n: number) {
-	return String(n).padStart(2, "0");
-}
+// Shown only near the end, in the theme's warning color: until then there is
+// nothing to act on, and once cold the next message re-sends everything anyway.
+export const WARN_MS = 5 * 60_000;
 
-export function countdown(ms: number) {
-	const s = Math.ceil(ms / 1000);
-	return `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
-}
-
-// The theme color index.ts paints it with: quiet while there is time, a
-// warning near the end (the last sixth, at most 10 minutes), red once cold.
-export type Label = { text: string; tone: "dim" | "warning" | "error" };
+export type Label = { text: string; tone: "warning" };
 
 export function label(touch: Touch, ttlMs: number, now: number): Label | undefined {
-	if (touch.kind === "none") return undefined;
-	const left = touch.kind === "reset" ? 0 : touch.at + ttlMs - now;
-	if (left <= 0) return { text: "cache cold", tone: "error" };
-	return { text: `cache ${countdown(left)}`, tone: left <= Math.min(10 * 60_000, ttlMs / 6) ? "warning" : "dim" };
+	if (touch.kind !== "touched") return undefined;
+	const left = touch.at + ttlMs - now;
+	if (left <= 0 || left > WARN_MS) return undefined;
+	return { text: `cache expires in ${Math.ceil(left / 60_000)} min`, tone: "warning" };
 }

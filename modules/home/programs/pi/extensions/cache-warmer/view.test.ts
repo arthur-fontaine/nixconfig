@@ -15,8 +15,8 @@ const warming = (change: Partial<WarmState> = {}): WarmState => ({
 	...change,
 });
 
-test("while warming the footer says when the next ping is, and nothing shows under the editor", () => {
-	assert.deepEqual(footer(warming()), { text: "warm · next 09:50", tone: "dim" });
+test("while warming the footer says so, and nothing shows under the editor", () => {
+	assert.deepEqual(footer(warming()), { text: "keeping cache warm", tone: "dim" });
 	assert.equal(widget(warming(), cfg), undefined);
 	assert.equal(footer({ ...INITIAL, phase: "active" }), undefined);
 	assert.equal(footer({ ...INITIAL, phase: "small" }), undefined);
@@ -32,13 +32,15 @@ test("the last wake of the warm window is announced with what it will do", () =>
 
 test("a failing ping shows its error and the retry", () => {
 	const s = warming({ errors: 1, note: "ping failed (overloaded)", nextPingAt: T + 55 * MIN });
-	assert.deepEqual(footer(s), { text: "warm · retry 09:55", tone: "warning" });
+	assert.deepEqual(footer(s), { text: "retrying to keep cache warm", tone: "dim" });
 	assert.deepEqual(widget(s, cfg), { text: "cache-warmer: ping failed (overloaded) · retry 2 of 3 at 09:55", tone: "warning" });
 });
 
 test("why it stopped stays under the editor until the next message", () => {
 	const s: WarmState = { ...INITIAL, phase: "stopped", note: "daily keep-alive budget reached (2000k of 2000k)" };
-	assert.deepEqual(footer(s), { text: "warm · stopped", tone: "warning" });
+	assert.deepEqual(footer(s), { text: "stopped keeping cache warm", tone: "dim" });
 	assert.equal(widget(s, cfg)?.text, "cache-warmer: stopped · daily keep-alive budget reached (2000k of 2000k)");
-	assert.deepEqual(footer({ ...INITIAL, phase: "paused" }), { text: "warm · off", tone: "muted" });
+	assert.deepEqual(footer({ ...INITIAL, phase: "paused" }), { text: "cache warming off", tone: "dim" });
+	assert.deepEqual(footer({ ...INITIAL, phase: "cold" }), { text: "cache went cold", tone: "dim" });
+	assert.deepEqual(footer({ ...INITIAL, phase: "compacted" }), { text: "compacted while idle", tone: "dim" });
 });

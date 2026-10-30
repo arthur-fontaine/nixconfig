@@ -152,6 +152,8 @@ let
     startup-header = ./extensions/startup-header;
     # Claude Code's /rewind (Esc twice), and /restore to bring rewound prompts back.
     rewind = ./extensions/rewind;
+    # Pi's footer as two lines: where you are, then what's going on.
+    footer = ./extensions/footer;
   };
   skills = pluginSkills // {
     context7-mcp = ../claude/skills/context7-mcp;
