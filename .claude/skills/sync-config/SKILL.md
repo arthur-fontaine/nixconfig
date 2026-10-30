@@ -41,7 +41,7 @@ Edit the file the report names. By method:
 | Method | What to edit |
 | --- | --- |
 | `copy` with a repo file | Copy the live file over the repo file (`cp ~/.config/zed/settings.json modules/home/programs/zed/`), then review `git diff`. |
-| `copy` with a Nix attrset (`claude-settings`, `pi-caveman`, `onepassword-ssh-agent`) | Port the key into the attrset in the named module. |
+| `copy` with a Nix attrset (`claude-settings`, `onepassword-ssh-agent`) | Port the key into the attrset in the named module. |
 | `json-merge`, `toml-merge` | Port the key into the attrset the entry names. Dotted paths in the report are nested attrs. |
 | `defaults` | Add the key to `targets.darwin.defaults.<domain>`. If the live value is plist data holding JSON, put it in `nixconfig.defaultsData.<domain>` as a Nix value instead. |
 | `macos:<domain>` | Edit the matching file in `modules/darwin/core/defaults/`. |

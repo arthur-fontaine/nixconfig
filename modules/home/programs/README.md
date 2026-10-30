@@ -10,7 +10,7 @@ Principles:
 
 Examples:
 - `git/` and `gh/` are fully declarative
-- `zsh/`, `ghostty/`, `zed/`, `karabiner/`, and `pi/` keep file payloads beside their module
+- `zsh/`, `ghostty/`, `zed/`, and `karabiner/` keep file payloads beside their module
 - `mise/` and `codex/` stay small and declarative
 - `droppy/`, `smallcast/`, `keka/` and the other app modules set macOS defaults
 
