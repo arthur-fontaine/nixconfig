@@ -1,8 +1,8 @@
 // Client for Claude Code's Remote Control service, playing the worker side that
 // `claude --remote-control` plays. Reverse-engineered from Claude Code 2.1.314;
 // the endpoints are private and can change without notice.
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -14,24 +14,32 @@ export interface Credentials {
 	trustedDeviceToken?: string;
 }
 
+function keychainItem(): Promise<string> {
+	return new Promise((resolve, reject) =>
+		execFile(
+			"security",
+			["find-generic-password", "-a", os.userInfo().username, "-w", "-s", "Claude Code-credentials"],
+			// Asynchronous and bounded: the Keychain can stall (it did while Pi's TUI quit),
+			// and a synchronous call would freeze all of Pi.
+			{ encoding: "utf8", timeout: 5000 },
+			(error, stdout) => (error ? reject(error) : resolve(stdout)),
+		),
+	);
+}
+
 // Read-only: refreshing would rotate the token Claude Code itself holds, so an
 // expired login is left for Claude Code to refresh.
-export function loadCredentials(): Credentials {
+export async function loadCredentials(): Promise<Credentials> {
 	let doc: any;
 	if (process.platform === "darwin") {
 		try {
-			const raw = execFileSync(
-				"security",
-				["find-generic-password", "-a", os.userInfo().username, "-w", "-s", "Claude Code-credentials"],
-				{ encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-			);
-			doc = JSON.parse(raw);
+			doc = JSON.parse(await keychainItem());
 		} catch {}
 	}
 	if (!doc) {
 		const dir = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
 		try {
-			doc = JSON.parse(readFileSync(path.join(dir, ".credentials.json"), "utf8"));
+			doc = JSON.parse(await readFile(path.join(dir, ".credentials.json"), "utf8"));
 		} catch {
 			throw new Error("No Claude Code login found. Run `claude` and /login first.");
 		}

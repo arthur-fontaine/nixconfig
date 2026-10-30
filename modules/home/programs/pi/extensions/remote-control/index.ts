@@ -12,6 +12,7 @@ import {
 	bridge,
 	type CodeSession,
 	createSession,
+	type Credentials,
 	downloadFile,
 	HttpError,
 	type InboundEvent,
@@ -79,6 +80,8 @@ function truncate(text: string) {
 class RemoteControl {
 	private worker!: Worker;
 	private session!: CodeSession;
+	// Kept for shutdown, which must not wait on the Keychain.
+	private creds!: Credentials;
 	private readonly stopped = new AbortController();
 	private streamAbort?: AbortController;
 	private lastSequenceNum = 0;
@@ -97,12 +100,17 @@ class RemoteControl {
 		private ctx: ExtensionContext,
 	) {}
 
+	private async credentials() {
+		this.creds = await loadCredentials();
+		return this.creds;
+	}
+
 	get url() {
 		return this.session.url;
 	}
 
 	async start() {
-		const creds = loadCredentials();
+		const creds = await this.credentials();
 		const title = this.pi.getSessionName() ?? `Pi · ${path.basename(this.ctx.cwd)}`;
 		this.session = await createSession(creds, title, this.ctx.cwd, this.ctx.model?.id);
 		try {
@@ -130,7 +138,7 @@ class RemoteControl {
 		this.setStatus(undefined);
 		debug(`stop ${this.session?.id}`);
 		// Archive right away, skipping the outbox: Pi may exit soon after this handler starts.
-		const archived = await Promise.allSettled([this.session && archiveSession(loadCredentials(), this.session.id)]);
+		const archived = await Promise.allSettled([this.session && archiveSession(this.creds, this.session.id)]);
 		debug(`stopped: ${archived[0].status === "rejected" ? String(archived[0].reason) : "archived"}`);
 	}
 
@@ -474,7 +482,7 @@ class RemoteControl {
 		for (const attachment of attachments) {
 			const name = path.basename(String(attachment?.file_name ?? attachment?.file_uuid ?? "attachment"));
 			try {
-				const file = await downloadFile(loadCredentials(), String(attachment.file_uuid));
+				const file = await downloadFile(await this.credentials(), String(attachment.file_uuid));
 				if (attachment.is_image || file.mimeType.startsWith("image/")) {
 					parts.push({ type: "image", data: file.data.toString("base64"), mimeType: imageType(file.data, file.mimeType) });
 				} else {
@@ -602,7 +610,7 @@ class RemoteControl {
 	private regrant() {
 		this.regranting ??= (async () => {
 			try {
-				this.worker.grant = await bridge(loadCredentials(), this.session.id);
+				this.worker.grant = await bridge(await this.credentials(), this.session.id);
 				await this.worker.setState({ worker_status: this.run ? "running" : "idle", external_metadata: this.metadata() });
 				this.streamAbort?.abort();
 				this.scheduleRegrant();
