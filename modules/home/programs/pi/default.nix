@@ -29,6 +29,14 @@ in
     ignore = [ "^lastChangelogVersion$" ];
   };
 
+  # The same global instructions as Claude Code. Pi has no rules/ directory,
+  # so Claude Code's rules are appended to them.
+  home.file.".pi/agent/AGENTS.md".text = lib.concatStringsSep "\n" [
+    (builtins.readFile ../claude/CLAUDE.md)
+    (builtins.readFile ../claude/rules/context7.md)
+  ];
+  home.file.".pi/agent/skills/context7-mcp".source = ../claude/skills/context7-mcp;
+
   home.file.".pi/agent/extensions/remote-control".source = ./extensions/remote-control;
 
   # Pi writes settings.json itself (/model, /settings), so merge into a
