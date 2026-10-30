@@ -16,7 +16,7 @@ let
       }
     ];
     aiDefaultModel = {
-      chatGPT = { model = "gpt-5.6-luna"; effort = "medium"; };
+      codex = { model = "gpt-6-luna"; effort = "medium"; };
     };
     quickActionModel = {
       codex = { model = "gpt-5.6-luna"; effort = "medium"; };
