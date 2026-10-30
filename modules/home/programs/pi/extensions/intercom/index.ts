@@ -110,8 +110,9 @@ export default async function intercom(pi: ExtensionAPI) {
 		if (!ctx.hasUI) return;
 		ctx.ui.addAutocompleteProvider((current): AutocompleteProvider => {
 			const ours = new WeakSet<AutocompleteItem>();
+			// Pi's provider is a class: its methods are passed on one by one, not spread.
 			return {
-				...current,
+				shouldTriggerFileCompletion: current.shouldTriggerFileCompletion?.bind(current),
 				triggerCharacters: [...new Set([...(current.triggerCharacters ?? []), "@"])],
 				async getSuggestions(lines, cursorLine, cursorCol, options) {
 					const token = mentionAt(lines[cursorLine] ?? "", cursorCol);
