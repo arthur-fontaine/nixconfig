@@ -29,12 +29,17 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 interface RenderedRows {
 	renderedAutocompleteHeight: number;
 }
+interface AutocompleteControl {
+	updateAutocomplete(): void;
+}
 
 export interface GhostOptions {
 	predictor: Predictor;
 	style: (text: string) => string;
 	// For a slash command Pi knows, like Claude Code's prompt input.
 	commandStyle: (text: string) => string;
+	// Commands typed under another extension's name: `/from …` runs `/to …`.
+	commandAliases: () => Record<string, string>;
 }
 
 export class GhostEditor extends CustomEditor {
@@ -60,6 +65,23 @@ export class GhostEditor extends CustomEditor {
 		super(tui, theme, keys, { embedWorkingStatus: true });
 		this.keys = keys;
 		this.ghost = options;
+		// Pi hands its submit handler over by assigning onSubmit, an own field of its
+		// Editor, so an accessor here sees what is sent before Pi's commands do.
+		let submit: ((text: string) => void) | undefined;
+		Object.defineProperty(this, "onSubmit", {
+			configurable: true,
+			enumerable: true,
+			get: () => submit && ((text: string) => submit?.(this.aliased(text))),
+			set: (handler?: (text: string) => void) => {
+				submit = handler;
+			},
+		});
+	}
+
+	private aliased(text: string): string {
+		const name = commandName(text.trimStart());
+		const target = name && this.ghost?.commandAliases()[name];
+		return target ? text.trimStart().replace(`/${name}`, `/${target}`) : text;
 	}
 
 	// The branch's prompts, oldest first, then Pi's replay of `inContext` is skipped.
@@ -100,7 +122,12 @@ export class GhostEditor extends CustomEditor {
 		this.cancel();
 		const before = this.getText();
 		super.handleInput(data);
-		if (this.getText() !== before) this.changed();
+		if (this.getText() !== before) {
+			// Some of Pi's edits (Cmd+Delete, to the start of the line) leave the popup on
+			// what was deleted; Backspace refreshes it, these don't.
+			if (this.isShowingAutocomplete()) (this as unknown as AutocompleteControl).updateAutocomplete();
+			this.changed();
+		}
 	}
 
 	override setText(text: string): void {

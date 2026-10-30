@@ -3,6 +3,7 @@
 // through the claude-code provider. Tab or Right accepts, Down/Up switch.
 // Also keeps the editor's up-arrow history complete for the session branch.
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteProvider } from "@earendil-works/pi-tui";
 import { prompts } from "./context.ts";
 import { GhostEditor } from "./editor.ts";
 import { MODEL, PROVIDER, Predictor } from "./predictor.ts";
@@ -10,6 +11,11 @@ import { MODEL, PROVIDER, Predictor } from "./predictor.ts";
 export default function (pi: ExtensionAPI) {
 	let predictor: Predictor | undefined;
 	let editor: GhostEditor | undefined;
+
+	// /rename (the session-name extension) replaces Pi's /name: typing /name runs it,
+	// and only /rename is offered.
+	let hidingAliases = false;
+	const aliases = (): Record<string, string> => (pi.getCommands().some((command) => command.name === "rename") ? { name: "rename" } : {});
 
 	// A fresh editor each time: Pi's history can only be added to, and after
 	// /tree it has to hold the new branch's prompts.
@@ -19,6 +25,7 @@ export default function (pi: ExtensionAPI) {
 				predictor: current,
 				style: (text) => ctx.ui.theme.fg("dim", text),
 				commandStyle: (text) => ctx.ui.theme.fg("accent", text),
+				commandAliases: aliases,
 			});
 			const session = ctx.sessionManager;
 			next.seedHistory(prompts(session.getBranch()), prompts(session.buildContextEntries()));
@@ -36,6 +43,23 @@ export default function (pi: ExtensionAPI) {
 		if (ctx.mode !== "tui") return;
 		predictor = new Predictor(ctx);
 		install(ctx, predictor);
+		if (hidingAliases) return;
+		hidingAliases = true;
+		// Pi's provider is a class: its methods are passed on one by one, not spread.
+		ctx.ui.addAutocompleteProvider(
+			(current): AutocompleteProvider => ({
+				triggerCharacters: current.triggerCharacters,
+				applyCompletion: (...args) => current.applyCompletion(...args),
+				shouldTriggerFileCompletion: current.shouldTriggerFileCompletion?.bind(current),
+				async getSuggestions(lines, line, col, options) {
+					const found = await current.getSuggestions(lines, line, col, options);
+					if (!found?.prefix.startsWith("/") || found.prefix.includes(" ")) return found;
+					const hidden = aliases();
+					const items = found.items.filter((item) => !(item.value in hidden));
+					return items.length > 0 ? { ...found, items } : null;
+				},
+			}),
+		);
 	});
 
 	pi.on("session_shutdown", async () => {

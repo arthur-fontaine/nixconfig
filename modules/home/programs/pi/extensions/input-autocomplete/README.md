@@ -136,3 +136,13 @@ top of `predictor.ts`, `editor.ts` and `prediction.ts`.
 - `context.ts`: conversation payload and branch prompts from session data
 - `history.ts`: skips Pi's replay of in-context prompts
 - `tests/`: `node --test 'modules/home/programs/pi/extensions/input-autocomplete/tests/*.test.ts'`
+
+## Editor additions
+
+- A slash command Pi knows is drawn in the theme's accent color as you type it.
+- The slash and `@` popup floats over the chat, just above the editor, instead
+  of pushing the input line and the chat up (fullscreen mode).
+- Edits Pi doesn't refresh the popup after, such as Cmd+Delete (to the start of
+  the line), refresh it.
+- With the session-name extension loaded, `/rename` replaces Pi's `/name`:
+  typing `/name …` runs `/rename …`, and only `/rename` is offered.
