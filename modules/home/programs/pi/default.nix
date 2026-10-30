@@ -20,6 +20,8 @@ let
     # As Claude Code's pluginConfigs.cache-warmer: compact every session it
     # kept warm when its warm window ends, not only those above 500k.
     cacheWarmer.minCompactContextK = 100;
+    # Selecting text with the mouse doesn't copy it.
+    fullscreenCopyOnSelect = false;
     # As Claude Code's: every interactive session shows in the Claude apps.
     remoteControlAtStartup = true;
 
