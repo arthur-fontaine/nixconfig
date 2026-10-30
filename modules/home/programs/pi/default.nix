@@ -25,7 +25,19 @@ let
   settingsJson = (pkgs.formats.json { }).generate "pi-settings.json" settings;
   settingsPath = "${config.home.homeDirectory}/.pi/agent/settings.json";
 
-  mcpServers = config.nixconfig.claudeMcpServers;
+  # The MCP servers Claude Code has: those other modules contribute through
+  # nixconfig.claudeMcpServers, and the claude module's own two. ${VAR}
+  # expands at connect time, from ~/.config/.env.
+  mcpServers = config.nixconfig.claudeMcpServers // {
+    context7 = {
+      url = "https://mcp.context7.com/mcp";
+      headers."CONTEXT7_API_KEY" = "\${CONTEXT7_API_KEY}";
+    };
+    excalidraw = {
+      url = "https://api.excalidraw.com/api/v1/mcp";
+      headers."Authorization" = "Bearer \${EXCALIDRAW_API_TOKEN}";
+    };
+  };
   mcpJson = (pkgs.formats.json { }).generate "pi-mcp.json" { inherit mcpServers; };
   mcpPath = "${config.home.homeDirectory}/.pi/agent/mcp.json";
   merge = import ../../lib/merge-json.nix { inherit pkgs; };
@@ -52,20 +64,12 @@ let
         rev = "523374dee72d67c7b2b5f858ea0094ffda49c3ac";
         hash = "sha256-qJIMwaas5Wnz270rUbPa4E5v2GQ62SQ1rKT0jmjYhyw=";
       };
-      figma = pkgs.fetchFromGitHub {
-        owner = "figma";
-        repo = "mcp-server-guide";
-        rev = "f2789420e7e8b4e2465dfeb1e12e1fc6a31397e5";
-        hash = "sha256-0VOSMv6RQrSWC2oRKMaZJQAKm8Z7zuWyEXL6djxtYZ0=";
-      };
     in
     {
       skill-creator = "${official}/plugins/skill-creator/skills/skill-creator";
       frontend-design = "${official}/plugins/frontend-design/skills/frontend-design";
       eli5 = "${community}/eli5/skills/eli5";
       inherit humanizer;
-      # One folder per skill inside.
-      figma = "${figma}/skills";
     };
 in
 {
