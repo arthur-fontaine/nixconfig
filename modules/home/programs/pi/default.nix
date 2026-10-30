@@ -20,6 +20,8 @@ let
     # As Claude Code's pluginConfigs.cache-warmer: compact every session it
     # kept warm when its warm window ends, not only those above 500k.
     cacheWarmer.minCompactContextK = 100;
+    # Esc twice on an empty prompt opens Rewind (extensions/rewind), not /tree.
+    doubleEscapeAction = "none";
     # Selecting text with the mouse doesn't copy it.
     fullscreenCopyOnSelect = false;
     # As Claude Code's: every interactive session shows in the Claude apps.
@@ -148,6 +150,8 @@ let
     syntax-highlighting = ./extensions/syntax-highlighting;
     # Pi's startup header without its "Pi can explain its own features" line.
     startup-header = ./extensions/startup-header;
+    # Claude Code's /rewind (Esc twice), and /restore to bring rewound prompts back.
+    rewind = ./extensions/rewind;
   };
   skills = pluginSkills // {
     context7-mcp = ../claude/skills/context7-mcp;
