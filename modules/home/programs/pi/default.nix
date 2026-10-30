@@ -8,10 +8,13 @@ let
     defaultModel = "claude-opus-5-5";
     defaultThinkingLevel = "high";
 
-    # Pi's own prompt-cache warming, during runs and between them, in place of
-    # Claude Code's cache-warmer mod. models.json below gives it the right
-    # cache lifetime for claude-code models.
-    cacheWarming = "idle";
+    # The cache-warmer extension keeps idle caches warm, like the Claude Code
+    # mod. Pi's own warming is off: it takes claude-code models' cache for
+    # 5 minutes (it is 1 hour) and would replay long runs through `claude -p`.
+    cacheWarming = "off";
+    # As Claude Code's pluginConfigs.cache-warmer: compact every session it
+    # kept warm when its warm window ends, not only those above 500k.
+    cacheWarmer.minCompactContextK = 100;
 
     # Pinned: Pi runs package code, so bump the commit after reading the diff.
     packages = [
@@ -50,20 +53,6 @@ let
   # keeps its on/off state in the same file, so it is merged, not replaced.
   autoEffort = { config.provider = "nisev"; };
   autoEffortJson = (pkgs.formats.json { }).generate "pi-auto-effort.json" autoEffort;
-
-  # Claude Code writes the prompt cache for 1 hour, but pi-claude-code's models
-  # declare Anthropic's 5-minute default, so Pi's warming would refresh (one
-  # `claude -p` call each) every 4.5 minutes. Ids as pi-claude-code lists them.
-  models.providers.claude-code.modelOverrides = lib.genAttrs [
-    "default"
-    "claude-opus-5-5"
-    "claude-fable-5-1"
-    "claude-sonnet-5-5"
-    "claude-sonnet-5"
-    "claude-haiku-5-5"
-    "claude-haiku-4-5-20251001"
-  ] (_: { promptCache.short = 3600; });
-  modelsJson = (pkgs.formats.json { }).generate "pi-models.json" models;
   # Likewise auto-compact's, as Claude Code's AUTO_COMPACT_PROVIDER: Spisev.
   autoCompactJson = (pkgs.formats.json { }).generate "pi-auto-compact.json" { provider = "spisev"; };
   mcpPath = "${config.home.homeDirectory}/.pi/agent/mcp.json";
@@ -144,6 +133,7 @@ in
     ".pi/agent/extensions/auto-effort".source = ./extensions/auto-effort;
     ".pi/agent/extensions/auto-compact".source = ./extensions/auto-compact;
     ".pi/agent/extensions/cache-timer".source = ./extensions/cache-timer;
+    ".pi/agent/extensions/cache-warmer".source = ./extensions/cache-warmer;
     ".pi/agent/extensions/image-view".source = imageView;
   } // lib.mapAttrs' (name: src: lib.nameValuePair ".pi/agent/skills/${name}" { source = src; }) pluginSkills;
 
@@ -159,6 +149,5 @@ in
     ${merge mcpJson mcpPath}
     ${merge autoEffortJson "${config.home.homeDirectory}/.pi/agent/auto-effort.json"}
     ${merge autoCompactJson "${config.home.homeDirectory}/.pi/agent/auto-compact/config.json"}
-    ${merge modelsJson "${config.home.homeDirectory}/.pi/agent/models.json"}
   '';
 }
