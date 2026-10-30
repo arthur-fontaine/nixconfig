@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { TuiMouseEvent } from "@earendil-works/pi-tui";
 import { kittyRows, kittyTransmit } from "../kitty.ts";
 import type { Cells } from "../layout.ts";
-import { type Paint, type Tile, TileRow, type TileRowOptions } from "../tiles.ts";
+import { Hover, type Paint, type Tile, TileRow, type TileRowOptions } from "../tiles.ts";
 
 const plain = (line: string) => line.replace(/\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\/g, "");
 const square = { width: 500, height: 500 };
@@ -26,6 +26,8 @@ function row(tiles: Tile[], options: Partial<TileRowOptions> = {}) {
 function click(x: number, y: number): TuiMouseEvent {
 	return { type: "click", button: "left", x, y, screenX: x, screenY: y, width: 80, height: 9, shift: false, alt: false, ctrl: false };
 }
+
+const move = (x: number, y: number): TuiMouseEvent => ({ ...click(x, y), type: "move", button: "none" });
 
 test("a tile is the picture in a rounded border over its label", () => {
 	const lines = row([tile(1)]).component.render(80).map(plain);
@@ -87,6 +89,56 @@ test("where Pi draws the pictures, only the labels are added, still clickable", 
 	assert.deepEqual(component.render(80).map(plain), [" chart.png  #2"]);
 	component.handleMouse(click(12, 0));
 	assert.deepEqual(opened, ["/blobs/2.png"]);
+});
+
+test("the tile under the pointer has its label and border highlighted, until the pointer leaves it", () => {
+	let renders = 0;
+	const hover = new Hover(() => renders++);
+	const style = { state: hover, label: (text: string) => `<${text}>`, border: (text: string) => `{${text}}` };
+	const { component } = row([tile(1), tile(2)], { indent: 2, hover: style });
+	const other = row([tile(3)], { hover: style }).component;
+	const shown = () => component.render(80).map(plain);
+	const lines = shown();
+	assert.ok(lines.every((line) => !line.includes("<") && !line.includes("{")));
+
+	// Over the second tile's picture: its label and border only.
+	hover.input("\x1b[<35;23;4M", () => assert.equal(component.handleMouse(move(2 + 14 + 1 + 5, 3)), undefined));
+	assert.equal(renders, 1);
+	const hovered = shown();
+	assert.equal(hovered[0], `  ╭${"─".repeat(12)}╮ {╭${"─".repeat(12)}╮}`);
+	assert.equal(hovered[7], `  │     #1     │ {│}     <#2>     {│}`);
+	// The same tile again renders nothing new.
+	hover.input("\x1b[<35;24;4M", () => component.handleMouse(move(2 + 14 + 1 + 6, 3)));
+	assert.equal(renders, 1);
+	// Off the tiles but over the row, over another row, then elsewhere: each clears it.
+	hover.input("\x1b[<35;1;4M", () => component.handleMouse(move(0, 3)));
+	assert.equal(renders, 2);
+	assert.deepEqual(shown(), lines);
+	hover.input("\x1b[<35;5;4M", () => component.handleMouse(move(5, 3)));
+	other.render(80);
+	hover.input("\x1b[<35;5;4M", () => other.handleMouse(move(5, 3)));
+	assert.deepEqual(shown(), lines);
+	assert.ok(other.render(80).some((line) => line.includes("<#3>")));
+	hover.input("\x1b[<35;60;20M", () => {});
+	assert.ok(other.render(80).every((line) => !line.includes("<")));
+	assert.equal(renders, 5);
+	// Keys leave it; a wheel or the window losing focus clears it.
+	hover.input("\x1b[<35;5;4M", () => other.handleMouse(move(5, 3)));
+	hover.input("a", () => {});
+	assert.ok(other.render(80).some((line) => line.includes("<#3>")));
+	hover.input("\x1b[<65;5;4M", () => other.handleMouse({ ...move(5, 3), type: "wheel" }));
+	assert.ok(other.render(80).every((line) => !line.includes("<")));
+	hover.input("\x1b[<35;5;4M", () => other.handleMouse(move(5, 3)));
+	hover.input("\x1b[O", () => {});
+	assert.ok(other.render(80).every((line) => !line.includes("<")));
+});
+
+test("a hovered label alone is highlighted where Pi draws the pictures", () => {
+	const hover = new Hover(() => {});
+	const { component } = row([tile(1), tile(2)], { paint: null, hover: { state: hover, label: (text) => `<${text}>`, border: (text) => text } });
+	component.render(80);
+	hover.input("\x1b[<35;5;1M", () => component.handleMouse(move(4, 0)));
+	assert.deepEqual(component.render(80).map(plain), ["#1  <#2>"]);
 });
 
 test("a Kitty picture is placeholder cells colored with its image id", () => {

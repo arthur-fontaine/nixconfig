@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { quickLookArgv } from "../quicklook.ts";
+import { imagePathFromUrl, quickLookArgv } from "../quicklook.ts";
 import { draftPath, findDraftEditor, linkedImages, messageSources, referencePath, toolSources } from "../sources.ts";
 
 const ROOT = "/agent/image-view/blobs";
@@ -75,4 +75,18 @@ test("Quick Look uses the helper from the environment, then the bundled one, the
 	assert.deepEqual(quickLookArgv("/a.png", "/ext", { PI_IMAGE_VIEW_QUICKLOOK: "/nix/ql" }, has("/nix/ql", "/ext/bin/quicklook")), ["/nix/ql", "/a.png"]);
 	assert.deepEqual(quickLookArgv("/a.png", "/ext", { PI_IMAGE_VIEW_QUICKLOOK: "/gone" }, has("/ext/bin/quicklook")), ["/ext/bin/quicklook", "/a.png"]);
 	assert.deepEqual(quickLookArgv("/a.png", "/ext", {}, has()), ["/usr/bin/qlmanage", "-p", "/a.png"]);
+});
+
+test("a link goes to Quick Look when it is a local image file", () => {
+	const has = (...files: string[]) => (file: string) => files.includes(file);
+	const all = () => true;
+	assert.equal(imagePathFromUrl("file:///blobs/a.png", all), "/blobs/a.png");
+	assert.equal(imagePathFromUrl("file:///shots/My%20Shot.JPEG", all), "/shots/My Shot.JPEG");
+	assert.equal(imagePathFromUrl("file://localhost/a.heic", all), "/a.heic");
+	assert.equal(imagePathFromUrl("file:///a.png", has("/b.png")), undefined);
+	assert.equal(imagePathFromUrl("file:///notes.txt", all), undefined);
+	assert.equal(imagePathFromUrl("file:///folder", all), undefined);
+	assert.equal(imagePathFromUrl("file://server/a.png", all), undefined);
+	assert.equal(imagePathFromUrl("https://example.com/a.png", all), undefined);
+	assert.equal(imagePathFromUrl("not a url", all), undefined);
 });

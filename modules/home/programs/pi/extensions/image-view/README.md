@@ -36,6 +36,8 @@ It works alongside [pi-image-view](https://www.npmjs.com/package/pi-image-view)
 | Half blocks in Zed (`TERM_PROGRAM=zed`), scaled by `sips` to a BMP | Same code, as ANSI truecolor rows, wherever Pi detects no graphics protocol (Zed included) and in iTerm2. `PI_IMAGE_PROTOCOL=none` forces them | Yes, in more terminals |
 | Half blocks in a background session unless `CLAUDE_CODE_FORCE_TERMINAL_IMAGES` | — | Pi has no background sessions |
 | Clicking a tile's label opens it in Quick Look through `bin/quicklook`, else `qlmanage -p`, one preview at a time | Clicking anywhere on a tile, picture included. See [Clicking](#clicking) | Better in fullscreen mode, worse in regular mode |
+| The label is a Button: inverse and no longer dim under the pointer | The pointer anywhere on a tile shows its label inverse and its border in the theme's `borderAccent`. Fullscreen mode only | Border highlighted too |
+| — | A click on any OSC 8 link to a local image (pi-image-view's `[Image #n]` in the editor and in sent prompts, a Markdown link to a picture) opens Quick Look rather than Preview | Fullscreen mode only |
 | Draws nothing in the Claude Desktop app, nor while a survey shows | Draws nothing outside Pi's terminal UI (RPC, JSON, print modes), nor when Pi's *Show images* setting is off | — |
 
 ## Clicking
@@ -51,6 +53,16 @@ opens it in Quick Look, through, in order:
 
 A new preview ends the previous one, as in the mod.
 
+The pointer over a tile highlights it, like the mod's Button: the label turns
+inverse and the border takes the theme's `borderAccent`. Pi passes a component
+the pointer moves over it but never says when the pointer left, so the
+extension also sees every input sequence Pi's renderer gets (it wraps the
+renderer's private `handleTerminalInput`; an `onTerminalInput` listener comes
+after the renderer's own mouse handling, which consumes mouse sequences), and
+a pointer event no tile claimed clears the highlight. So does a wheel scroll
+and the window losing focus. Inside tmux or screen, Pi asks only for motion
+while a button is held, so there is no hover there.
+
 In regular mode (`"tuiMode": "regular"`) the terminal keeps the mouse, so each
 picture row and label is instead an OSC 8 link to the file (`file://`), which
 the terminal opens however it opens links (untested: presumably Cmd-click, and
@@ -59,12 +71,23 @@ need a registered handler app. The links are also in the transcript Pi prints
 when it leaves fullscreen.
 
 Fullscreen mode doesn't put links on tiles: Pi gives an OSC 8 link under the
-pointer priority over a component's click, and opens it with `open`.
+pointer priority over a component's click.
+
+Pi opens a clicked OSC 8 link itself in fullscreen mode, with `open`, so in
+the default app. The extension replaces the renderer's private `openUrl` with
+one that sends `file://` links to an image (png, jpg, gif, webp, heic, avif,
+bmp, tiff) that exists to the same Quick Look command, and every other link to
+Pi's `openUrl` unchanged. Each renderer is wrapped once (a mode switch makes a
+new one), and a reload only swaps what the wrapper calls.
 
 What was checked, by driving Pi in a pseudo-terminal (`TERM_PROGRAM=zed` and
 `ghostty`): the escape sequences of every case above, and that a click on a
-picture or label reaches the Quick Look command in fullscreen mode. Not
-checked: how Ghostty draws the Unicode placeholders, and whether they survive
+picture or label reaches the Quick Look command in fullscreen mode. With
+`TERM_PROGRAM=zed` and pi-image-view loaded: that the pointer highlights tiles
+in the draft band, under a sent prompt and under a `read` result, that leaving
+them clears it, and that a click on a draft's or a sent prompt's `[Image #n]`
+or a Markdown link to a picture reaches Quick Look while a web link still
+reaches `open`. Not checked: how Ghostty draws the Unicode placeholders, and whether they survive
 Pi clearing its own Kitty images (`d=a` when its images move; after a resize,
 where Pi clears them all, the tiles upload again). pi-image-view's gallery
 relies on the same.
@@ -74,13 +97,14 @@ relies on the same.
 pi-image-view turns pasted or dropped images into `[Image #n]` markers, stores
 the model image under `~/.pi/agent/image-view/blobs/`, shows a thumbnail gallery
 above the editor in Kitty-protocol terminals, links the markers in the editor
-and in sent prompts (opened with `open` when clicked), strips the links from
-model requests, upgrades screenshot tool results, and adds `/pi-image-view`.
+and in sent prompts, strips the links from model requests, upgrades screenshot
+tool results, and adds `/pi-image-view`.
 
-This extension changes none of that: it reads the markers and the blobs, adds
-no model context, registers no Markdown transformer, keeps its own widget key
-(`image-view-tiles`), and draws no draft tiles where pi-image-view's gallery
-shows. Load order doesn't matter.
+This extension changes none of that, except that in fullscreen mode a click on
+those links opens Quick Look rather than Preview (see [Clicking](#clicking)):
+it reads the markers and the blobs, adds no model context, registers no
+Markdown transformer, keeps its own widget key (`image-view-tiles`), and draws
+no draft tiles where pi-image-view's gallery shows. Load order doesn't matter.
 
 Without pi-image-view there are no draft tiles (Pi pastes a file path, not a
 marker); tiles under sent prompts and tool results still work.
@@ -101,7 +125,8 @@ node --test tests/*.test.ts
 
 Needs Node 22.18 or later (type stripping); the tests import no Pi package.
 They cover the layout, BMP and half-block code ported from the mod's tests, the
-tile row (borders, wrapping, placeholders, click targets, links), Kitty
-placeholders, where images come from, and the Quick Look command. The mod's
-tests that mount Claude Code UI have no Pi harness; the same behaviors were
-checked by driving Pi in a pseudo-terminal.
+tile row (borders, wrapping, placeholders, click targets, hover, links), Kitty
+placeholders, where images come from, the Quick Look command, which links go
+to it, and the wrapping of Pi's renderer. The mod's tests that mount Claude
+Code UI have no Pi harness; the same behaviors were checked by driving Pi in a
+pseudo-terminal.

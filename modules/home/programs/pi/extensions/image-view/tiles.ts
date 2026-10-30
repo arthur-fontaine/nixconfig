@@ -8,6 +8,63 @@ export type Tile = { id: string; label: string; alt: string; path: string | null
 /** A picture's rows, each `columns` cells wide: undefined while it's being made, null when it can't be. */
 export type Paint = (path: string, cells: Cells) => string[] | null | undefined;
 
+/** How a hovered tile looks, and the one tile the pointer is over across every row. */
+export type HoverStyle = { state: Hover; label: (text: string) => string; border: (text: string) => string };
+
+const POINTER_EVENT = /^\x1b\[<\d+;\d+;\d+[Mm]$/;
+const FOCUS_OUT = "\x1b[O";
+
+/**
+ * The tile under the pointer. Pi hands a component the pointer moves over it
+ * but never tells it the pointer left, so every pointer event no tile claims
+ * while Pi handles it clears the hover.
+ */
+export class Hover {
+	private row: TileRow | undefined;
+	private index = -1;
+	private claimed = false;
+	private readonly changed: () => void;
+
+	constructor(changed: () => void) {
+		this.changed = changed;
+	}
+
+	isOver(row: TileRow, index: number): boolean {
+		return this.row === row && this.index === index;
+	}
+
+	/** The pointer is over `row`'s tile `index`, or over none of its tiles. */
+	point(row: TileRow, index: number | undefined): void {
+		if (index === undefined) {
+			if (!this.claimed) this.clear();
+			return;
+		}
+		this.claimed = true;
+		this.set(row, index);
+	}
+
+	/** Runs Pi's handling of one input sequence, `next`. */
+	input(data: string, next: () => void): void {
+		this.claimed = false;
+		try {
+			next();
+		} finally {
+			if (!this.claimed && (POINTER_EVENT.test(data) || data === FOCUS_OUT)) this.clear();
+		}
+	}
+
+	clear(): void {
+		this.set(undefined, -1);
+	}
+
+	private set(row: TileRow | undefined, index: number): void {
+		if (this.row === row && this.index === index) return;
+		this.row = row;
+		this.index = index;
+		this.changed();
+	}
+}
+
 export interface TileRowOptions {
 	/** Null draws the labels alone, under a picture Pi draws itself. */
 	paint: Paint | null;
@@ -17,11 +74,13 @@ export interface TileRowOptions {
 	/** Whether to make pictures and labels OSC 8 links too, for when the terminal gets the clicks. */
 	links: () => boolean;
 	dim: (text: string) => string;
+	/** Fullscreen mode only: the terminal reports no pointer moves to Pi otherwise. */
+	hover?: HoverStyle;
 	truncate?: (text: string, width: number) => string;
 	invalidate?: () => void;
 }
 
-type Hit = { x0: number; x1: number; y0: number; y1: number; path: string };
+type Hit = { x0: number; x1: number; y0: number; y1: number; index: number; path: string };
 
 function plainTruncate(text: string, width: number): string {
 	const chars = [...text];
@@ -36,7 +95,8 @@ function center(text: string, width: number, textWidth: number): string {
 /**
  * One row of bordered tiles, each a picture over its label; wraps onto more rows
  * when even the smallest tiles don't fit. A click anywhere on a tile with a
- * file opens it, in fullscreen mode where Pi routes mouse events to components.
+ * file opens it, and the pointer over it highlights it, in fullscreen mode
+ * where Pi routes mouse events to components.
  */
 export class TileRow implements Component {
 	private hits: Hit[] = [];
@@ -61,15 +121,24 @@ export class TileRow implements Component {
 	}
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (event.type !== "click" || event.button !== "left") return undefined;
 		const hit = this.hits.find((h) => event.x >= h.x0 && event.x < h.x1 && event.y >= h.y0 && event.y < h.y1);
-		if (!hit) return undefined;
+		// A wheel scrolls the tile away from under the pointer.
+		if (event.type !== "wheel") this.options.hover?.state.point(this, hit?.index);
+		if (event.type !== "click" || event.button !== "left" || !hit) return undefined;
 		this.options.open(hit.path);
 		return { handled: true };
 	}
 
 	private truncate(text: string, width: number): string {
 		return (this.options.truncate ?? plainTruncate)(text, width);
+	}
+
+	private isHovered(index: number): boolean {
+		return this.options.hover?.state.isOver(this, index) ?? false;
+	}
+
+	private labelStyle(index: number): (text: string) => string {
+		return this.isHovered(index) ? this.options.hover!.label : this.options.dim;
 	}
 
 	private link(text: string, tile: Tile): string {
@@ -82,7 +151,7 @@ export class TileRow implements Component {
 		const lines: string[] = [];
 		let line = "";
 		let used = 0;
-		for (const tile of this.tiles) {
+		for (const [index, tile] of this.tiles.entries()) {
 			const label = this.truncate(tile.label, body);
 			const labelWidth = Math.min([...tile.label].length, body);
 			if (used > 0 && used + 2 + labelWidth > body) {
@@ -95,9 +164,9 @@ export class TileRow implements Component {
 				used += 2;
 			}
 			if (tile.path !== null) {
-				this.hits.push({ x0: indent + used, x1: indent + used + labelWidth, y0: lines.length, y1: lines.length + 1, path: tile.path });
+				this.hits.push({ x0: indent + used, x1: indent + used + labelWidth, y0: lines.length, y1: lines.length + 1, index, path: tile.path });
 			}
-			line += this.link(this.options.dim(label), tile);
+			line += this.link(this.labelStyle(index)(label), tile);
 			used += labelWidth;
 		}
 		lines.push(" ".repeat(indent) + line);
@@ -132,9 +201,9 @@ export class TileRow implements Component {
 			for (const i of group) {
 				const tile = this.tiles[i]!;
 				const fit = cells[i]!;
-				columns.push(this.tileLines(tile, fit, pictureRows));
+				columns.push(this.tileLines(tile, i, fit, pictureRows));
 				if (tile.path !== null) {
-					this.hits.push({ x0: x, x1: x + fit.columns + TILE_CHROME_COLUMNS, y0: lines.length, y1: lines.length + pictureRows + 3, path: tile.path });
+					this.hits.push({ x0: x, x1: x + fit.columns + TILE_CHROME_COLUMNS, y0: lines.length, y1: lines.length + pictureRows + 3, index: i, path: tile.path });
 				}
 				x += fit.columns + TILE_CHROME_COLUMNS + GAP;
 			}
@@ -145,9 +214,10 @@ export class TileRow implements Component {
 		return lines;
 	}
 
-	private tileLines(tile: Tile, { columns, rows }: Cells, pictureRows: number): string[] {
+	private tileLines(tile: Tile, index: number, { columns, rows }: Cells, pictureRows: number): string[] {
 		const { dim } = this.options;
-		const side = dim("│");
+		const border = this.isHovered(index) ? this.options.hover!.border : dim;
+		const side = border("│");
 		const blank = " ".repeat(columns);
 		const textRows = (text: string): string[] => {
 			const shown = this.truncate(text, columns);
@@ -161,13 +231,13 @@ export class TileRow implements Component {
 			const painted = this.options.paint!(tile.path, { columns, rows });
 			picture = painted ? painted.map((row) => this.link(row, tile)) : textRows(painted === null ? tile.alt : "…");
 		}
-		const label = center(this.link(dim(this.truncate(tile.label, columns)), tile), columns, Math.min([...tile.label].length, columns));
+		const label = center(this.link(this.labelStyle(index)(this.truncate(tile.label, columns)), tile), columns, Math.min([...tile.label].length, columns));
 		return [
-			dim(`╭${"─".repeat(columns)}╮`),
+			border(`╭${"─".repeat(columns)}╮`),
 			...picture.map((row) => side + row + side),
 			...Array.from({ length: pictureRows - rows }, () => side + blank + side),
 			side + label + side,
-			dim(`╰${"─".repeat(columns)}╯`),
+			border(`╰${"─".repeat(columns)}╯`),
 		];
 	}
 }

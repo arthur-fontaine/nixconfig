@@ -1,5 +1,21 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { extname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".heif", ".avif", ".bmp", ".tif", ".tiff"]);
+
+/** The local image file a link points at, if it does: `file://` URLs only. */
+export function imagePathFromUrl(url: string, exists: (file: string) => boolean = existsSync): string | undefined {
+	let path: string;
+	try {
+		// Throws for a URL that isn't file: or names a remote host.
+		path = fileURLToPath(url);
+	} catch {
+		return undefined;
+	}
+	return IMAGE_EXTENSIONS.has(extname(path).toLowerCase()) && exists(path) ? path : undefined;
+}
 
 /**
  * The command that shows `path` in Quick Look: the `quicklook` helper (built

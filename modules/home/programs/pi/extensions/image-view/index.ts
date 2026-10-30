@@ -6,9 +6,10 @@ import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-c
 import { type Component, Container, getCapabilities, type TUI, truncateToWidth } from "@earendil-works/pi-tui";
 import { imageNumbers, type Size } from "./layout.ts";
 import { blockSize, HalfBlocks, imageSize, KittyPictures, saveImage } from "./pictures.ts";
-import { QuickLook } from "./quicklook.ts";
+import { imagePathFromUrl, QuickLook } from "./quicklook.ts";
 import { draftPath, findDraftEditor, messageSources, type Source, toolSources } from "./sources.ts";
-import { type Tile, TileRow } from "./tiles.ts";
+import { Hover, type Tile, TileRow } from "./tiles.ts";
+import { hookTui, type TuiHooks } from "./tui-hooks.ts";
 
 // Pasting an image raises no editor event pi-image-view's marker shows up on,
 // so the draft is polled instead.
@@ -34,13 +35,26 @@ export default function imageView(pi: ExtensionAPI) {
 	const sizes = new Map<string, Size | null>();
 
 	const requestRender = () => tui?.requestRender();
+	const hover = new Hover(requestRender);
+	// In fullscreen mode Pi opens a clicked OSC 8 link itself, with `open`, so
+	// pi-image-view's `[Image #n]` links would open in Preview: images go to
+	// Quick Look instead, like the tiles. The input hook is how a hover clears.
+	const tuiHooks: TuiHooks = {
+		openUrl: (url) => {
+			const path = imagePathFromUrl(url);
+			if (path) quickLook.open(path);
+			return path !== undefined;
+		},
+		input: (data, next) => hover.input(data, next),
+	};
+	// Re-applied on every render, since switching modes replaces Pi's renderer.
+	const hookRenderer = () => tui && hookTui(tui, tuiHooks);
 	// Pi draws a tool result's images itself where the terminal has a graphics
 	// protocol, and pi-image-view draws the draft's in Kitty-protocol terminals.
 	const piDrawsImages = () => !!getCapabilities().images;
 	const isKitty = () => getCapabilities().images === "kitty";
 	const showImages = () => pi.getSettings().terminal?.showImages !== false;
-	// In fullscreen mode Pi routes clicks to components and opens OSC 8 links
-	// itself (with `open`, so not in Quick Look), so links only go on in
+	// In fullscreen mode Pi routes clicks to components, so links only go on in
 	// regular mode, where the terminal gets the clicks.
 	const links = () => (tui?.mode ?? pi.getSettings().tuiMode ?? "fullscreen") === "regular";
 
@@ -64,6 +78,8 @@ export default function imageView(pi: ExtensionAPI) {
 			indent: options.indent,
 			links,
 			dim: (text) => theme.fg("dim", text),
+			// Claude Code's plain Button when hovered: inverse and no longer dim.
+			hover: { state: hover, label: (text) => theme.inverse(text), border: (text) => theme.fg("borderAccent", text) },
 			truncate: (text, width) => truncateToWidth(text, width, "…"),
 			invalidate: () => pictures.invalidate(),
 		});
@@ -101,7 +117,10 @@ export default function imageView(pi: ExtensionAPI) {
 	}
 
 	const bandComponent: Component = {
-		render: (width) => band?.render(width) ?? [],
+		render: (width) => {
+			hookRenderer();
+			return band?.render(width) ?? [];
+		},
 		handleMouse: (event) => band?.handleMouse(event),
 		invalidate: () => band?.invalidate(),
 	};
@@ -113,6 +132,7 @@ export default function imageView(pi: ExtensionAPI) {
 			WIDGET,
 			(t) => {
 				tui = t;
+				hookRenderer();
 				return bandComponent;
 			},
 			{ placement: "aboveEditor" },
@@ -133,6 +153,8 @@ export default function imageView(pi: ExtensionAPI) {
 	pi.on("session_shutdown", (_event, ctx) => {
 		clearInterval(poll);
 		poll = undefined;
+		if (tui) hookTui(tui, undefined);
+		hover.clear();
 		painter?.dispose();
 		painter = undefined;
 		band = undefined;
