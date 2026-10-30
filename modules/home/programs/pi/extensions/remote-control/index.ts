@@ -59,7 +59,8 @@ class RemoteControl {
 	private regrantTimer?: NodeJS.Timeout;
 	private outbox: unknown[] = [];
 	private flushing?: Promise<void>;
-	private receivedIds: string[] = [];
+	// Controller messages wait here, not in Pi's own queue, so the apps can still cancel them.
+	private queue: { eventId: string; uuid?: string; content: Content }[] = [];
 	private processingIds: string[] = [];
 	private remoteTexts: string[] = [];
 	private run?: { startedAt: number; turns: number; input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; lastText: string; error?: string };
@@ -100,9 +101,12 @@ class RemoteControl {
 		clearTimeout(this.heartbeatTimer);
 		clearTimeout(this.regrantTimer);
 		this.setStatus(undefined);
-		await this.flush().catch(() => {});
-		await this.worker?.heartbeat(true).catch(() => {});
-		if (this.session) await archiveSession(loadCredentials(), this.session.id).catch(() => {});
+		// Archive first and skip the outbox: Pi can exit before slow teardown
+		// handlers finish (RPC mode exits on a second shutdown request).
+		await Promise.allSettled([
+			this.session && archiveSession(loadCredentials(), this.session.id),
+			this.worker?.heartbeat(true),
+		]);
 	}
 
 	setContext(ctx: ExtensionContext) {
@@ -225,11 +229,6 @@ class RemoteControl {
 		if (this.run) return;
 		this.run = { startedAt: Date.now(), turns: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, lastText: "" };
 		this.setWorkerState("running");
-		if (this.receivedIds.length > 0) {
-			this.ack(this.receivedIds, "processing");
-			this.processingIds.push(...this.receivedIds);
-			this.receivedIds = [];
-		}
 	}
 
 	runSettled(aborted: boolean) {
@@ -256,6 +255,22 @@ class RemoteControl {
 			this.ack(this.processingIds, "processed");
 			this.processingIds = [];
 		}
+		setTimeout(() => this.deliverNext(), 0);
+	}
+
+	// Hands the next queued controller message to Pi once it is idle. Its
+	// `processing` receipt tells the apps it left the queue and can no longer be cancelled.
+	private deliverNext() {
+		if (this.stopped.signal.aborted || this.queue.length === 0 || this.run) return;
+		if (!this.ctx.isIdle()) {
+			setTimeout(() => this.deliverNext(), 250);
+			return;
+		}
+		const next = this.queue.shift()!;
+		this.remoteTexts.push(textOf(next.content));
+		this.processingIds.push(next.eventId);
+		this.ack([next.eventId], "processing");
+		this.pi.sendUserMessage(next.content);
 	}
 
 	settingsChanged() {
@@ -267,8 +282,11 @@ class RemoteControl {
 		this.worker.setState({ worker_status: status }).catch(() => {});
 	}
 
+	// Chained so a message's `received` never lands after its `processing`.
+	private acks: Promise<unknown> = Promise.resolve();
 	private ack(ids: string[], status: "received" | "processing" | "processed") {
-		this.worker.ackDelivery(ids.map((event_id) => ({ event_id, status }))).catch(() => {});
+		const updates = ids.map((event_id) => ({ event_id, status }));
+		this.acks = this.acks.then(() => this.worker.ackDelivery(updates)).catch(() => {});
 	}
 
 	private send(payload: unknown) {
@@ -330,10 +348,17 @@ class RemoteControl {
 			const content = fromClaudeContent(payload.message?.content);
 			if (typeof content === "string" ? !content.trim() : content.length === 0) return;
 			this.ack([event.event_id], "received");
-			this.receivedIds.push(event.event_id);
-			this.remoteTexts.push(textOf(content));
-			if (this.ctx.isIdle()) this.pi.sendUserMessage(content);
-			else this.pi.sendUserMessage(content, { deliverAs: "followUp" });
+			// The apps mark a message `later` to wait for the turn to end; any other
+			// priority joins the running turn, as it does in Claude Code.
+			if (this.run && payload.priority !== "later") {
+				this.remoteTexts.push(textOf(content));
+				this.processingIds.push(event.event_id);
+				this.ack([event.event_id], "processing");
+				this.pi.sendUserMessage(content, { deliverAs: "steer" });
+				return;
+			}
+			this.queue.push({ eventId: event.event_id, uuid: payload.uuid, content });
+			this.deliverNext();
 		} else if (payload?.type === "control_request") {
 			void this.control(payload);
 		}
@@ -357,12 +382,23 @@ class RemoteControl {
 							account: {},
 							pid: process.pid,
 							claude_code_version: CLAUDE_CODE_VERSION,
+							// Without these the apps push their own default model on connect.
+							current_model: this.ctx.model?.id,
+							current_permission_mode: "bypassPermissions",
+							// Receipts follow the queue (see deliverNext), which lets the apps offer cancel.
+							inbound_read_receipts: true,
+							session_state: this.run ? "running" : "idle",
 						},
 						pending_permission_requests: [],
 						pending_user_dialog_requests: [],
 					});
 					this.send(this.initEvent());
 					return;
+				case "cancel_async_message": {
+					const i = this.queue.findIndex((m) => m.uuid === request.message_uuid);
+					if (i >= 0) this.queue.splice(i, 1);
+					return reply({ subtype: "success", response: { cancelled: i >= 0 } });
+				}
 				case "interrupt":
 					this.ctx.abort();
 					return reply({ subtype: "success" });
