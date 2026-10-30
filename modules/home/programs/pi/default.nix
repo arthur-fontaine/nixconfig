@@ -156,4 +156,12 @@ in
     ${merge autoEffortJson "${config.home.homeDirectory}/.pi/agent/auto-effort.json"}
     ${merge autoCompactJson "${config.home.homeDirectory}/.pi/agent/auto-compact/config.json"}
   '';
+
+  # Claude Code's sessions, copied into Pi's session store so /resume lists them
+  # (Pi only resumes its own). Incremental, and never overwrites a copy that was
+  # continued in Pi; see the script.
+  home.activation.piImportClaudeSessions = lib.hm.dag.entryAfter [ "piSettings" ] ''
+    $DRY_RUN_CMD ${pkgs.nodejs}/bin/node ${./import-claude-sessions.mjs} --thinking ${settings.defaultThinkingLevel} \
+      || echo "warning: importing Claude Code sessions into Pi failed" >&2
+  '';
 }
