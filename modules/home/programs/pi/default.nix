@@ -18,6 +18,10 @@ let
   };
   settingsJson = (pkgs.formats.json { }).generate "pi-settings.json" settings;
   settingsPath = "${config.home.homeDirectory}/.pi/agent/settings.json";
+
+  mcpServers = config.nixconfig.claudeMcpServers;
+  mcpJson = (pkgs.formats.json { }).generate "pi-mcp.json" { inherit mcpServers; };
+  mcpPath = "${config.home.homeDirectory}/.pi/agent/mcp.json";
   merge = import ../../lib/merge-json.nix { inherit pkgs; };
 
   # The skills of the Claude Code plugins in ../claude, at the commits Claude
@@ -67,6 +71,13 @@ in
     ignore = [ "^lastChangelogVersion$" ];
   };
 
+  nixconfig.sync.pi-mcp-servers = {
+    method = "json-merge";
+    managed = { inherit mcpServers; };
+    live = "~/.pi/agent/mcp.json";
+    repo = "modules/home/programs/pi/default.nix (mcpServers)";
+  };
+
   # The same global instructions as Claude Code. Pi has no rules/ directory,
   # so Claude Code's rules are appended to them.
   home.file = {
@@ -85,5 +96,8 @@ in
       $DRY_RUN_CMD rm "${settingsPath}"
     fi
     ${merge settingsJson settingsPath}
+
+    # Pi saves exposure and enabled changes to mcp.json, so merge into it too.
+    ${merge mcpJson mcpPath}
   '';
 }
