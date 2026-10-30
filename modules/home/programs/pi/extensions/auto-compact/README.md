@@ -45,32 +45,47 @@ still being built.
 
 ## What it shows, and where
 
-Claude Code's mod could only add a footer label, transient status text, a question and a
-docked pane. Pi gives more room, so this port shows more, in four places chosen to be visible
-without being noisy:
+Nothing goes in the footer: Pi's own footer already shows how full the context is. The extension
+shows itself in four places:
 
-- **One footer segment** (`ctx.ui.setStatus`, key `auto-compact`), always there:
-  `context kept · 92% · ctx 41/92%`. The first part is the last decision, colored by action
-  (green keep, yellow compact, red clear), with the mod's own labels (`context kept · 92%`,
-  `compact? related · 71%`, `cleared · independent · 91%`). While something is under way it
-  says so instead: `Spisev downloading · 45%`, `auto-compact: summaries catching up`,
-  `compacting · related · 90%…`, `auto-compact off`, or what setup is missing. The second part
-  is how full the context is against where **Pi itself** compacts (`contextWindow -
-  reserveTokens`, per-model overrides included): `ctx 41/92%` means 41% full, Pi compacts at
-  92%; it turns yellow within 10 points of that. Pi joins every extension's status on one line
-  and cuts what overflows, so the segment stays short and does not replace the footer (a custom
-  footer would hide the other extensions' statuses, such as auto-effort's or the cache
-  timer's).
-- **A notification** when something happened or went wrong, once: `auto-compact: compacted
-  the context (related · 90%): 48.2k → 3.1k tokens. Your prompt goes on.`, a compaction Pi
-  refused, a failing decision model, paused summaries, a llama-server that did not start. A
-  repeated problem (the same provider error on every prompt) is notified once per session; the
-  footer and `/auto-compact` keep showing it.
+- **A line in the chat** when it acts, as a Pi notice (`ctx.ui.notify`, the same dim line as
+  `Session named: …`). Pi draws the compaction itself (`[compaction] Compacted from 48,200
+  tokens`) above the prompt; the line goes right under that block and says why:
+
+  | Line | When |
+  | :- | :- |
+  | `Context compacted: this prompt starts a related task` | auto mode, a related task |
+  | `Context compacted: this prompt returns to an earlier task` | auto mode, a return to an earlier task |
+  | `Context cleared: this prompt starts an unrelated task` | auto mode, an unrelated task |
+  | `Context compacted, as you chose: …`, `Context cleared, as you chose: …` | suggest mode, you pressed compact or clear |
+  | `Context kept: you chose to send the prompt as is` | suggest mode, you sent it as is |
+  | `Warning: Could not clear the context, so it was kept: Nothing to compact (session too small)` | Pi refused the compaction |
+
+  A prompt that keeps the context (a follow-up, low confidence, summaries catching up) posts
+  nothing. Where each line goes:
+
+  - A compaction or a clear: under Pi's compaction block, so above the prompt, apart from
+    auto-effort's line under it.
+  - `Context kept` and the warning: under the prompt, as there is no block to go under. The
+    extension waits for the user message's `message_end`, since Pi draws the message after the
+    extensions' `message_start` handlers.
+
+  Two things in how Pi 1.4 draws dim notices (`showStatus`) shape this. It replaces a dim notice
+  that is still the last line of the chat with the next one, so when auto-effort also changes the
+  thinking level, its line takes the place of `Context kept`. And every dim notice draws Pi's
+  latest notice text whenever it is (re)built, so one that hasn't been drawn yet when the next
+  is posted (Pi draws at most every 16 ms), or any of them after a theme change, shows the
+  other's text. Posting `Context kept` above the prompt hit that in a live run: it showed
+  auto-effort's line twice. Under the prompt it is only replaced. A warning is a separate
+  component and is never replaced. The lines are not saved in the session, so they don't come
+  back on resume.
+- **A notification** for a problem, once per kind: no provider set up, a failing decision model
+  (under the prompt it happened on), paused summaries, a llama-server that did not start.
+  `/auto-compact` keeps showing the last error, and Spisev's download progress.
 - **A dialog** (`ctx.ui.select`) for suggest mode, which also says how big the context is.
 - **The debug view**, a widget below the editor, only when asked for: it is too tall to stay.
 
-While a compaction runs, Pi shows its own compaction indicator (Escape cancels it) and the
-footer says which one it is.
+While a compaction runs, Pi shows its own compaction indicator (Escape cancels it).
 
 ## Environment variables
 
@@ -105,8 +120,8 @@ line-for-line ports, checked against the mod's Python-generated fixture
 | Category → action table, `continuation`/`follow_up` never act | same code | exact |
 | Modes off / suggest / auto, saved across sessions, env wins | saved in `~/.pi/agent/auto-compact/config.json` instead of `$.store` | exact |
 | Thresholds 0.85 (auto) and 0.6 (suggest), 4 s timeout → keep | same | exact |
-| No default provider; says once that setup is needed | footer segment | exact |
-| Spisev: llama-server on 127.0.0.1 with `-hf` (or `-m` for a `.gguf`), `--alias spisev-alpha -c 16384 -np 1`, `llama serve` for the unified CLI, build ≥ 11361, asks before downloading, reuses a server already serving it, waits up to 10 s for a starting one, never for a download, download progress shown | `node:child_process`, progress in the footer | exact |
+| No default provider; says once that setup is needed | a notification under the first prompt | exact |
+| Spisev: llama-server on 127.0.0.1 with `-hf` (or `-m` for a `.gguf`), `--alias spisev-alpha -c 16384 -np 1`, `llama serve` for the unified CLI, build ≥ 11361, asks before downloading, reuses a server already serving it, waits up to 10 s for a starting one, never for a download, download progress shown | `node:child_process`, progress in `/auto-compact` | exact |
 | llama-server stopped with the session, kept across `/clear` | kept across `/new`, `/resume`, `/fork`, `/reload`; stopped when Pi quits; a server it did not start is never stopped | exact in effect |
 | Mammoth (Baseten) and Jev (OpenCode Zen) presets, key from `AUTO_COMPACT_API_KEY` only, `Api-Key` or `Bearer` | same; the setup dialog lists an "Other" entry (Pi's select has no free text) that points to the env variables | exact |
 | Summary tree: OptChat leaves and merges, 128-byte lines, UniiChat sawtooth 16 → 10, "too long" retries (≤ 5, shortest kept), cached by request hash, saved per session id, format version 2 | same code; files under `AUTO_COMPACT_DATA_DIR/trees/` | exact |
@@ -123,7 +138,7 @@ line-for-line ports, checked against the mod's Python-generated fixture
 | Compact: Claude Code's `/compact` with the instructions, summarizing everything | `ctx.compact()`; this extension answers its own `session_before_compact` with a summary from Pi's own summarizer (`generateSummaryWithUsage`, the session's model) over the whole context with the same instructions, and keeps nothing verbatim | **not exact**: Pi's default compaction keeps the last `keepRecentTokens` (20k) verbatim, which would keep exactly the details a related task should drop, so the extension writes the compaction itself |
 | Clear: Claude Code's `/clear` (a new session) | a compaction that keeps nothing, with a one-line summary saying the conversation was cleared | **not exact**: Pi's `/new` is only available to commands (`newSession()`), and calling it from the prompt hook would replace the runtime under the prompt being sent. The context is emptied the same way, but the session file and id stay (the earlier messages remain reachable in `/tree`) |
 | Compaction refused → keep the context, say why in `/auto-compact` | same | **not exact**: Pi refuses to compact a context that fits in `compaction.keepRecentTokens` (20k by default): "Nothing to compact (session too small)". Claude Code would compact or clear even then |
-| Footer labels `context kept · 92%`, `compact? related · 71%`, `cleared · independent · 91%` | the same labels, in the footer segment, plus the context fill | exact, extended |
+| Footer labels `context kept · 92%`, `compact? related · 71%`, `cleared · independent · 91%` | the same labels in `/auto-compact`'s last decision; in the chat, a line under the prompt only when it acts | **not exact**: see What it shows |
 | Question with buttons in suggest mode; with no one to ask (`-p`), nothing happens | `ctx.ui.select`; `ctx.hasUI` false in `-p` | exact, extended with the context size |
 | Debug log line `[auto-compact] <category> · <confidence> → <action>` | appended to `AUTO_COMPACT_DEBUG_LOG` (Pi has no debug log for extensions) | exact format |
 | `/auto-compact` status text | same lines | exact |
@@ -134,7 +149,7 @@ line-for-line ports, checked against the mod's Python-generated fixture
 - **Summarizer model.** `claude-haiku-5-5` is used only if a Pi provider with credentials
   lists it. Through `pi-claude-code`, that depends on Claude Code's model discovery (the
   package's fallback catalog lists only `claude-haiku-4-5-20251001`). If none does, summaries
-  fail, every prompt keeps the context, and the footer, a notification and `/auto-compact` say
+  fail, every prompt keeps the context, and a notification and `/auto-compact` say
   why; set `AUTO_COMPACT_SUMMARIZER_MODEL` to a model that exists, ideally the same
   `claude-haiku-5-5` so the lines match what Spisev was trained on.
 - **Clear is not `/new`**, and **small sessions cannot be compacted** (see the table).
@@ -148,4 +163,5 @@ node --test 'tests/*.test.ts'   # Node 24 (tested) runs the TypeScript directly;
 
 `index.ts` only passes Pi's summarizer to `extension.ts`, so the tests load the extension
 against a stand-in for Pi. `tests/parity.test.ts` and `tests/policy.test.ts` are the mod's own
-tests; `tests/extension.test.ts` ports its integration tests to Pi's events.
+tests; `tests/extension.test.ts` ports its integration tests to Pi's events; `tests/notes.test.ts`
+checks the wording of the lines.

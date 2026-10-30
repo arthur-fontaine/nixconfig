@@ -190,7 +190,7 @@ const pct = (x: number) => Math.round(x * 100) + "%";
 const VERB: Record<string, string> = { compact_view: "compact", compact_branch: "compact", clear: "clear" };
 const DONE: Record<string, string> = { compact_view: "compacted", compact_branch: "compacted", clear: "cleared" };
 
-// The footer label, like auto-effort's `effort high · 90%`: `context kept · 92%`,
+// The mod's footer label, kept for /auto-compact's last decision: `context kept · 92%`,
 // `compact? related · 71%`, `cleared · independent · 91%`.
 export function describe(decision: Partial<Decision> | null | undefined, done = false) {
 	if (!decision?.category) return "context kept (" + (decision?.reason ?? "no answer") + ")";

@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { CompactionResult, ExtensionAPI, ExtensionContext, generateSummaryWithUsage, InputEvent, Theme } from "@earendil-works/pi-coding-agent";
-import { drawDebug, fit, type Paint, TITLE, type Tone, type Trace, WIDGET } from "./debug.ts";
+import { drawDebug, fit, type Paint, TITLE, type Trace, WIDGET } from "./debug.ts";
 import { parseBuild, parseServerOutput, serverArgs, serverCommand, servesOurModel } from "./llama.ts";
 import {
 	type Config, compactInstructions, type Decision, decide, describe, headers, logLine, MODES, type Mode, PRESETS,
@@ -15,8 +15,8 @@ import {
 import { COMPACT_V2 } from "./prompt.ts";
 import { type Completion, SUMMARIZER, type SummaryError, type SummaryRequest, summarize, systemPromptV2 } from "./summarizer.ts";
 import { agentReply, clipStateV2, requestV2 } from "./task.ts";
+import { actedNote, DECLINED, failedNote, tokens } from "./notes.ts";
 import { clip, cleanPrompt, messages, render, type TreeMessage, utf8Len } from "./text.ts";
-import { compactionPoint, statusLine, tokens, toneOf } from "./status.ts";
 import { rowsOf } from "./transcript.ts";
 import * as tree from "./tree.ts";
 
@@ -29,13 +29,14 @@ const TREE_VERSION = 2;
 // The first prompt of a session usually comes while llama-server loads the model (a few seconds):
 // wait for it a little rather than skip the decision. A download is never waited for.
 const START_WAIT_MS = 10_000;
-const STATUS_KEY = "auto-compact";
 const CLEARED = "The conversation before this point was cleared: the next message starts an unrelated task.";
 
 type ServerState = "starting" | "downloading" | "ready" | "stopped";
 interface Server {
 	state: ServerState;
 	child: ChildProcess | null;
+	// The download's progress, for /auto-compact.
+	percent?: number;
 }
 
 // On globalThis, not in the factory: /new, /resume and /reload replace the extension runtime, and
@@ -97,14 +98,11 @@ class Missing extends Error {}
 
 type View = [tree.Node, string, "raw" | "joined" | "summary" | undefined, { name: string | null; text: string }[] | undefined][];
 
-interface Shown {
-	text: string;
-	tone: Tone;
-}
-
 interface Plan {
 	decision: Decision;
 	instructions: string;
+	// Chosen in the suggest dialog rather than taken in auto mode.
+	asked?: boolean;
 }
 
 function painter(theme: Theme): Paint {
@@ -139,11 +137,8 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 	let lastDecision: (Decision & { outcome: string }) | null = null;
 	let lastError: string | null = null;
 	let clearProblem: string | null = null;
-	let warned = false;
-	// The last decision, as Claude Code's footer showed it (`context kept · 92%`), and what is going
-	// on right now (Spisev loading, summaries catching up, a compaction), which takes its place.
-	let label: Shown | null = null;
-	let phase: Shown | null = null;
+	// A line for the prompt being sent, posted under it once Pi has drawn it.
+	let note: { text: string; type: "info" | "warning" } | null = null;
 	const alerted = new Set<string>();
 	let trace: Trace | null = null;
 	let paneOpen = false;
@@ -161,28 +156,13 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 		}
 	};
 
-	const refresh = () => ui((ctx) => {
-		const shown = phase ?? label ?? { text: "auto-compact", tone: "dim" as Tone };
-		const usage = ctx.getContextUsage();
-		const fill = usage ? { percent: usage.percent, threshold: compactionPoint(pi.getSettings(), ctx.model) } : null;
-		// ANSI colors only where Pi draws them: an RPC client gets the plain text.
-		const paint: Paint = ctx.mode === "tui" ? painter(ctx.ui.theme) : (_tone, text) => text;
-		// Pi joins the extensions' footer entries with a space; a dim bar keeps them apart.
-		ctx.ui.setStatus(STATUS_KEY, (ctx.mode === "tui" ? paint("dim", "│ ") : "") + statusLine(shown.text, shown.tone, fill, paint));
-	});
-	const show = (decision: Partial<Decision> | null, done = false) => {
-		label = decision ? { text: describe(decision, done), tone: toneOf(decision) } : null;
-		refresh();
-	};
-	const notice = (text: string | undefined, tone: Tone = "warning") => {
-		phase = text === undefined ? null : { text, tone };
-		refresh();
-	};
-	// Once per kind of problem: a provider that keeps failing must not notify on every prompt.
-	const alert = (kind: string, text: string, level: "info" | "warning" | "error" = "warning") => {
+	// Once per kind of problem: a provider that keeps failing must not notify on every prompt. One
+	// found while deciding on a prompt waits to go under it, as the line for an action does.
+	const alert = (kind: string, text: string, level: "warning" | "error" = "warning", underPrompt = false) => {
 		if (kind && alerted.has(kind)) return;
 		if (kind) alerted.add(kind);
-		ui((ctx) => ctx.ui.notify(text, level));
+		if (underPrompt) note = { text, type: "warning" };
+		else ui((ctx) => ctx.ui.notify(text, level));
 	};
 
 	const drawPane = () => {
@@ -368,12 +348,10 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 		try {
 			await treeTexts(ctx, msgs, { allowCalls: true });
 			lastError = null;
-			if (phase?.text.includes("summaries")) notice(undefined);
 		} catch (error) {
 			lastError = (error as Error).message;
 			debug("[auto-compact] summaries: " + lastError);
 			if ((error as SummaryError).isLimit) {
-				notice("auto-compact: Claude usage limit, summaries paused");
 				alert("limit", "auto-compact: Claude usage limit, summaries paused. Until they catch up, every prompt keeps the context.");
 			} else alert("summaries", "auto-compact: summaries failed (" + lastError + "). Until they catch up, every prompt keeps the context.");
 		} finally {
@@ -419,10 +397,8 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 		const argv = serverArgs(config, binary);
 		const server: Server = { state: "starting", child: null };
 		servers[SERVER_KEY] = server;
-		notice("Spisev starting · the first start downloads " + SPISEV.sizeLabel, "dim");
 		const failed = (message: string) => {
 			debug("[auto-compact] llama-server failed to start: " + message);
-			notice("auto-compact: llama-server failed to start", "error");
 			alert("server", "auto-compact: llama-server failed to start (" + message + "); every prompt keeps the context. " +
 				"Set AUTO_COMPACT_DEBUG_LOG to a file to see more.", "error");
 		};
@@ -433,10 +409,9 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 				const seen = parseServerOutput(chunk.toString());
 				if (seen.ready && server.state !== "ready") {
 					server.state = "ready";
-					if (phase?.text.startsWith("Spisev")) notice(undefined);
 				} else if (seen.percent !== undefined && server.state !== "ready") {
 					server.state = "downloading";
-					notice("Spisev downloading · " + seen.percent + "%", "dim");
+					server.percent = seen.percent;
 				}
 			};
 			child.stdout?.on("data", read);
@@ -538,12 +513,9 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 		const config = await loadConfig();
 		if (config.mode === "off") return;
 		if (!config.provider || config.missing.length || config.problems.length) {
-			if (!warned) {
-				warned = true;
-				notice(config.provider
-					? "auto-compact: " + [...config.missing.map((m) => "set " + m), ...config.problems].join("; ")
-					: "auto-compact: run /auto-compact setup to choose a provider");
-			}
+			alert("setup", config.provider
+				? "auto-compact: " + [...config.missing.map((m) => "set " + m), ...config.problems].join("; ")
+				: "auto-compact: run /auto-compact setup to choose a provider", "warning", true);
 			return;
 		}
 		if (building) await bounded(building, 2000);
@@ -558,7 +530,6 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 			view = await treeTexts(ctx, msgs, { allowCalls: false });
 		} catch (error) {
 			if (!(error instanceof Missing)) throw error;
-			notice("auto-compact: summaries catching up", "dim");
 			debug("[auto-compact] summaries catching up (" + error.message + " not built) → keep");
 			return skip("skipped (summaries catching up: " + error.message + " not built)");
 		}
@@ -582,7 +553,7 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 		} catch (error) {
 			lastError = (error as Error).message;
 			debug("[auto-compact] provider: " + lastError + " → keep");
-			alert("provider:" + lastError, "auto-compact: the decision model failed (" + lastError + "); the context is kept.");
+			alert("provider:" + lastError, "auto-compact: the decision model failed (" + lastError + "); the context is kept.", "warning", true);
 			seen.latencyMs = Date.now() - asked;
 			return skip("keep (provider: " + lastError + ")");
 		}
@@ -593,43 +564,38 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 		};
 		const outcome = decision.action === "keep" ? "keep" : decision.reason === "suggest" ? "suggested" : "keep (" + decision.reason + ")";
 		skip(decision.suggest ? "waiting for your answer" : decision.act ? "acting" : outcome);
-		const wants = decision.act || (decision.suggest && (await offer(ctx, decision)));
+		const accepted = decision.suggest && (await offer(ctx, decision));
 		lastDecision = { ...decision, outcome };
-		if (wants) {
+		if (decision.act || accepted) {
 			const instructions = decision.action === "clear" ? CLEARED : compactInstructions(decision, viewText, prompt);
-			return { decision, instructions };
+			return { decision, instructions, asked: accepted };
 		}
+		// Only a dialog the person answered: with no one to ask (-p), nothing was offered. Under the
+		// prompt, as there is no compaction block to go under. Above it, auto-effort's line, posted
+		// before Pi's next frame, would show in its place: Pi's dim notices all draw the latest text.
+		if (decision.suggest && ctx.hasUI) note = { text: DECLINED, type: "info" };
 		skip(outcome);
 		debug(logLine(decision, outcome));
-		phase = null;
-		show(decision);
 	}
 
 	async function act(ctx: ExtensionContext, plan: Plan) {
 		const { decision } = plan;
 		const verb = decision.action === "clear" ? "clear" : "compact";
 		debug(logLine(decision, verb));
-		const why = decision.category + " · " + Math.round(decision.confidence! * 100) + "%";
 		record((t) => t && { ...t, outcome: verb === "clear" ? "clearing" : "compacting" });
-		show(decision);
-		notice((verb === "clear" ? "clearing" : "compacting") + " · " + why + "…", "accent");
 		let outcome: string;
 		try {
-			const result = await perform(ctx, plan);
+			await perform(ctx, plan);
 			outcome = verb === "clear" ? "cleared" : "compacted";
-			phase = null;
-			show(decision, true);
-			const after = result?.estimatedTokensAfter;
-			alert("", "auto-compact: " + outcome + " the context (" + why + ")" +
-				(result?.tokensBefore ? ": " + tokens(result.tokensBefore) + (after === undefined ? "" : " → " + tokens(after)) + " tokens" : "") +
-				". Your prompt goes on.", "info");
+			// Right under Pi's own compaction block (`Compacted from 48,200 tokens`), which it explains,
+			// and so above the prompt, apart from auto-effort's line under it.
+			ui((c) => c.ui.notify(actedNote(decision, plan.asked ?? false), "info"));
 		} catch (error) {
 			const message = (error as Error).message;
 			if (decision.action === "clear") clearProblem = message;
 			outcome = "keep (could not " + verb + ": " + message + ")";
-			phase = null;
-			show(decision);
-			alert("", "auto-compact: could not " + verb + " (" + message + "); the context is kept and your prompt goes on.");
+			// No compaction block to go under; a warning is never replaced by the next notice.
+			note = { text: failedNote(decision, message), type: "warning" };
 		}
 		lastDecision = { ...decision, outcome };
 		record((t) => t && { ...t, outcome });
@@ -669,7 +635,11 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 	async function status(ctx: ExtensionContext) {
 		const config = await loadConfig();
 		const lines = ["auto-compact mode: " + config.mode + (config.mode === "auto" ? " (acts at ≥ " + config.minConfidence + ")" : config.mode === "suggest" ? " (asks at ≥ " + config.suggestConfidence + ")" : "")];
-		if (config.provider === "spisev") lines.push("Provider: Spisev (spisev-alpha) " + config.model + " at " + config.endpoint + " (" + (servers[SERVER_KEY]?.state ?? "stopped") + ")");
+		if (config.provider === "spisev") {
+			const server = servers[SERVER_KEY];
+			const percent = server?.state === "downloading" && server.percent !== undefined ? " " + server.percent + "%" : "";
+			lines.push("Provider: Spisev (spisev-alpha) " + config.model + " at " + config.endpoint + " (" + (server?.state ?? "stopped") + percent + ")");
+		}
 		else if (config.provider) lines.push("Provider: " + config.endpoint + " · model " + config.model + " · key " + (config.apiKey ? "set" : "unset"));
 		else lines.push("Provider: none, run /auto-compact setup");
 		for (const p of [...config.missing.map((m) => "set " + m), ...config.problems]) lines.push("Problem: " + p);
@@ -709,7 +679,6 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 				if (!MODES.includes(value as Mode)) text = "Usage: /auto-compact mode off|suggest|auto";
 				else {
 					const saved = await saveConfig({ mode: value });
-					notice(value === "off" ? "auto-compact off" : undefined, "dim");
 					text = "auto-compact mode: " + value + (saved ? " (saved for later sessions)." : " (this session only).");
 				}
 			} else if (arg) text = "Usage: /auto-compact [setup|debug|mode off|suggest|auto]";
@@ -721,8 +690,6 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 	pi.on("session_start", async (_event, ctx) => {
 		current = ctx;
 		const config = await loadConfig();
-		if (config.mode === "off") phase = { text: "auto-compact off", tone: "dim" };
-		refresh();
 		drawPane();
 		if (config.mode !== "off" && config.provider === "spisev" && !config.problems.length) await startSpisev(config);
 	});
@@ -730,7 +697,9 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 	pi.on("input", async (event, ctx) => {
 		current = ctx;
 		// A delivery into a running turn is no new request; slash commands (skills, templates) aren't either.
-		if (event.streamingBehavior !== undefined || !event.text.trim() || event.text.trimStart().startsWith("/")) return;
+		if (event.streamingBehavior !== undefined) return;
+		note = null;
+		if (!event.text.trim() || event.text.trimStart().startsWith("/")) return;
 		try {
 			const plan = await onPrompt(ctx, event);
 			if (plan) await act(ctx, plan);
@@ -768,13 +737,18 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 		if (ctx.mode === "print" || ctx.mode === "json") await bounded(run, BUILD_WAIT_MS);
 	});
 
-	// The context fill in the footer follows each model response and compaction.
-	for (const event of ["turn_end", "session_compact", "model_select"] as const) {
-		pi.on(event as "turn_end", (_event, ctx) => {
-			current = ctx;
-			refresh();
-		});
-	}
+	// Pi draws the user message on message_start, after the extensions' handlers, so the line waits
+	// for message_end to land right under it rather than above it.
+	pi.on("message_end", async (event, ctx) => {
+		if (event.message.role !== "user" || !note) return;
+		const { text, type } = note;
+		note = null;
+		try {
+			ctx.ui.notify(text, type);
+		} catch {
+			// A replaced runtime's UI.
+		}
+	});
 
 	pi.on("session_shutdown", async (event) => {
 		await saveNodes();

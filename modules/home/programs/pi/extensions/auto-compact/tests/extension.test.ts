@@ -79,8 +79,10 @@ function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, com
 	const seen = {
 		requests: [] as { url: string; headers: any; body: any }[],
 		completions: [] as any[],
-		// Every footer segment set, in order.
-		statuses: [] as string[],
+		// The footer is never used: every line goes to the chat.
+		statuses: [] as (string | undefined)[],
+		// The chat in order: user messages as Pi draws them, and the extension's notices.
+		chat: [] as string[],
 		compactions: [] as any[],
 		compacted: [] as any[],
 		summarized: [] as any[],
@@ -109,13 +111,11 @@ function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, com
 		},
 		ui: {
 			theme: { fg: (_color: string, text: string) => text, bold: (text: string) => text },
-			setStatus: (key: string, text: string | undefined) => {
-				assert.equal(key, "auto-compact");
-				// In the TUI, entries start with the bar that separates them from other extensions' entries.
-				if (mode === "tui") assert.ok(text!.startsWith("│ "), text!);
-				seen.statuses.push(mode === "tui" ? text!.slice(2) : text!);
+			setStatus: (_key: string, text: string | undefined) => seen.statuses.push(text),
+			notify: (text: string, type = "info") => {
+				seen.notified.push(text);
+				seen.chat.push(type + ": " + text);
 			},
-			notify: (text: string) => seen.notified.push(text),
 			select: async (title: string, options: string[]) => {
 				seen.selects.push(title);
 				return select?.(title, options);
@@ -134,6 +134,8 @@ function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, com
 				});
 				seen.compacted.push(out);
 				if (!out?.compaction) return options.onError(new Error("Compaction cancelled"));
+				// Pi draws its compaction block before the compaction resolves.
+				seen.chat.push("[compaction]");
 				options.onComplete({ ...out.compaction, estimatedTokensAfter: 300 });
 			})();
 		},
@@ -158,9 +160,21 @@ function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, com
 			return { text: "## Goal\nCI for this repo", usage: { input: 1, output: 1 } };
 		}) as any,
 	});
+	// A prompt as Pi sends it: the input hook, then the user message, drawn after the extensions'
+	// message_start handlers and before message_end's.
+	const input = async (text: string, extra: { streamingBehavior?: string } = {}) => {
+		const out = await emit("input", { text, source: "interactive", ...extra });
+		if (extra.streamingBehavior) return out;
+		const message = user(text);
+		await emit("message_start", { message });
+		seen.chat.push("user: " + text);
+		await emit("message_end", { message });
+		return out;
+	};
 	return {
 		seen,
-		input: (text: string, extra: object = {}) => emit("input", { text, source: "interactive", ...extra }),
+		input,
+		lines: () => seen.chat.filter((line) => !line.startsWith("user: ")),
 		settle: () => emit("agent_settled", { aborted: false }),
 		command: (args: string) => commands.get("auto-compact").handler(args, ctx),
 	};
@@ -174,17 +188,23 @@ const log = () => {
 	}
 };
 const decisions = () => log().filter((l) => l.startsWith("[auto-compact] ") && l.includes(" → "));
-// The footer segment: the last decision or what is going on, then the context fill against
-// where Pi compacts by itself (16,384 reserved of 200k: 92%).
-const shows = (seen: { statuses: string[] }, text: string) => seen.statuses.includes(text + " · ctx 41/92%");
 const tick = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms));
 
-test("a follow-up keeps the context and logs the decision", async () => {
-	const { seen, input } = stub();
+test("a follow-up keeps the context, logs the decision and says nothing", async () => {
+	const { seen, input, lines } = stub();
 	assert.equal(await input("and add a changelog entry for it"), undefined);
 	assert.equal(seen.compactions.length, 0);
 	assert.deepEqual(decisions(), ["[auto-compact] follow_up · 0.92 → keep"]);
-	assert.ok(shows(seen, "context kept · 92%"));
+	assert.deepEqual(lines(), []);
+});
+
+test("nothing goes to the footer", async () => {
+	const { seen, input, command, settle } = stub({ env: { ...MAMMOTH, AUTO_COMPACT_MODE: "auto" }, fetch: () => ({ status: 200, body: answer("related", 0.9) }) });
+	await input("now set up CI for this repo");
+	await settle();
+	await command("mode off");
+	await stub({ env: {} }).input("hello there");
+	assert.deepEqual(seen.statuses, []);
 });
 
 test("the request is the v2 state the model was trained on, sent with the configured auth", async () => {
@@ -203,14 +223,15 @@ test("the request is the v2 state the model was trained on, sent with the config
 	assert.deepEqual(req!.body.questions.boundary, questionV2());
 });
 
-test("in suggest mode nothing happens without the press", async () => {
+test("in suggest mode nothing happens without the press, and the line says it was your choice", async () => {
 	const { seen, input } = stub({ fetch: () => ({ status: 200, body: answer("independent", 0.91) }) });
 	await input("unrelated: write me a haiku about rain");
 	assert.equal(seen.selects.length, 1);
 	assert.match(seen.selects[0]!, /looks independent \(91%\)\. Clear the context first\? The context holds 82k tokens \(41%\)\.$/);
 	assert.equal(seen.compactions.length, 0);
 	assert.deepEqual(decisions(), ["[auto-compact] independent · 0.91 → suggested"]);
-	assert.ok(shows(seen, "clear? independent · 91%"));
+	// Under the prompt: there is no compaction block to go under.
+	assert.deepEqual(seen.chat, ["user: unrelated: write me a haiku about rain", "info: Context kept: you chose to send the prompt as is"]);
 });
 
 test("in suggest mode the press compacts before the prompt goes on", async () => {
@@ -220,14 +241,15 @@ test("in suggest mode the press compacts before the prompt goes on", async () =>
 	});
 	await input("now set up CI for this repo");
 	assert.equal(seen.compactions.length, 1);
-	assert.ok(shows(seen, "compacted · related · 70%"));
+	assert.deepEqual(seen.chat, ["[compaction]", "info: Context compacted, as you chose: this prompt starts a related task", "user: now set up CI for this repo"]);
 });
 
-test("with no one to ask (-p), suggest mode keeps the context", async () => {
-	const { seen, input } = stub({ fetch: () => ({ status: 200, body: answer("independent", 0.91) }), mode: "print" });
+test("with no one to ask (-p), suggest mode keeps the context, and says nothing", async () => {
+	const { seen, input, lines } = stub({ fetch: () => ({ status: 200, body: answer("independent", 0.91) }), mode: "print" });
 	await input("write me a haiku");
 	assert.equal(seen.selects.length, 0);
 	assert.equal(seen.compactions.length, 0);
+	assert.deepEqual(lines(), []);
 });
 
 test("auto compacts a related task with the view lines as what to keep, keeping nothing verbatim", async () => {
@@ -241,9 +263,8 @@ test("auto compacts a related task with the view lines as what to keep, keeping 
 		summary: "## Goal\nCI for this repo", firstKeptEntryId: null, tokensBefore: 1234, usage: { input: 1, output: 1 },
 		details: { autoCompact: { action: "compact_view", category: "related", confidence: 0.9 } },
 	});
-	assert.ok(shows(seen, "compacting · related · 90%…"));
-	assert.ok(shows(seen, "compacted · related · 90%"));
-	assert.deepEqual(seen.notified, ["auto-compact: compacted the context (related · 90%): 1.2k → 300 tokens. Your prompt goes on."]);
+	// Right under Pi's compaction block, which it explains; the prompt comes after.
+	assert.deepEqual(seen.chat, ["[compaction]", "info: Context compacted: this prompt starts a related task", "user: now set up CI for this repo"]);
 	assert.ok(log().includes("[auto-compact] compacted, sending the prompt"));
 });
 
@@ -253,7 +274,7 @@ test("auto clears an independent task without a summary call, and the prompt sti
 	assert.equal(seen.summarized.length, 0);
 	assert.equal(seen.compacted[0].compaction.firstKeptEntryId, null);
 	assert.match(seen.compacted[0].compaction.summary, /cleared/);
-	assert.ok(shows(seen, "cleared · independent · 95%"));
+	assert.deepEqual(seen.chat, ["[compaction]", "info: Context cleared: this prompt starts an unrelated task", "user: write a poem"]);
 	assert.deepEqual(decisions().slice(0, 1), ["[auto-compact] independent · 0.95 → clear"]);
 });
 
@@ -264,8 +285,7 @@ test("a compaction Pi refuses keeps the context and says why", async () => {
 	});
 	await input("write a poem");
 	assert.ok(log().includes("[auto-compact] keep (could not clear: Nothing to compact (session too small)), sending the prompt"));
-	assert.ok(shows(seen, "clear? independent · 95%"));
-	assert.deepEqual(seen.notified, ["auto-compact: could not clear (Nothing to compact (session too small)); the context is kept and your prompt goes on."]);
+	assert.deepEqual(seen.chat, ["user: write a poem", "warning: Could not clear the context, so it was kept: Nothing to compact (session too small)"]);
 	await command("");
 	assert.match(seen.notified[1]!, /Clear falls back to keeping the context: Nothing to compact/);
 });
@@ -280,20 +300,23 @@ test("other compactions are left to Pi", async () => {
 	assert.equal(seen.summarized.length, 0);
 });
 
-test("auto does not act below the confidence threshold, nor on continuation or follow_up", async () => {
+test("auto does not act below the confidence threshold, nor on continuation or follow_up, and says nothing", async () => {
 	const answers = [answer("related", 0.6), answer("continuation", 0.99), answer("follow_up", 0.99)];
-	const { seen, input } = stub({ env: { ...MAMMOTH, AUTO_COMPACT_MODE: "auto" }, fetch: () => ({ status: 200, body: answers.shift() }) });
+	const { seen, input, lines } = stub({ env: { ...MAMMOTH, AUTO_COMPACT_MODE: "auto" }, fetch: () => ({ status: 200, body: answers.shift() }) });
 	for (const text of ["a", "b", "c"]) await input(text);
 	assert.equal(seen.compactions.length, 0);
 	assert.deepEqual(decisions(), ["[auto-compact] related · 0.60 → keep (low confidence)",
 		"[auto-compact] continuation · 0.99 → keep", "[auto-compact] follow_up · 0.99 → keep"]);
+	assert.deepEqual(lines(), []);
 });
 
 test("with no provider nothing is asked", async () => {
 	const { seen, input } = stub({ env: {} });
 	await input("hello there");
+	await input("and again");
 	assert.equal(seen.requests.length, 0);
-	assert.ok(shows(seen, "auto-compact: run /auto-compact setup to choose a provider"));
+	// Once, under the first prompt.
+	assert.deepEqual(seen.chat, ["user: hello there", "warning: auto-compact: run /auto-compact setup to choose a provider", "user: and again"]);
 });
 
 test("a provider error keeps the context", async () => {
@@ -302,8 +325,8 @@ test("a provider error keeps the context", async () => {
 	await input("and next");
 	assert.equal(seen.compactions.length, 0);
 	assert.ok(log().some((l) => l.includes("HTTP 429")));
-	// Said once, not on every prompt.
-	assert.deepEqual(seen.notified, ["auto-compact: the decision model failed (HTTP 429 slow down); the context is kept."]);
+	// Said once, not on every prompt, under the prompt it happened on.
+	assert.deepEqual(seen.chat, ["user: next", "warning: auto-compact: the decision model failed (HTTP 429 slow down); the context is kept.", "user: and next"]);
 });
 
 test("a slow provider times out and keeps the context", async () => {
@@ -380,17 +403,19 @@ test("a cloud provider is never sent a prefill", async () => {
 	assert.equal(seen.requests.length, 0);
 });
 
-test("a missing summary keeps the context and says summaries are catching up", async () => {
-	const { seen, input } = stub({ messages: LONG });
+test("a missing summary keeps the context, and only the debug view and the status say why", async () => {
+	const { seen, input, lines, command } = stub({ messages: LONG });
 	await input("next");
 	assert.equal(seen.requests.length, 0);
-	assert.ok(shows(seen, "auto-compact: summaries catching up"));
+	assert.deepEqual(lines(), []);
+	await command("");
+	assert.match(seen.notified[0]!, /Tree: catching up/);
 });
 
 test("a usage limit while summarizing pauses the summaries", async () => {
 	const { seen, settle } = stub({ messages: LONG, mode: "print", complete: () => ({ stopReason: "error", errorMessage: "429 rate_limit_error" }) });
 	await settle();
-	assert.ok(shows(seen, "auto-compact: Claude usage limit, summaries paused"));
+	assert.deepEqual(seen.notified, ["auto-compact: Claude usage limit, summaries paused. Until they catch up, every prompt keeps the context."]);
 });
 
 const theme = { fg: (_c: string, t: string) => t, bold: (t: string) => t };

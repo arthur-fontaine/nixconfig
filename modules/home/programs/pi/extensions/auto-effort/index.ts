@@ -13,7 +13,6 @@ import {
 	type Config,
 	type Decision,
 	decide,
-	describe,
 	isLevel,
 	JEV_PRESETS,
 	LEVELS,
@@ -23,8 +22,8 @@ import {
 	type StoredConfig,
 } from "./policy.ts";
 import { mainSessionOnly } from "./main-session.ts";
+import { changeNote, describeDecision, type Problem, problemNote } from "./notes.ts";
 
-const STATUS_KEY = "auto-effort";
 const NISEV_CHOICE = "Nisev (local)";
 const OTHER = "Other…";
 
@@ -32,6 +31,8 @@ type NisevState = "starting" | "downloading" | "ready" | "stopped";
 
 interface Server {
 	state: NisevState;
+	// The download's progress, for /auto-effort.
+	percent?: number;
 	kill(): void;
 }
 
@@ -39,13 +40,9 @@ interface Server {
 export interface Holder {
 	server?: Server;
 	starting?: Promise<NisevState>;
-	// The UI of the newest runtime, for the server's progress, which outlives the runtime that started it.
-	view?: { ui: ExtensionContext["ui"]; tui: boolean };
+	// The UI of the newest runtime, for a server failure, which outlives the runtime that started it.
+	view?: { ui: ExtensionContext["ui"] };
 }
-
-// How a footer label reads: in force (accent), informational (dim), or a fallback worth a look.
-type Tone = "active" | "quiet" | "warn" | "error";
-const COLORS = { active: "accent", quiet: "dim", warn: "warning", error: "error" } as const;
 
 export interface Store {
 	get(key: string): Promise<unknown>;
@@ -154,10 +151,13 @@ function textOf(content: unknown) {
 export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 	const { holder } = deps;
 	let enabled = true;
-	let lastDecision: (Decision & { ms: number }) | null = null;
+	// With the session's level when it was decided, which a kept decision ran at.
+	let lastDecision: (Decision & { ms: number; level: string }) | null = null;
 	let lastProblem: { text: string; at: Date } | null = null;
-	// The footer label of the latest decision, dimmed once its run is over.
-	let lastLabel: { text: string; tone: Tone } | null = null;
+	// The line for the prompt being delivered, posted under it once Pi has drawn it.
+	let note: { text: string; type: "info" | "warning" } | null = null;
+	// The kind of the last problem posted, so a classifier that stays down says so once.
+	let reported: string | null = null;
 	let warnedMissing = false;
 	// Set once a request reached Nisev, so a prompt doesn't probe the port every time.
 	let nisevConfirmed = false;
@@ -172,18 +172,7 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 	const ours: string[] = [];
 
 	function view(ctx: ExtensionContext) {
-		holder.view = { ui: ctx.ui, tui: ctx.mode === "tui" };
-	}
-
-	// One short label in the footer's shared extension line; RPC clients get it uncolored.
-	function show(text: string | undefined, tone: Tone = "quiet") {
-		const v = holder.view;
-		try {
-			// Pi joins the extensions' footer entries with a space; a dim bar keeps them apart.
-			v?.ui.setStatus(STATUS_KEY, text && v.tui ? v.ui.theme.fg("dim", "│ ") + v.ui.theme.fg(COLORS[tone], text) : text);
-		} catch {
-			// A replaced runtime's UI.
-		}
+		holder.view = { ui: ctx.ui };
 	}
 
 	function notify(text: string, type: "info" | "warning" | "error" = "warning") {
@@ -201,33 +190,6 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 
 	function sessionLevel() {
 		return override ? override.baseline : pi.getThinkingLevel();
-	}
-
-	// `effort ▲ high · multi-step 80%`: the level against the session's, then why.
-	function label(decision: Decision): { text: string; tone: Tone } {
-		const pct = typeof decision.confidence === "number" ? `${Math.round(decision.confidence * 100)}%` : "";
-		const why = [decision.category?.replace("_", "-"), pct].filter(Boolean).join(" ");
-		if (decision.effort) {
-			const from = LEVELS.indexOf(sessionLevel() as Level);
-			const to = LEVELS.indexOf(decision.effort);
-			const arrow = from < 0 || from === to ? "=" : to > from ? "▲" : "▼";
-			const capped = decision.choice && decision.choice !== decision.effort ? ` · picked ${decision.choice}` : "";
-			return { text: `effort ${arrow} ${decision.effort}${capped}${why && ` · ${why}`}`, tone: "active" };
-		}
-		if (decision.reason === "default") return { text: `effort = default${why && ` · ${why}`}`, tone: "quiet" };
-		if (decision.reason === "low confidence") return { text: `effort = default · unsure ${decision.choice} ${pct}`, tone: "quiet" };
-		const expected = decision.reason === "model takes no effort" || decision.reason === "Nisev starting" || decision.reason === "Nisev downloading";
-		return { text: `effort = default · ${decision.reason}`, tone: expected ? "quiet" : "warn" };
-	}
-
-	// The decision no longer sets the level: keep it in view, dimmed, as the last one.
-	function fade() {
-		if (lastLabel?.tone === "active") showDecision({ text: `last ${lastLabel.text}`, tone: "quiet" });
-	}
-
-	function showDecision(next: { text: string; tone: Tone } | null) {
-		lastLabel = next;
-		if (next) show(next.text, next.tone);
 	}
 
 	function nisevState(): NisevState {
@@ -264,7 +226,7 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 
 	// Starts llama-server for the rest of the Pi process unless our model is already served on
 	// the port; never waits for it to load. The first start downloads the model (-hf), reported
-	// in the footer. The session's warm-up and its first prompt can both get here: they share one start.
+	// in /auto-effort. The session's warm-up and its first prompt can both get here: they share one start.
 	function startNisev(config: Config): Promise<NisevState> {
 		holder.starting ??= launchNisev(config).finally(() => {
 			holder.starting = undefined;
@@ -281,8 +243,6 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 		const current: Server = { state: "starting", kill() {} };
 		holder.server = current;
 		const { binary } = await findServer(config);
-		// llama.cpp may print nothing while it downloads, so say up front that the first start can take minutes.
-		show(`Nisev starting · first start downloads ${NISEV.sizeLabel}`);
 		const stopped = () => {
 			current.state = "stopped";
 			nisevConfirmed = false;
@@ -293,10 +253,9 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 				if (seen.ready && current.state !== "ready") {
 					current.state = "ready";
 					nisevConfirmed = true;
-					show("Nisev ready");
 				} else if (seen.percent !== undefined && current.state !== "ready") {
 					current.state = "downloading";
-					show(`Nisev downloading · ${seen.percent}%`);
+					current.percent = seen.percent;
 				}
 				deps.log(text.trimEnd());
 			});
@@ -314,7 +273,6 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 
 	function failed(error: Error) {
 		problem(`llama-server failed to start: ${error.message}`);
-		show("Nisev failed to start", "error");
 		notify(`auto-effort: llama-server failed to start: ${error.message}`, "error");
 	}
 
@@ -438,19 +396,34 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 		if (pi.getThinkingLevel() === applied) setLevel(baseline);
 	}
 
+	// A problem is said once until a prompt is decided again; a level that stands needs no line,
+	// since Pi's footer shows it.
+	function report(found: Problem | null) {
+		if (!found) {
+			reported = null;
+			return;
+		}
+		if (found.kind !== reported) note = { text: found.text, type: found.type };
+		reported = found.kind;
+	}
+
 	function apply(decision: Decision | null, ctx: ExtensionContext) {
+		note = null;
 		const effort = enabled ? decision?.effort : null;
-		if (!effort) return restore();
 		const baseline = override ? override.baseline : pi.getThinkingLevel();
 		// A model without reasoning takes no effort; thinking set to off or minimal is a choice
 		// outside the effort scale, left alone like a hand-set budget in Claude Code.
-		if (!ctx.model?.reasoning || !isLevel(baseline)) {
-			showDecision({ text: `effort = ${baseline} · ${ctx.model?.reasoning ? `thinking is ${baseline}` : "model doesn't think"}`, tone: "quiet" });
-			return restore();
+		if (!enabled || !decision || !ctx.model?.reasoning || !isLevel(baseline)) return restore();
+		if (!effort) {
+			restore();
+			return report(problemNote(decision.reason, sessionLevel()));
 		}
+		report(null);
 		deps.log(`effort ${pi.getThinkingLevel()} → ${effort}`);
 		setLevel(effort);
-		override = { baseline, applied: pi.getThinkingLevel() };
+		const applied = pi.getThinkingLevel();
+		override = { baseline, applied };
+		if (applied !== baseline) note = { text: changeNote(decision, applied), type: "info" };
 	}
 
 	async function saveConfig(config: StoredConfig) {
@@ -511,7 +484,7 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 			`Saved: Nisev, served by ${serverCommand(binary).join(" ")} (build ${build}) at ${config.endpoint}.`,
 			serving
 				? "It is already running."
-				: "The first start downloads the model; the footer shows the progress. Until it is ready, " +
+				: "The first start downloads the model; /auto-effort shows the progress. Until it is ready, " +
 					"prompts keep the session's thinking level.",
 			"llama-server runs while Pi does; the next Pi starts it again from the cache.",
 			"AUTO_EFFORT_* environment variables, when set, take precedence over this setup.",
@@ -542,7 +515,8 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 		const config = await loadConfig();
 		const lines = [`Effort picker: ${enabled ? "on" : "off"}`];
 		if (config.provider === "nisev") {
-			lines.push(`Provider: Nisev ${config.model} · llama.cpp at ${config.endpoint} (${nisevState()})`);
+			const percent = holder.server?.state === "downloading" && holder.server.percent !== undefined ? ` ${holder.server.percent}%` : "";
+			lines.push(`Provider: Nisev ${config.model} · llama.cpp at ${config.endpoint} (${nisevState()}${percent})`);
 			for (const problem of config.problems) lines.push(`Problem: ${problem}`);
 		} else {
 			lines.push(`Provider: ${config.provider ? "System One endpoint" : "not set, run /auto-effort setup"}`);
@@ -552,13 +526,8 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 		}
 		lines.push(
 			`Range: ${config.minEffort}–${config.maxEffort} of ${LEVELS.join(", ")} · min confidence ${config.minConfidence}`,
-			`Last decision: ${lastDecision ? describe(lastDecision) : "none yet"}`,
+			`Last decision: ${lastDecision ? `${describeDecision(lastDecision, lastDecision.level)}, in ${lastDecision.ms} ms` : "none yet"}`,
 		);
-		if (lastDecision) {
-			const kind = lastDecision.category ? `${lastDecision.category.replace("_", "-")} work, ` : "";
-			const why = lastDecision.effort ? "" : ` (${lastDecision.reason})`;
-			lines.push(`  ${kind}decided in ${lastDecision.ms} ms${why}`);
-		}
 		const current = pi.getThinkingLevel();
 		lines.push(`Thinking level: ${sessionLevel()}${override && current !== sessionLevel() ? `, ${current} for the running prompt` : ""}`);
 		if (lastProblem) lines.push(`Last problem: ${lastProblem.text} (${lastProblem.at.toLocaleTimeString()})`);
@@ -576,7 +545,6 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 				// Applies to this Pi only.
 			}
 			if (!enabled) restore();
-			show(enabled ? undefined : "effort picker off");
 			return `Effort picker turned ${arg}.`;
 		}
 		if (arg && arg !== "status") return "Usage: /auto-effort [setup|on|off|status]";
@@ -603,7 +571,6 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 		} catch {
 			// Keep the default.
 		}
-		if (!enabled) show("effort picker off");
 		// Warm Nisev up before the first prompt needs it.
 		const config = await loadConfig();
 		if (enabled && config.provider === "nisev" && !config.problems.length) void startNisev(config);
@@ -615,13 +582,8 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 		// A steer joins the running work, which keeps its decision; a follow-up gets its own.
 		if (!enabled || event.streamingBehavior === "steer" || !event.text.trim()) return;
 		const started = Date.now();
-		// Only a slow classifier is worth a "deciding" label; Nisev answers in tens of ms.
-		const slow = setTimeout(() => show("effort …"), 250);
-		const decision = await classify(ctx, event.text).finally(() => clearTimeout(slow));
-		if (decision) lastDecision = { ...decision, ms: Date.now() - started };
-		// A follow-up's label waits for its delivery, so the footer describes the work running now.
-		if (decision && event.streamingBehavior !== "followUp") showDecision(label(decision));
-		else show(lastLabel?.text, lastLabel?.tone);
+		const decision = await classify(ctx, event.text);
+		if (decision) lastDecision = { ...decision, ms: Date.now() - started, level: sessionLevel() };
 		if (event.streamingBehavior === "followUp") followUps.push({ text: event.text, decision });
 		else pending = decision;
 	});
@@ -641,8 +603,20 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 		if (i < 0 && followUps[0]!.text.startsWith("/")) i = 0;
 		if (i < 0) return; // A steer.
 		const [followUp] = followUps.splice(i, 1);
-		if (followUp!.decision) showDecision(label(followUp!.decision));
 		apply(followUp!.decision, ctx);
+	});
+
+	// Pi draws the user message on message_start, after the extensions' handlers, so the line waits
+	// for message_end to land right under it rather than above it.
+	pi.on("message_end", async (event, ctx) => {
+		if (event.message.role !== "user" || !note) return;
+		const { text, type } = note;
+		note = null;
+		try {
+			ctx.ui.notify(text, type);
+		} catch {
+			// A replaced runtime's UI.
+		}
 	});
 
 	pi.on("thinking_level_select", async (event) => {
@@ -652,16 +626,13 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 			return;
 		}
 		// Chosen by hand, or by a model switch, during the run: that stands, as /effort does in Claude Code.
-		if (override) {
-			override = null;
-			fade();
-		}
+		override = null;
 	});
 
 	pi.on("agent_settled", async () => {
 		followUps = [];
+		note = null;
 		restore();
-		fade();
 	});
 
 	pi.on("session_shutdown", async (event) => {

@@ -41,8 +41,11 @@ function harness({ env = ENV, fetch: respond, model = { id: "claude-opus-5-5", r
 	let thinking = level;
 	const seen = {
 		requests: [] as { url: string; headers: any; body: any }[],
-		labels: [] as (string | undefined)[],
+		// The footer is never used: every line goes to the chat.
+		statuses: [] as (string | undefined)[],
 		notices: [] as string[],
+		// The chat in order: user messages as Pi draws them, and the extension's notices.
+		chat: [] as string[],
 		spawned: [] as string[][],
 		levels: [] as string[],
 	};
@@ -68,9 +71,11 @@ function harness({ env = ENV, fetch: respond, model = { id: "claude-opus-5-5", r
 		},
 	};
 	const ui = {
-		// TUI labels start with the bar that separates them from other extensions' entries.
-		setStatus: (_key: string, text: string | undefined) => seen.labels.push(text?.replace(/^<dim>│ /, "")),
-		notify: (text: string) => seen.notices.push(text),
+		setStatus: (_key: string, text: string | undefined) => seen.statuses.push(text),
+		notify: (text: string, type = "info") => {
+			seen.notices.push(text);
+			seen.chat.push(`${type}: ${text}`);
+		},
 		select: async () => answers.shift(),
 		input: async () => answers.shift(),
 		confirm: async () => answers.shift() === true,
@@ -115,8 +120,12 @@ function harness({ env = ENV, fetch: respond, model = { id: "claude-opus-5-5", r
 
 	const flush = () => new Promise((resolve) => setImmediate(resolve));
 	// The user message entering the transcript; the level it runs at is the one Pi reads next.
+	// Like Pi, the message is drawn after the extensions' message_start handlers.
 	async function deliver(text: string) {
-		await emit("message_start", { message: { role: "user", content: [{ type: "text", text }] } });
+		const message = { role: "user", content: [{ type: "text", text }] };
+		await emit("message_start", { message });
+		seen.chat.push(`user: ${text}`);
+		await emit("message_end", { message });
 		await flush();
 		return thinking;
 	}
@@ -143,41 +152,56 @@ function harness({ env = ENV, fetch: respond, model = { id: "claude-opus-5-5", r
 		await commands.get("auto-effort").handler(args, ctx);
 		return seen.notices.slice(before).join("\n");
 	}
-	return { ctx: ctx as any, emit, input, start, deliver, settle, prompt, command, seen, level: () => thinking, setLevel: pi.setThinkingLevel, flush };
+	// The extension's lines in the chat, without the user messages.
+	const lines = () => seen.chat.filter((line) => !line.startsWith("user: "));
+	return { ctx: ctx as any, emit, input, start, deliver, settle, prompt, command, seen, lines, level: () => thinking, setLevel: pi.setThinkingLevel, flush };
 }
 
 test("a confident Jev answer sets the thinking level of the run, then the session's comes back", async () => {
 	const h = harness();
 	assert.equal(await h.prompt("Migrate every module from callbacks to async/await and make the tests pass"), "high");
-	assert.ok(h.seen.labels.includes("effort ▲ high · 90%"));
 	assert.equal(h.level(), "medium");
 	assert.deepEqual(h.seen.levels, ["high", "medium"]);
-	// Still shown once the run is over, as the last decision.
-	assert.equal(h.seen.labels.at(-1), "last effort ▲ high · 90%");
+	// Right under the prompt it applies to, once.
+	assert.deepEqual(h.seen.chat, [
+		"user: Migrate every module from callbacks to async/await and make the tests pass",
+		"info: Thinking set to: high, for multi-step work",
+	]);
 });
 
-test("the footer label is colored by whether it is in force, in the terminal only", async () => {
+test("nothing goes to the footer", async () => {
 	const h = harness();
-	h.ctx.mode = "tui";
-	h.ctx.ui.theme = { fg: (color: string, text: string) => `<${color}>${text}` };
-	await h.input("Migrate the build to Vite");
-	await h.start("Migrate the build to Vite");
-	assert.equal(h.seen.labels.at(-1), "<accent>effort ▲ high · 90%");
-	await h.settle();
-	assert.equal(h.seen.labels.at(-1), "<dim>last effort ▲ high · 90%");
+	await h.prompt("Migrate the build to Vite");
+	await h.command("off");
+	await h.prompt("Migrate the build to Vite");
+	await h.command("on");
+	const nisev = harness({ env: NISEV_ENV, fetch: refused, serverOutput: "llama_model_loader: downloading 42%" });
+	await nisev.emit("session_start", { reason: "startup" });
+	await nisev.prompt("Refactor the parser");
+	assert.deepEqual([...h.seen.statuses, ...nisev.seen.statuses], []);
 });
 
-test("a lower pick points down, and the status explains the last decision and problem", async () => {
+test("a lower pick says so, and the status names the level the last decision kept", async () => {
 	let fail = false;
 	const h = harness({ fetch: () => (fail ? new TypeError("fetch failed") : jevReply("low", 0.8)) });
 	assert.equal(await h.prompt("Fix the typo in the README"), "low");
-	assert.ok(h.seen.labels.includes("effort ▼ low · 80%"));
+	assert.deepEqual(h.lines(), ["info: Thinking set to: low, for a quick request"]);
 	fail = true;
 	await h.prompt("Fix the typo in the README");
 	const text = await h.command("status");
-	assert.match(text, /Last decision: effort default \(endpoint unavailable\)/);
+	assert.match(text, /Last decision: kept medium \(endpoint unavailable\), in \d+ ms/);
+	assert.doesNotMatch(text, /default/);
 	assert.match(text, /Thinking level: medium/);
 	assert.match(text, /Last problem: effort request failed: fetch failed/);
+});
+
+test("the status names the level a kept decision ran at, not \"default\"", async () => {
+	const h = harness({ fetch: () => jevReply("default", 0.7), level: "high" });
+	await h.prompt("Add a --verbose flag to the CLI");
+	assert.match(await h.command("status"), /Last decision: kept high, the model's default fits \(70% sure\)/);
+	const raised = harness();
+	await raised.prompt("Migrate the build to Vite");
+	assert.match(await raised.command("status"), /Last decision: set to high, for multi-step work \(90% sure\)/);
 });
 
 test("the request goes to the configured endpoint with the key and model", async () => {
@@ -194,28 +218,51 @@ test("the request goes to the configured endpoint with the key and model", async
 	assert.deepEqual(Object.keys(req!.body.questions.effort.criteria), ["low", "medium", "default", "high", "xhigh", "max"]);
 });
 
-test('"default" keeps the session effort', async () => {
+test('"default" keeps the session effort, and says nothing', async () => {
 	const h = harness({ fetch: () => jevReply("default", 0.95) });
 	assert.equal(await h.prompt("Add a --verbose flag to the CLI"), "medium");
 	assert.deepEqual(h.seen.levels, []);
+	assert.deepEqual(h.lines(), []);
 });
 
-test("a low-confidence answer keeps the session effort", async () => {
+test("a low-confidence answer keeps the session effort, and says nothing", async () => {
 	const h = harness({ fetch: () => jevReply("low", 0.3) });
 	assert.equal(await h.prompt("hmm"), "medium");
-	assert.ok(h.seen.labels.includes("effort = default · unsure low 30%"));
+	assert.deepEqual(h.lines(), []);
+});
+
+test("a pick equal to the session's level changes nothing, and says nothing", async () => {
+	const h = harness({ level: "high" });
+	assert.equal(await h.prompt("Migrate the build to Vite"), "high");
+	assert.deepEqual(h.lines(), []);
 });
 
 test("the pick is capped at max_effort", async () => {
 	const h = harness({ fetch: () => jevReply("max", 0.99) });
 	assert.equal(await h.prompt("Audit every endpoint, leave nothing unchecked"), "xhigh");
-	assert.ok(h.seen.labels.includes("effort ▲ xhigh · picked max · 99%"));
+	assert.deepEqual(h.lines(), ["info: Thinking set to: xhigh, the highest allowed, for an exhaustive task"]);
 });
 
 test("an HTTP error keeps the session effort and lets the prompt through", async () => {
 	const h = harness({ fetch: () => ({ status: 429, body: "rate limited" }) });
 	assert.equal(await h.prompt("Fix the flaky test"), "medium");
-	assert.ok(h.seen.labels.includes("effort = default · endpoint unavailable"));
+	assert.deepEqual(h.seen.chat, [
+		"user: Fix the flaky test",
+		"warning: The effort classifier did not answer, so thinking stays at medium. See /auto-effort.",
+	]);
+});
+
+test("a classifier that stays down says so once, and again after it came back", async () => {
+	let down = true;
+	const h = harness({ fetch: () => (down ? new TypeError("fetch failed") : jevReply("default", 0.9)) });
+	await h.prompt("Fix the flaky test");
+	await h.prompt("And the other one");
+	assert.equal(h.lines().length, 1);
+	down = false;
+	await h.prompt("Add a flag");
+	down = true;
+	await h.prompt("Fix it again");
+	assert.equal(h.lines().length, 2);
 });
 
 test("a failed fetch keeps the session effort", async () => {
@@ -253,15 +300,17 @@ test("OPENCODE_API_KEY is not read", async () => {
 	assert.equal(h.seen.requests.length, 0);
 });
 
-test("a model without reasoning keeps its level", async () => {
-	const h = harness({ model: { id: "claude-haiku-4-5", reasoning: false } });
+test("a model without reasoning keeps its level, and says nothing", async () => {
+	const h = harness({ model: { id: "claude-haiku-4-5", reasoning: false }, fetch: () => new TypeError("fetch failed") });
 	assert.equal(await h.prompt("Migrate the build to Vite"), "medium");
 	assert.deepEqual(h.seen.levels, []);
+	assert.deepEqual(h.lines(), []);
 });
 
 test("thinking turned off is left alone", async () => {
 	const h = harness({ level: "off" });
 	assert.equal(await h.prompt("Migrate the build to Vite"), "off");
+	assert.deepEqual(h.lines(), []);
 });
 
 test("the decision does not leak into the next run", async () => {
@@ -278,9 +327,10 @@ test("a follow-up queued during a run applies to its own part, not the running o
 	assert.equal(await h.start("Fix the flaky test"), "medium");
 	await h.input("Then audit the auth module", "followUp");
 	assert.equal(h.level(), "medium");
-	assert.equal(h.seen.labels.at(-1), "effort = default · 90%");
+	assert.deepEqual(h.lines(), []);
 	assert.equal(await h.deliver("Then audit the auth module"), "xhigh");
-	assert.equal(h.seen.labels.at(-1), "effort ▲ xhigh · 90%");
+	// Under the follow-up, when Pi delivers it.
+	assert.deepEqual(h.seen.chat, ["user: Fix the flaky test", "user: Then audit the auth module", "info: Thinking set to: xhigh, for a hard task"]);
 	await h.settle();
 	assert.equal(h.level(), "medium");
 });
@@ -375,7 +425,7 @@ test("Nisev is asked the category question, and its answer is mapped for the mod
 	assert.equal(req!.url, "http://127.0.0.1:8765/v1/systemone");
 	assert.equal(req!.body.model, "nisev");
 	assert.deepEqual(Object.keys(req!.body.questions.effort.criteria), ["trivial", "light", "ordinary", "multi_step", "hard", "exhaustive"]);
-	assert.ok(h.seen.labels.includes("effort ▲ high · multi-step 80%"));
+	assert.deepEqual(h.lines(), ["info: Thinking set to: high, for multi-step work"]);
 });
 
 test("ordinary work on Nisev keeps the model's default", async () => {
@@ -386,7 +436,7 @@ test("ordinary work on Nisev keeps the model's default", async () => {
 test("the same answer means the default on a model whose default is high", async () => {
 	const h = harness({ env: NISEV_ENV, fetch: nisevFetch(MULTI_STEP), model: { id: "claude-sonnet-5-5", reasoning: true }, level: "high" });
 	assert.equal(await h.prompt("Refactor the payment module and make the tests pass"), "high");
-	assert.ok(h.seen.labels.includes("effort = default · multi-step 90%"));
+	assert.deepEqual(h.lines(), []);
 	assert.deepEqual(h.seen.levels, []);
 });
 
@@ -396,7 +446,10 @@ test("when llama-server is not running, the extension starts it and the prompt k
 	assert.deepEqual(h.seen.spawned, [
 		["llama-server", "-hf", "arthur-fontaine/nisev-1.7b-GGUF:Q8_0", "--host", "127.0.0.1", "--port", "8765", "--alias", "nisev", "-c", "8192", "-np", "2"],
 	]);
-	assert.ok(h.seen.labels.includes("effort = default · Nisev starting"));
+	assert.deepEqual(h.seen.chat, ["user: Refactor the parser", "info: Nisev starting: thinking stays at medium until it is ready"]);
+	// Still starting on the next prompt: said once.
+	await h.prompt("Refactor the lexer");
+	assert.equal(h.lines().length, 1);
 });
 
 test("once llama-server listens, prompts are classified", async () => {
@@ -406,7 +459,7 @@ test("once llama-server listens, prompts are classified", async () => {
 	await h.emit("session_start", { reason: "startup" });
 	await h.flush();
 	assert.equal(h.seen.spawned.length, 1);
-	assert.ok(h.seen.labels.includes("Nisev ready"));
+	assert.match(await h.command("status"), /\(ready\)/);
 	up = true;
 	assert.equal(await h.prompt("Refactor the payment module and make the tests pass"), "high");
 	assert.equal(h.seen.spawned.length, 1);

@@ -44,44 +44,43 @@ also be written ahead of time:
 
 | Command | What it does |
 | :- | :- |
-| `/auto-effort` or `/auto-effort status` | Provider, what's missing, Nisev's state, the range, the last decision (its kind of work and how long it took), the session's thinking level, and the last problem. |
+| `/auto-effort` or `/auto-effort status` | Provider, what's missing, Nisev's state (with the download's progress), the range, the last decision (the level it set or kept, its kind of work and how long it took), the session's thinking level, and the last problem. |
 | `/auto-effort setup` | Chooses the provider: Nisev (checks llama.cpp's build, asks before the 1.9 GB download), a preset, or **Other…** to type an endpoint and model. |
 | `/auto-effort off` / `on` | Stops or resumes the overrides, saved across sessions. Turning it off mid-run gives the session its level back at once. |
 
 ## What it shows
 
-One short label in the footer's extension line, under its own `auto-effort`
-key. Pi sorts that line by key and truncates it at the terminal's width, so the
-label stays short to leave room for other extensions' statuses (auto-compact,
-cache-warmer, Remote Control).
+A short line in the chat, right under the prompt it applies to, as a Pi notice
+(`ctx.ui.notify`, the same dim line as `Session named: …`). Nothing goes in the
+footer.
 
-| Label | Meaning |
+| Line | When |
 | :- | :- |
-| `effort ▲ high · multi-step 82%` | This prompt runs at `high`, above the session's level, because Nisev sized it as multi-step work, 82% sure. Accent color while it is in force. |
-| `effort ▼ low · trivial 95%` | Lowered for a quick request. |
-| `effort ▲ xhigh · picked max · 99%` | It picked `max`, above `AUTO_EFFORT_MAX_EFFORT`, so the prompt runs at `xhigh`. |
-| `last effort ▲ high · multi-step 82%` | Dimmed: the run is over and the session's level is back. |
-| `effort = default · ordinary 70%` | The model's default fits, so the session's level stands. Dim. |
-| `effort = default · unsure high 41%` | It leaned to `high`, but below the minimum confidence. Dim. |
-| `effort = default · Nisev unavailable` | A fallback: the decision model failed or timed out. Warning color; `/auto-effort` says why. |
-| `effort …` | Only when the decision model takes over 250 ms to answer. |
-| `Nisev starting · first start downloads about 1.9 GB`, `Nisev downloading · 42%`, `Nisev ready` | The server this extension started. `Nisev failed to start` is in the error color. |
-| `effort picker off` | After `/auto-effort off`. |
+| `Thinking set to: high, for multi-step work` | The decision changed the thinking level for this prompt. The words say why: a quick request, a small change, a typical task, multi-step work, a hard task, an exhaustive task (for a Jev answer, the kind of work its level stands for). |
+| `Thinking set to: xhigh, the highest allowed, for an exhaustive task` | It picked `max`, above `AUTO_EFFORT_MAX_EFFORT` (or what the model supports). `the lowest allowed` for the other end. |
+| `Nisev starting: thinking stays at high until it is ready`, `Nisev downloading its model: …` | The server this extension started isn't ready yet. |
+| `Warning: The effort classifier did not answer, so thinking stays at high. See /auto-effort.` | A fallback: the decision model failed or timed out (`Nisev did not answer`, `Nisev is not running`, or `gave no usable answer` for the other cases). |
 
-Why there:
+Why so:
 
-- The current level itself is already on Pi's footer (`claude-opus-5-5 • high`),
-  and changes with each override, so the label adds what Pi can't show: the
-  direction against the session's level and the reason, in a few words.
-- A widget above or below the editor would take a line for every prompt; the
-  footer label costs no extra line and stays visible while Pi works.
-- Notifications are kept for what needs action, once per session: no provider
-  set up, settings that don't fit Nisev, llama-server failing to start. A
-  failure on one prompt only colors the label; the details wait in
-  `/auto-effort`.
-- The label always describes the work running now: a follow-up queued during
-  a run shows its decision when Pi delivers it, not when you send it.
-- In RPC mode the same label goes to the client uncolored.
+- When the session's level stands (the model's default fits, the classifier
+  wasn't sure, thinking is off, the model doesn't reason), nothing is posted:
+  Pi's footer already shows that level, and it is the right one.
+- A problem is posted once. The same problem on the next prompts stays silent
+  until a prompt is decided again; `/auto-effort` keeps the details.
+- The line goes under its prompt, not above it: Pi draws the user message after
+  the extensions' `message_start` handlers, so the extension posts on that
+  message's `message_end`. A follow-up queued during a run gets its line when
+  Pi delivers it, not when you send it.
+- Notifications are a Pi notice, not a session entry: they don't come back
+  when the session is resumed, and they never reach the model or Remote Control.
+- Pi replaces a dim notice that is still the last line of the chat with the
+  next one. auto-compact posts its compaction line above the prompt, under
+  Pi's compaction block, so both stay; its `Context kept` line goes under the
+  prompt, where this one replaces it. A warning is never replaced.
+- Notifications that need action still come once per session: no provider set
+  up, settings that don't fit Nisev, llama-server failing to start. Nisev's
+  download progress is in `/auto-effort`.
 
 ## How it maps from the mod
 
@@ -101,7 +100,7 @@ Why there:
 | Start llama-server at session start, report download and readiness, reuse a server already running, stop it with the session | Same; one server per Pi process, shared across `/new`, `/resume` and `/reload`, stopped when Pi quits | Equivalent |
 | `/auto-effort [setup\|on\|off\|status]`, setup wizard | Pi command with completions; `ctx.ui.select`, `input`, `confirm` | Yes |
 | Settings saved by setup and on/off, across sessions | `~/.pi/agent/auto-effort.json` | Yes |
-| Footer label with the decision | `ctx.ui.setStatus`, with direction, reason and color | Better |
+| Footer label with the decision | A line under the prompt when the level changes, or once for a problem | Different, see above |
 | Status line for what needs action | `ctx.ui.notify`, once | Equivalent |
 | Debug log (`claude --debug-file`) of overrides and llama-server output | `PI_AUTO_EFFORT_DEBUG=<file>` | Equivalent |
 | `pnpm test` | `node --test 'tests/*.test.ts'` (Node 23.6+), stubbed fetch and processes | Yes |
@@ -139,4 +138,4 @@ node --test 'tests/*.test.ts'
 
 `tests/policy.test.ts` is the mod's policy suite; `tests/auto-effort.test.ts`
 drives the handlers in the order Pi fires them, against a fake Pi, with fetch,
-llama.cpp and the store stubbed.
+llama.cpp and the store stubbed. `tests/notes.test.ts` checks the wording of the lines.
