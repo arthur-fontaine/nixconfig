@@ -14,6 +14,12 @@ let
       # The ask_user_question tool. The remote-control extension answers it
       # from the Claude apps through the package's rpiv:ask-user:* events.
       "npm:@juicesharp/rpiv-ask-user-question@2.15.0"
+      # /btw: side conversations that don't enter the main one.
+      "npm:pi-btw@0.8.0"
+      # /goal: goals with tracked progress and an independent completion auditor.
+      "npm:pi-goal-x@0.34.1"
+      # Pasted screenshots as [Image #N] markers with clickable links.
+      "npm:pi-image-view@0.5.0"
     ];
   };
   settingsJson = (pkgs.formats.json { }).generate "pi-settings.json" settings;
