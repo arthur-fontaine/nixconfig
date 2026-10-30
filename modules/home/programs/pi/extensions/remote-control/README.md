@@ -47,6 +47,14 @@ Tested from the Claude iOS app:
 - Photos reach the model; other files are saved under the system temp
   directory and their path is given to Pi.
 - `/compact` compacts Pi's conversation. Other slash commands get a notice.
+- Questionnaires from `ask_user_question`
+  ([@juicesharp/rpiv-ask-user-question](https://www.npmjs.com/package/@juicesharp/rpiv-ask-user-question))
+  show as Claude Code's AskUserQuestion prompt, through the package's
+  `rpiv:ask-user:*` events. Options, multi-select and typed answers all come
+  back. Whichever answers first wins: answering in the terminal withdraws the
+  prompt from the apps, and dismissing it in the apps declines it. This needs
+  Pi's terminal UI: in RPC mode the package uses Pi's own dialogs, which
+  can't be answered from outside.
 
 ## Limits
 
