@@ -207,7 +207,7 @@ changing the vault list.
 ## Not managed
 
 - Settings synced to an account: Spotify, Discord, Chrome, Figma, Notion, Linear, Teams, WhatsApp, ChatGPT.
-- Apps with only window state: DataGrip, Cyberduck, HTTPie, OrbStack (its VM settings change with `orb config set`), UTM.
+- Apps with only window state: DataGrip, Cyberduck, HTTPie, OrbStack (its VM settings change with `orb config set`).
 - Smallcast quicklinks and extensions, which live in SQLite and `~/Library/Application Support/com.smallcast.app.beta/`.
 - The Dock's app list.
 

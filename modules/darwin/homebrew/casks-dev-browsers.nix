@@ -13,6 +13,5 @@
   # Taps from its own repo; see ./default.nix. `version :latest` casks only
   # upgrade when greedy.
   { name = "arthur-fontaine/somebrowser/somebrowser"; greedy = true; }
-  "utm"
   "zed@preview"
 ]
