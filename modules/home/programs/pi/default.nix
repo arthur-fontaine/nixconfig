@@ -45,6 +45,8 @@ let
   # keeps its on/off state in the same file, so it is merged, not replaced.
   autoEffort = { config.provider = "nisev"; };
   autoEffortJson = (pkgs.formats.json { }).generate "pi-auto-effort.json" autoEffort;
+  # Likewise auto-compact's, as Claude Code's AUTO_COMPACT_PROVIDER: Spisev.
+  autoCompactJson = (pkgs.formats.json { }).generate "pi-auto-compact.json" { provider = "spisev"; };
   mcpPath = "${config.home.homeDirectory}/.pi/agent/mcp.json";
   merge = import ../../lib/merge-json.nix { inherit pkgs; };
 
@@ -104,6 +106,7 @@ in
     ".pi/agent/skills/context7-mcp".source = ../claude/skills/context7-mcp;
     ".pi/agent/extensions/remote-control".source = ./extensions/remote-control;
     ".pi/agent/extensions/auto-effort".source = ./extensions/auto-effort;
+    ".pi/agent/extensions/auto-compact".source = ./extensions/auto-compact;
   } // lib.mapAttrs' (name: src: lib.nameValuePair ".pi/agent/skills/${name}" { source = src; }) pluginSkills;
 
   # Pi writes settings.json itself (/model, /settings), so merge into a
@@ -117,5 +120,6 @@ in
     # Pi saves exposure and enabled changes to mcp.json, so merge into it too.
     ${merge mcpJson mcpPath}
     ${merge autoEffortJson "${config.home.homeDirectory}/.pi/agent/auto-effort.json"}
+    ${merge autoCompactJson "${config.home.homeDirectory}/.pi/agent/auto-compact/config.json"}
   '';
 }
