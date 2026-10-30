@@ -19,5 +19,8 @@ in
   # not managed.
   nixconfig.defaultsData.${domain} = {
     "setting.search.engine" = "google";
+    # The default, pinned so the choice is recorded. The app deletes a setting
+    # set back to its default, so after that the report shows it `missing`.
+    "setting.peek.trigger" = "click";
   };
 }
