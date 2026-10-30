@@ -12,6 +12,12 @@ in
       "^com\\.apple\\."
     ];
   };
+  nixconfig.sync.somebrowser-extensions = {
+    method = "dir-list";
+    live = "~/Library/Application Support/Some Browser/Engine/cef-chrome/Default/Extensions";
+    managed = { file = ./extensions.jsonc; key = "extensions"; };
+    repo = "modules/home/programs/somebrowser/extensions.jsonc";
+  };
 
   # Settings are `setting.<key>` (keys are declared in each feature.json), stored
   # as JSON data and only while they differ from the default. Per-site settings

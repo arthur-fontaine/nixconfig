@@ -1,0 +1,9 @@
+// Chrome Web Store extensions installed in Some Browser, by id. Only the drift
+// report reads this; installing stays manual.
+{
+  "extensions": {
+    "aeblfdkhhhdcdjpifhhbdiojplfjncoa": true, // 1Password
+    "ammjkodgmmoknidbanneddgankgfejfh": true, // 7TV
+    "fcoeoabgfenejglbffodgkkbkcdhcgfn": true, // Claude
+  },
+}

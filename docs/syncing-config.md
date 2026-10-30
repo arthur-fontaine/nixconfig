@@ -135,6 +135,15 @@ its default, and reads settings at launch: restart it after `rebuild`.
 Per-site settings and the session in `~/Library/Application Support/Some Browser`
 are not managed.
 
+Installed extensions are listed by id in
+`modules/home/programs/somebrowser/extensions.jsonc`. The
+`somebrowser-extensions` drift entry compares that list with the extension
+folders in `Engine/cef-chrome/Default/Extensions`, so an extension installed
+from the Web Store shows up as `changed`. `rebuild` does not install them.
+
+Keyboard shortcut remaps are not saved by the app yet, so there is nothing to
+sync: they reset when it quits.
+
 ## Mixologist
 
 File: `~/.config/mixologist/settings.json`. Repo module:
