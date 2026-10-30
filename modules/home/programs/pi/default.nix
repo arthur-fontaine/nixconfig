@@ -153,6 +153,8 @@ in
     ".pi/agent/extensions/intercom".source = ./extensions/intercom;
     # Ctrl+B or `background: true` sends a bash call to the background.
     ".pi/agent/extensions/background-tools".source = ./extensions/background-tools;
+    # Claude Haiku suggests how to continue the prompt, as dim text Tab inserts.
+    ".pi/agent/extensions/input-autocomplete".source = ./extensions/input-autocomplete;
   } // lib.mapAttrs' (name: src: lib.nameValuePair ".pi/agent/skills/${name}" { source = src; }) pluginSkills;
 
   # Pi writes settings.json itself (/model, /settings), so merge into a
