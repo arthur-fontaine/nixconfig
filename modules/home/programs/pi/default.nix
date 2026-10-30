@@ -141,6 +141,8 @@ in
     ".pi/agent/extensions/cache-warmer".source = ./extensions/cache-warmer;
     ".pi/agent/extensions/image-view".source = imageView;
     ".pi/agent/extensions/you-should-know".source = ./extensions/you-should-know;
+    # Claude Code's permission mode "auto", which Claude Code runs in (settings.json).
+    ".pi/agent/extensions/auto-mode".source = ./extensions/auto-mode;
   } // lib.mapAttrs' (name: src: lib.nameValuePair ".pi/agent/skills/${name}" { source = src; }) pluginSkills;
 
   # Pi writes settings.json itself (/model, /settings), so merge into a
