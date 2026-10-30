@@ -400,15 +400,32 @@ class RemoteControl {
 	// The apps send these as plain messages; Claude Code runs them as its own commands.
 	private slashCommand(eventId: string, name: string, args: string) {
 		this.ack([eventId], "processing");
+		// The apps wait for a result after any message, as Claude Code sends for its local commands.
+		const end = (isError: boolean, text = "") => {
+			this.send({
+				type: "result",
+				...this.base(),
+				subtype: isError ? "error_during_execution" : "success",
+				is_error: isError,
+				num_turns: 0,
+				duration_ms: 0,
+				duration_api_ms: 0,
+				result: text,
+				stop_reason: "end_turn",
+				total_cost_usd: 0,
+				usage: { input_tokens: 0, output_tokens: 0 },
+			});
+			this.ack([eventId], "processed");
+		};
 		const done = (text: string) => {
 			this.notice(text);
-			this.ack([eventId], "processed");
+			end(true, text);
 		};
 		if (name !== "compact") return done(`Pi can't run /${name} from Remote Control.`);
 		// Progress and the boundary come from Pi's compaction events (see compacting/compacted).
 		this.ctx.compact({
 			customInstructions: args.trim() || undefined,
-			onComplete: () => this.ack([eventId], "processed"),
+			onComplete: () => end(false),
 			onError: (e) => {
 				this.compactStatus(null);
 				done(`Compaction failed: ${e.message}`);
