@@ -142,6 +142,8 @@ let
     bash-changes = ./extensions/bash-changes;
     # Bash commands and their output in the theme's colours, embedded code included.
     syntax-highlighting = ./extensions/syntax-highlighting;
+    # Pi's startup header without its "Pi can explain its own features" line.
+    startup-header = ./extensions/startup-header;
   };
   skills = pluginSkills // {
     context7-mcp = ../claude/skills/context7-mcp;
