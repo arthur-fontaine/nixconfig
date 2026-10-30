@@ -39,6 +39,12 @@ let
     };
   };
   mcpJson = (pkgs.formats.json { }).generate "pi-mcp.json" { inherit mcpServers; };
+
+  # auto-effort's decision model, as Claude Code's AUTO_EFFORT_PROVIDER: Nisev,
+  # served by the llama.cpp build in modules/darwin/llama-cpp.nix. The extension
+  # keeps its on/off state in the same file, so it is merged, not replaced.
+  autoEffort = { config.provider = "nisev"; };
+  autoEffortJson = (pkgs.formats.json { }).generate "pi-auto-effort.json" autoEffort;
   mcpPath = "${config.home.homeDirectory}/.pi/agent/mcp.json";
   merge = import ../../lib/merge-json.nix { inherit pkgs; };
 
@@ -97,6 +103,7 @@ in
     ];
     ".pi/agent/skills/context7-mcp".source = ../claude/skills/context7-mcp;
     ".pi/agent/extensions/remote-control".source = ./extensions/remote-control;
+    ".pi/agent/extensions/auto-effort".source = ./extensions/auto-effort;
   } // lib.mapAttrs' (name: src: lib.nameValuePair ".pi/agent/skills/${name}" { source = src; }) pluginSkills;
 
   # Pi writes settings.json itself (/model, /settings), so merge into a
@@ -109,5 +116,6 @@ in
 
     # Pi saves exposure and enabled changes to mcp.json, so merge into it too.
     ${merge mcpJson mcpPath}
+    ${merge autoEffortJson "${config.home.homeDirectory}/.pi/agent/auto-effort.json"}
   '';
 }
