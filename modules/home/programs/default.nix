@@ -14,6 +14,7 @@
     ./mbx
     ./direnv
     ./codex
+    ./pi
     ./claude
     ./claude-desktop
     ./llama
