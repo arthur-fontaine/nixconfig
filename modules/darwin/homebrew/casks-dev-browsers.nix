@@ -7,6 +7,8 @@
   "gcloud-cli"
   "ghostty@tip"
   "google-chrome"
+  # Herdr's desktop app, not the `herdr` terminal multiplexer formula.
+  "herdr-app"
   "httpie-desktop"
   "llama-app"
   "orbstack"
