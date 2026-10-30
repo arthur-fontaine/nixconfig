@@ -9,6 +9,7 @@
 {
   "auto_install_extensions": {
     "html": true,
+    "nix": true,
     "sql": true,
     "swift": true,
     "tsgo": true,
@@ -37,7 +38,7 @@
   "colorize_brackets": true,
   "agent": {
     "button": true,
-    "terminal_init_command": "claude --add-dir ..",
+    "terminal_init_command": "claude --add-dir .. --add-dir ../..",
     "notify_when_agent_waiting": "all_screens",
     "play_sound_when_agent_done": "always",
     "default_model": {
