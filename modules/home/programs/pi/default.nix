@@ -8,6 +8,11 @@ let
     defaultModel = "claude-opus-5-5";
     defaultThinkingLevel = "high";
 
+    # Pi's light theme or its dark one, switched live as the terminal reports
+    # its appearance. Ghostty and Zed follow macOS, so Pi does too, like
+    # Claude Code's theme "auto".
+    theme = "light/dark";
+
     # The cache-warmer extension keeps idle caches warm, like the Claude Code
     # mod. Pi's own warming is off: it takes claude-code models' cache for
     # 5 minutes (it is 1 hour) and would replay long runs through `claude -p`.
