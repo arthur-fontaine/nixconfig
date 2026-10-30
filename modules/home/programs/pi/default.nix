@@ -39,6 +39,8 @@ let
       "npm:pi-goal-x@0.34.1"
       # Pasted screenshots as [Image #N] markers with clickable links.
       "npm:pi-image-view@0.5.0"
+      # Claude Code's subagents: the Agent tool, FleetView, /agents, @agent mentions.
+      "npm:@tintinweb/pi-subagents@0.22.1"
       # Messages between running sessions. Installed only: extensions/intercom
       # loads it without its commands and adds the @session mentions.
       {
