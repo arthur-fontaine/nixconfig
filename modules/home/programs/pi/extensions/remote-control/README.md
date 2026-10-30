@@ -34,6 +34,12 @@ this extension plays the worker side:
    `"remoteControlArchiveOnQuit": false` is in `settings.json`. `/remote-control`
    off always archives.
 
+A session left open that way is saved in the Pi session (a `remote-control`
+entry: its id, the last controller event read, the last Pi entry posted).
+Resuming the Pi session reattaches to it through `/bridge` and posts only what
+came after; after `/tree` to another branch, or when the remote session is
+gone, it starts a new one.
+
 Attachments come as `file_attachments[].file_uuid`, downloaded from
 `GET /api/oauth/files/{uuid}/content`.
 

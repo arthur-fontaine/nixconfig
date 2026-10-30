@@ -111,6 +111,26 @@ function imageType(data: Buffer, fallback: string) {
 	return fallback.startsWith("image/") ? fallback : "image/jpeg";
 }
 
+// What a Pi session keeps of its remote session when Pi quits without archiving it,
+// so resuming the Pi session reattaches to the same conversation in the apps.
+const SAVED = "remote-control";
+interface Saved {
+	sessionId: string;
+	archived?: boolean;
+	// The last controller event read, and the last Pi entry posted, at quit.
+	sequenceNum?: number;
+	mirrored?: string;
+}
+
+function savedRemote(ctx: ExtensionContext): Saved | undefined {
+	const entries = ctx.sessionManager.getEntries();
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry: any = entries[i];
+		if (entry.type === "custom" && entry.customType === SAVED) return entry.data?.archived ? undefined : entry.data;
+	}
+	return undefined;
+}
+
 function truncate(text: string) {
 	return text.length <= MAX_TOOL_RESULT_CHARS ? text : `${text.slice(0, MAX_TOOL_RESULT_CHARS)}\n… (${text.length - MAX_TOOL_RESULT_CHARS} more characters in Pi)`;
 }
@@ -156,23 +176,47 @@ class RemoteControl {
 	async start() {
 		const creds = await this.credentials();
 		const title = this.title();
-		this.session = await createSession(creds, title, this.ctx.cwd, this.ctx.model?.id);
-		try {
-			this.worker = new Worker(this.session.id, await bridge(creds, this.session.id));
-			await this.worker.setState({ worker_status: this.ctx.isIdle() ? "idle" : "running", external_metadata: this.metadata() });
-			await this.worker.heartbeat();
-		} catch (e) {
-			await archiveSession(creds, this.session.id).catch(() => {});
-			throw e;
+		const resumed = await this.reattach(creds);
+		if (!resumed) {
+			this.session = await createSession(creds, title, this.ctx.cwd, this.ctx.model?.id);
+			try {
+				await this.attach(creds);
+			} catch (e) {
+				await archiveSession(creds, this.session.id).catch(() => {});
+				throw e;
+			}
 		}
 		this.send(this.initEvent());
-		this.backfill();
+		this.backfill(resumed?.mirrored);
 		this.scheduleHeartbeat(20);
 		this.scheduleRegrant();
 		void this.readLoop();
 		this.setStatus("RC");
-		// Renamed while the session was being created.
-		if (this.title() !== title) await this.rename(this.pi.getSessionName());
+		// Renamed while the session was being created, or since the session was left.
+		if (resumed || this.title() !== title) await this.rename(this.pi.getSessionName());
+	}
+
+	private async attach(creds: Credentials) {
+		this.worker = new Worker(this.session.id, await bridge(creds, this.session.id));
+		await this.worker.setState({ worker_status: this.ctx.isIdle() ? "idle" : "running", external_metadata: this.metadata() });
+		await this.worker.heartbeat();
+	}
+
+	// The remote session this Pi session left open, when its transcript still lines up:
+	// after /tree to another branch, the apps would show the wrong conversation.
+	private async reattach(creds: Credentials): Promise<Saved | undefined> {
+		const saved = savedRemote(this.ctx);
+		if (!saved?.mirrored || !this.ctx.sessionManager.getBranch().some((entry) => entry.id === saved.mirrored)) return undefined;
+		this.session = { id: saved.sessionId, url: `https://claude.ai/code/${saved.sessionId}` };
+		try {
+			await this.attach(creds);
+		} catch (e) {
+			debug(`reattach ${saved.sessionId} failed: ${e instanceof Error ? e.message : e}`);
+			return undefined;
+		}
+		this.lastSequenceNum = saved.sequenceNum ?? 0;
+		debug(`reattached ${saved.sessionId} from event ${this.lastSequenceNum}`);
+		return saved;
 	}
 
 	async rename(name: string | undefined) {
@@ -189,9 +233,17 @@ class RemoteControl {
 		clearTimeout(this.regrantTimer);
 		this.setStatus(undefined);
 		debug(`stop ${this.session?.id}`);
-		if (!archive) return;
+		if (!this.session) return;
+		if (!archive) {
+			this.pi.appendEntry<Saved>(SAVED, { sessionId: this.session.id, sequenceNum: this.lastSequenceNum, mirrored: this.ctx.sessionManager.getLeafId() ?? undefined });
+			// What's still queued, so the apps have the whole conversation; bounded, as Pi is exiting.
+			await Promise.race([this.flushing, sleep(3000)]);
+			debug("stopped: kept");
+			return;
+		}
+		this.pi.appendEntry<Saved>(SAVED, { sessionId: this.session.id, archived: true });
 		// Archive right away, skipping the outbox: Pi may exit soon after this handler starts.
-		const archived = await Promise.allSettled([this.session && archiveSession(this.creds, this.session.id)]);
+		const archived = await Promise.allSettled([archiveSession(this.creds, this.session.id)]);
 		debug(`stopped: ${archived[0].status === "rejected" ? String(archived[0].reason) : "archived"}`);
 	}
 
@@ -326,9 +378,12 @@ class RemoteControl {
 		return attachments;
 	}
 
-	// Replays the conversation so far, so a session started mid-way isn't blank on the phone.
-	private backfill() {
-		for (const entry of this.ctx.sessionManager.getBranch()) {
+	// Replays the conversation so far, so a session started mid-way isn't blank on the phone;
+	// on a reattached session, only what came after the entry it had.
+	private backfill(after?: string) {
+		const branch = this.ctx.sessionManager.getBranch();
+		const from = after === undefined ? 0 : branch.findIndex((entry) => entry.id === after) + 1;
+		for (const entry of branch.slice(from)) {
 			if (entry.type !== "message") continue;
 			const message: any = entry.message;
 			if (message.role === "user") this.userEvent(message.content);
