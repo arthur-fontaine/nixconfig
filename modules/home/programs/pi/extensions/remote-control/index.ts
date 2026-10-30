@@ -18,9 +18,10 @@ import {
 	HttpError,
 	type InboundEvent,
 	loadCredentials,
-	Worker,
 	MAX_UPLOAD_BYTES,
+	renameSession,
 	uploadFile,
+	Worker,
 } from "./api.ts";
 import { claudeToolUse, claudeToolUseResult, isImageFile, mimeType } from "./claude-tools.ts";
 
@@ -148,9 +149,13 @@ class RemoteControl {
 		return this.session.url;
 	}
 
+	private title(name = this.pi.getSessionName()) {
+		return name ?? `Pi · ${path.basename(this.ctx.cwd)}`;
+	}
+
 	async start() {
 		const creds = await this.credentials();
-		const title = this.pi.getSessionName() ?? `Pi · ${path.basename(this.ctx.cwd)}`;
+		const title = this.title();
 		this.session = await createSession(creds, title, this.ctx.cwd, this.ctx.model?.id);
 		try {
 			this.worker = new Worker(this.session.id, await bridge(creds, this.session.id));
@@ -166,6 +171,14 @@ class RemoteControl {
 		this.scheduleRegrant();
 		void this.readLoop();
 		this.setStatus("RC");
+		// Renamed while the session was being created.
+		if (this.title() !== title) await this.rename(this.pi.getSessionName());
+	}
+
+	async rename(name: string | undefined) {
+		if (!this.session || this.stopped.signal.aborted) return;
+		await renameSession(await this.credentials(), this.session.id, this.title(name));
+		debug(`renamed to ${this.title(name)}`);
 	}
 
 	async stop() {
@@ -858,6 +871,11 @@ export default function (pi: ExtensionAPI) {
 		// session starts connected. Print and RPC runs (scripts, subagents) only with the flag.
 		const atStartup = ctx.mode === "tui" && (pi.getSettings() as { remoteControlAtStartup?: boolean }).remoteControlAtStartup === true;
 		if ((pi.getFlag("remote-control") === true || atStartup) && !rc) await start(ctx);
+	});
+
+	// /rename, Pi's /name and the automatic names all land here.
+	pi.on("session_info_changed", async (event) => {
+		await rc?.rename(event.name).catch((e) => debug(`rename failed: ${e instanceof Error ? e.message : e}`));
 	});
 
 	pi.on("session_shutdown", async (event) => {

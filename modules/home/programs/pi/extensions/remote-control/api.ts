@@ -119,6 +119,11 @@ export async function archiveSession(creds: Credentials, id: string) {
 	);
 }
 
+// As Claude Code's /rename does for its Remote Control session.
+export async function renameSession(creds: Credentials, id: string, title: string) {
+	await request("PUT", `${API}/v1/code/sessions/${id}`, headers(creds.accessToken, creds.trustedDeviceToken), { title }, "Renaming the session");
+}
+
 // Files the apps attach to a message (`file_attachments[].file_uuid`).
 export async function downloadFile(creds: Credentials, fileUuid: string): Promise<{ data: Buffer; mimeType: string }> {
 	const res = await fetch(`${API}/api/oauth/files/${encodeURIComponent(fileUuid)}/content`, {

@@ -48,6 +48,9 @@ Tested from the Claude iOS app:
   provider) and thinking level.
 - Photos reach the model; other files are saved under the system temp
   directory and their path is given to Pi.
+- The session is titled with Pi's session name, and renamed with it (`/rename`,
+  automatic names), through `PUT /v1/code/sessions/{id}` as Claude Code's
+  `/rename` does.
 - `/compact` compacts Pi's conversation. Other slash commands get a notice.
 - Pi's tools show as Claude Code's (`read` as Read, `edit` as Edit with its
   diff, `find` as Glob, …), with the structured output the apps render, so a
