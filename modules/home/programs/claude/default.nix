@@ -89,8 +89,23 @@ let
     skipWorkflowUsageWarning = true;
   };
 
-  # User-scope MCP servers, shared with Pi through nixconfig.claudeMcpServers.
-  mcpServers = config.nixconfig.claudeMcpServers;
+  # User-scope MCP servers, plus those other modules add through
+  # nixconfig.claudeMcpServers. Claude Code expands ${VAR} in these at connect
+  # time, so tokens stay in ~/.config/.env (see zshrc.d/902_dotenv.sh) rather
+  # than in this repo.
+  mcpServers = config.nixconfig.claudeMcpServers // {
+    context7 = {
+      type = "http";
+      url = "https://mcp.context7.com/mcp";
+      headers."CONTEXT7_API_KEY" = "\${CONTEXT7_API_KEY}";
+    };
+
+    excalidraw = {
+      type = "http";
+      url = "https://api.excalidraw.com/api/v1/mcp";
+      headers."Authorization" = "Bearer \${EXCALIDRAW_API_TOKEN}";
+    };
+  };
   mcpServersJson = (pkgs.formats.json { }).generate "claude-mcp-servers.json" mcpServers;
 
   quicklook = pkgs.swiftPackages.stdenv.mkDerivation {
@@ -148,22 +163,6 @@ let
   declaredPluginsJson = (pkgs.formats.json { }).generate "claude-declared-plugins.json" (lib.attrNames enabledPlugins);
 in
 {
-  # Claude Code and Pi expand ${VAR} in these at connect time, so tokens stay
-  # in ~/.config/.env (see zshrc.d/902_dotenv.sh) rather than in this repo.
-  nixconfig.claudeMcpServers = {
-    context7 = {
-      type = "http";
-      url = "https://mcp.context7.com/mcp";
-      headers."CONTEXT7_API_KEY" = "\${CONTEXT7_API_KEY}";
-    };
-
-    excalidraw = {
-      type = "http";
-      url = "https://api.excalidraw.com/api/v1/mcp";
-      headers."Authorization" = "Bearer \${EXCALIDRAW_API_TOKEN}";
-    };
-  };
-
   nixconfig.sync = lib.concatMapAttrs (name: mod: lib.listToAttrs (map (file: {
     name = "claude-mod-${name}-${file}";
     value = {

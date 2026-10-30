@@ -18,8 +18,8 @@ in
       type = types.attrsOf types.anything;
       default = { };
       description = ''
-        User-scope MCP servers that program modules contribute, given to both
-        Claude Code (~/.claude.json) and Pi (~/.pi/agent/mcp.json).
+        User-scope Claude Code MCP servers that program modules contribute.
+        The claude module merges them into ~/.claude.json with its own.
       '';
     };
 
