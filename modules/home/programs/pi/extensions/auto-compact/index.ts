@@ -4,7 +4,8 @@
 // session and the new prompt. See README.md for how each part maps to Pi.
 import { type ExtensionAPI, generateSummaryWithUsage } from "@earendil-works/pi-coding-agent";
 import { autoCompact } from "./extension.ts";
+import { mainSessionOnly } from "./main-session.ts";
 
 export default function (pi: ExtensionAPI) {
-	autoCompact(pi, { summarizeMessages: generateSummaryWithUsage });
+	autoCompact(mainSessionOnly(pi), { summarizeMessages: generateSummaryWithUsage });
 }

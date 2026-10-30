@@ -7,6 +7,7 @@ import path from "node:path";
 import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { type AutocompleteItem, type AutocompleteProvider, Text } from "@earendil-works/pi-tui";
 import { addressees, matchingPeers, mentionAt, type Peer } from "./mentions.ts";
+import { mainSessionOnly } from "./main-session.ts";
 
 const PACKAGE = path.join(getAgentDir(), "npm", "node_modules", "pi-intercom", "index.ts");
 // The @ mention replaces them: /intercom and alt+m open the send overlay, /alias names the
@@ -46,7 +47,8 @@ function withoutCommands(pi: ExtensionAPI): ExtensionAPI {
 	});
 }
 
-export default async function intercom(pi: ExtensionAPI) {
+export default async function intercom(host: ExtensionAPI) {
+	const pi = mainSessionOnly(host);
 	let load: (pi: ExtensionAPI) => unknown;
 	try {
 		load = (await import(PACKAGE)).default;

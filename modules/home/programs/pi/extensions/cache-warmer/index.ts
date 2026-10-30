@@ -13,6 +13,7 @@ import {
 import { fileStore } from "./store.ts";
 import { footer, type Line, widget } from "./view.ts";
 import { type Config, configFrom, type Host, type PingResult, type Usage, Warmer, type WarmState } from "./warmer.ts";
+import { mainSessionOnly } from "./main-session.ts";
 
 const STATUS_KEY = "cache-warmer";
 const ENTRY_TYPE = "cache-warmer";
@@ -90,7 +91,8 @@ function lastPromptTokens(ctx: ExtensionContext) {
 	return undefined;
 }
 
-export default function (pi: ExtensionAPI) {
+export default function (api: ExtensionAPI) {
+	const pi = mainSessionOnly(api);
 	let ctx: ExtensionContext | undefined;
 	let warmer: Warmer | undefined;
 	let pinging: AbortController | undefined;

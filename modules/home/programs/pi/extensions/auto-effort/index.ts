@@ -22,6 +22,7 @@ import {
 	resolveConfig,
 	type StoredConfig,
 } from "./policy.ts";
+import { mainSessionOnly } from "./main-session.ts";
 
 const STATUS_KEY = "auto-effort";
 const NISEV_CHOICE = "Nisev (local)";
@@ -673,5 +674,5 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 }
 
 export default function (pi: ExtensionAPI) {
-	autoEffort(pi, realDeps());
+	autoEffort(mainSessionOnly(pi), realDeps());
 }
