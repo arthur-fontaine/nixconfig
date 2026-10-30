@@ -116,6 +116,32 @@ let
       eli5 = "${community}/eli5/skills/eli5";
       inherit humanizer;
     };
+
+  extensions = {
+    remote-control = ./extensions/remote-control;
+    auto-effort = ./extensions/auto-effort;
+    auto-compact = ./extensions/auto-compact;
+    cache-timer = ./extensions/cache-timer;
+    cache-warmer = ./extensions/cache-warmer;
+    image-view = imageView;
+    you-should-know = ./extensions/you-should-know;
+    # Claude Code's permission mode "auto", which Claude Code runs in (settings.json).
+    auto-mode = ./extensions/auto-mode;
+    intercom = ./extensions/intercom;
+    # Claude Code's /rename, renaming again when the task changes: the @ names above.
+    session-name = ./extensions/session-name;
+    # Ctrl+B or `background: true` sends a bash call to the background.
+    background-tools = ./extensions/background-tools;
+    # Claude Haiku suggests how to continue the prompt, as dim text Tab inserts.
+    input-autocomplete = ./extensions/input-autocomplete;
+    # The files each bash call changed, as a diff under its output.
+    bash-changes = ./extensions/bash-changes;
+    # Bash commands and their output in the theme's colours, embedded code included.
+    syntax-highlighting = ./extensions/syntax-highlighting;
+  };
+  skills = pluginSkills // {
+    context7-mcp = ../claude/skills/context7-mcp;
+  };
 in
 {
   nixconfig.sync.pi-settings = {
@@ -134,34 +160,17 @@ in
   };
 
   # The same global instructions as Claude Code. Pi has no rules/ directory,
-  # so Claude Code's rules are appended to them.
+  # so Claude Code's rules are appended to them. Extensions and skills are each
+  # one link to the declared set, so anything else in those folders goes, as
+  # Homebrew removes what the config doesn't list (piReplaceUnmanaged).
   home.file = {
     ".pi/agent/AGENTS.md".text = lib.concatStringsSep "\n" [
       (builtins.readFile ../claude/CLAUDE.md)
       (builtins.readFile ../claude/rules/context7.md)
     ];
-    ".pi/agent/skills/context7-mcp".source = ../claude/skills/context7-mcp;
-    ".pi/agent/extensions/remote-control".source = ./extensions/remote-control;
-    ".pi/agent/extensions/auto-effort".source = ./extensions/auto-effort;
-    ".pi/agent/extensions/auto-compact".source = ./extensions/auto-compact;
-    ".pi/agent/extensions/cache-timer".source = ./extensions/cache-timer;
-    ".pi/agent/extensions/cache-warmer".source = ./extensions/cache-warmer;
-    ".pi/agent/extensions/image-view".source = imageView;
-    ".pi/agent/extensions/you-should-know".source = ./extensions/you-should-know;
-    # Claude Code's permission mode "auto", which Claude Code runs in (settings.json).
-    ".pi/agent/extensions/auto-mode".source = ./extensions/auto-mode;
-    ".pi/agent/extensions/intercom".source = ./extensions/intercom;
-    # Claude Code's /rename, renaming again when the task changes: the @ names above.
-    ".pi/agent/extensions/session-name".source = ./extensions/session-name;
-    # Ctrl+B or `background: true` sends a bash call to the background.
-    ".pi/agent/extensions/background-tools".source = ./extensions/background-tools;
-    # Claude Haiku suggests how to continue the prompt, as dim text Tab inserts.
-    ".pi/agent/extensions/input-autocomplete".source = ./extensions/input-autocomplete;
-    # The files each bash call changed, as a diff under its output.
-    ".pi/agent/extensions/bash-changes".source = ./extensions/bash-changes;
-    # Bash commands and their output in the theme's colours, embedded code included.
-    ".pi/agent/extensions/syntax-highlighting".source = ./extensions/syntax-highlighting;
-  } // lib.mapAttrs' (name: src: lib.nameValuePair ".pi/agent/skills/${name}" { source = src; }) pluginSkills;
+    ".pi/agent/extensions".source = pkgs.linkFarm "pi-extensions" extensions;
+    ".pi/agent/skills".source = pkgs.linkFarm "pi-skills" skills;
+  };
 
   # Pi writes settings.json itself (/model, /settings), so merge into a
   # writable copy. The old config symlinked it into the store: start over.
@@ -176,6 +185,42 @@ in
     ${merge autoEffortJson "${config.home.homeDirectory}/.pi/agent/auto-effort.json"}
     ${merge autoCompactJson "${config.home.homeDirectory}/.pi/agent/auto-compact/config.json"}
   '';
+
+  # Before home-manager links the two folders: a real folder in their place
+  # (from Pi used without this config) would block the link.
+  home.activation.piReplaceUnmanaged = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
+    for dir in "$HOME/.pi/agent/extensions" "$HOME/.pi/agent/skills"; do
+      if [ -d "$dir" ] && [ ! -L "$dir" ]; then
+        $DRY_RUN_CMD rm -rf "$dir"
+      fi
+    done
+  '';
+
+  # Packages too: Pi keeps a checkout of each git package it ever installed.
+  # And Pi from mise, before it moved to Homebrew, would shadow Homebrew's.
+  home.activation.piPrunePackages =
+    let
+      gitDirs = lib.concatMap (
+        p:
+        let
+          m = builtins.match "git:([^@]+)(@.*)?" (if builtins.isString p then p else p.source);
+        in
+        lib.optional (m != null) (lib.head m)
+      ) settings.packages;
+    in
+    lib.hm.dag.entryAfter [ "piSettings" ] ''
+      for repo in "$HOME"/.pi/agent/git/*/*/*; do
+        [ -d "$repo" ] || continue
+        case " ${toString gitDirs} " in
+          *" ''${repo#"$HOME"/.pi/agent/git/} "*) ;;
+          *) $DRY_RUN_CMD rm -rf "$repo" ;;
+        esac
+      done
+      [ -d "$HOME/.pi/agent/git" ] && $DRY_RUN_CMD find "$HOME/.pi/agent/git" -mindepth 1 -type d -empty -delete
+      if PATH="${pkgs.mise}/bin:$PATH" mise ls --installed npm:@mariozechner/pi-coding-agent 2>/dev/null | grep -q .; then
+        PATH="${pkgs.mise}/bin:$PATH" $DRY_RUN_CMD mise uninstall --all npm:@mariozechner/pi-coding-agent
+      fi
+    '';
 
   # Claude Code's sessions, copied into Pi's session store so /resume lists them
   # (Pi only resumes its own). Incremental, and never overwrites a copy that was
