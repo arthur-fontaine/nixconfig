@@ -20,6 +20,9 @@ import { clip, cleanPrompt, messages, render, type TreeMessage, utf8Len } from "
 import { rowsOf } from "./transcript.ts";
 import * as tree from "./tree.ts";
 
+// Pi's default compaction.keepRecentTokens (DEFAULT_COMPACTION_SETTINGS), read without importing Pi.
+const PI_KEEP_RECENT_TOKENS = 20_000;
+
 const SUMMARY_CONCURRENCY = 4;
 const BUILD_WAIT_MS = 120_000;
 // What the debug view keeps of a summary's input: a message can run to MAX_AGENT_BYTES.
@@ -525,6 +528,11 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 			decision: null, latencyMs: null, outcome: "" };
 		const skip = (outcome: string) => record(() => ({ ...seen, outcome }));
 		if (msgs.length < 2) return skip("skipped (fewer than 2 messages)");
+		// Pi compacts only what lies beyond its last keepRecentTokens, and refuses a session that
+		// fits in them ("Nothing to compact"): no use asking the classifier then.
+		const keep = (pi.getSettings() as { compaction?: { keepRecentTokens?: number } }).compaction?.keepRecentTokens ?? PI_KEEP_RECENT_TOKENS;
+		const used = ctx.getContextUsage()?.tokens;
+		if (used == null || used <= keep) return skip("skipped (" + (used ?? "unknown") + " tokens, within the " + keep + " Pi always keeps)");
 		let view: View;
 		try {
 			view = await treeTexts(ctx, msgs, { allowCalls: false });

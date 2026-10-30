@@ -70,9 +70,11 @@ interface Setup {
 	select?: (title: string, options: string[]) => string | undefined;
 	compactError?: string;
 	mode?: "tui" | "print";
+	tokens?: number | null;
+	keepRecentTokens?: number;
 }
 
-function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, compactError, mode = "tui" }: Setup = {}) {
+function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, compactError, mode = "tui", tokens = 82_000, keepRecentTokens }: Setup = {}) {
 	Object.assign(process.env, env);
 	const handlers = new Map<string, ((event: any, ctx: any) => unknown)[]>();
 	const commands = new Map<string, any>();
@@ -97,7 +99,7 @@ function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, com
 	};
 	const ctx: any = {
 		mode, hasUI: mode === "tui", cwd: dir, model: { provider: "claude-code", id: "claude-opus-5-5", contextWindow: 200_000 },
-		getContextUsage: () => ({ tokens: 82_000, contextWindow: 200_000, percent: 41 }),
+		getContextUsage: () => ({ tokens, contextWindow: 200_000, percent: tokens === null ? null : (tokens / 200_000) * 100 }),
 		sessionManager: { getSessionId: () => "session-1", buildSessionProjection: () => ({ messages }) },
 		modelRegistry: {
 			find: (provider: string, id: string) => ({ provider, id }),
@@ -151,7 +153,7 @@ function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, com
 			return () => {};
 		},
 		registerCommand: (name: string, options: any) => commands.set(name, options),
-		getSettings: () => ({ compaction: { reserveTokens: 16_384 } }),
+		getSettings: () => ({ compaction: { reserveTokens: 16_384, ...(keepRecentTokens !== undefined && { keepRecentTokens }) } }),
 		exec: async () => ({ stdout: "", stderr: "", code: 1, killed: false }),
 	};
 	autoCompact(pi, {
@@ -276,6 +278,19 @@ test("auto clears an independent task without a summary call, and the prompt sti
 	assert.match(seen.compacted[0].compaction.summary, /cleared/);
 	assert.deepEqual(seen.chat, ["[compaction]", "info: Context cleared: this prompt starts an unrelated task", "user: write a poem"]);
 	assert.deepEqual(decisions().slice(0, 1), ["[auto-compact] independent · 0.95 → clear"]);
+});
+
+test("a session Pi would refuse to compact is not decided at all", async () => {
+	for (const setup of [{ tokens: 12_000 }, { tokens: 20_000 }, { tokens: null }, { tokens: 30_000, keepRecentTokens: 40_000 }]) {
+		const { seen, input } = stub({ env: { ...MAMMOTH, AUTO_COMPACT_MODE: "auto" }, fetch: () => ({ status: 200, body: answer("independent", 0.95) }), ...setup });
+		await input("write a poem");
+		assert.equal(seen.requests.length, 0);
+		assert.equal(seen.compacted.length, 0);
+		assert.deepEqual(seen.chat, ["user: write a poem"]);
+	}
+	const { seen, input } = stub({ env: { ...MAMMOTH, AUTO_COMPACT_MODE: "auto" }, fetch: () => ({ status: 200, body: answer("independent", 0.95) }), tokens: 12_000, keepRecentTokens: 5_000 });
+	await input("write a poem");
+	assert.equal(seen.requests.length, 1);
 });
 
 test("a compaction Pi refuses keeps the context and says why", async () => {
