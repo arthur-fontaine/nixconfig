@@ -58,6 +58,23 @@ let
   mcpPath = "${config.home.homeDirectory}/.pi/agent/mcp.json";
   merge = import ../../lib/merge-json.nix { inherit pkgs; };
 
+  # The Quick Look helper Claude Code's image-view mod uses, built the same way
+  # from the same source (so the same store path), into the extension's bin/.
+  quicklook = pkgs.swiftPackages.stdenv.mkDerivation {
+    pname = "quicklook";
+    version = "0.1.0";
+    src = ../claude/mods/image-view/quicklook;
+    nativeBuildInputs = [ pkgs.swift ];
+    buildPhase = "swiftc -O main.swift -o quicklook";
+    installPhase = "install -Dm755 quicklook $out/bin/quicklook";
+  };
+  imageView = pkgs.runCommand "pi-extension-image-view" { } ''
+    cp -R ${./extensions/image-view} $out
+    chmod -R u+w $out
+    mkdir -p $out/bin
+    cp ${quicklook}/bin/quicklook $out/bin/quicklook
+  '';
+
   # The skills of the Claude Code plugins in ../claude, at the commits Claude
   # Code installed.
   pluginSkills =
@@ -117,6 +134,7 @@ in
     ".pi/agent/extensions/auto-compact".source = ./extensions/auto-compact;
     ".pi/agent/extensions/cache-timer".source = ./extensions/cache-timer;
     ".pi/agent/extensions/cache-warmer".source = ./extensions/cache-warmer;
+    ".pi/agent/extensions/image-view".source = imageView;
   } // lib.mapAttrs' (name: src: lib.nameValuePair ".pi/agent/skills/${name}" { source = src; }) pluginSkills;
 
   # Pi writes settings.json itself (/model, /settings), so merge into a
