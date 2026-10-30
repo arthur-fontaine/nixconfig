@@ -7,22 +7,22 @@ const SLOP = /[▲▼→·=%]/;
 
 test("a change names the level and the kind of work", () => {
 	const lines = {
-		"Thinking set to: low, for a quick request": changeNote({ category: "trivial", choice: "low" }, "low"),
-		"Thinking set to: medium, for a small change": changeNote({ category: "light", choice: "medium" }, "medium"),
-		"Thinking set to: high, for multi-step work": changeNote({ category: "multi_step", choice: "high" }, "high"),
-		"Thinking set to: xhigh, for a hard task": changeNote({ category: "hard", choice: "xhigh" }, "xhigh"),
+		"Thinking for this prompt: low, for a quick request": changeNote({ category: "trivial", choice: "low" }, "low"),
+		"Thinking for this prompt: medium, for a small change": changeNote({ category: "light", choice: "medium" }, "medium"),
+		"Thinking for this prompt: high, for multi-step work": changeNote({ category: "multi_step", choice: "high" }, "high"),
+		"Thinking for this prompt: xhigh, for a hard task": changeNote({ category: "hard", choice: "xhigh" }, "xhigh"),
 	};
 	for (const [expected, actual] of Object.entries(lines)) {
 		assert.equal(actual, expected);
 		assert.doesNotMatch(actual, SLOP);
 	}
 	// A Jev answer has no category: the level it picked stands for the kind of work.
-	assert.equal(changeNote({ choice: "high" }, "high"), "Thinking set to: high, for multi-step work");
+	assert.equal(changeNote({ choice: "high" }, "high"), "Thinking for this prompt: high, for multi-step work");
 });
 
 test("a level moved by the configured range or the model says so", () => {
-	assert.equal(changeNote({ category: "exhaustive", choice: "max" }, "xhigh"), "Thinking set to: xhigh, the highest allowed, for an exhaustive task");
-	assert.equal(changeNote({ category: "trivial", choice: "low" }, "medium"), "Thinking set to: medium, the lowest allowed, for a quick request");
+	assert.equal(changeNote({ category: "exhaustive", choice: "max" }, "xhigh"), "Thinking for this prompt: xhigh, the highest allowed, for an exhaustive task");
+	assert.equal(changeNote({ category: "trivial", choice: "low" }, "medium"), "Thinking for this prompt: medium, the lowest allowed, for a quick request");
 });
 
 test("a level that stands needs no line", () => {

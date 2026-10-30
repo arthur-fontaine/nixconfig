@@ -23,14 +23,14 @@ export function kindOf(decision: Pick<Decision, "category" | "choice">) {
 	return isLevel(decision.choice) ? KIND_OF_LEVEL[decision.choice] : undefined;
 }
 
-// `Thinking set to: high, for multi-step work`. `level` is what the run got: the pick, unless
+// `Thinking for this prompt: high, for multi-step work`. `level` is what the run got: the pick, unless
 // AUTO_EFFORT_MIN/MAX_EFFORT or the model's own range moved it.
 export function changeNote(decision: Pick<Decision, "category" | "choice">, level: string) {
 	const picked = isLevel(decision.choice) ? LEVELS.indexOf(decision.choice) : -1;
 	const got = LEVELS.indexOf(level as Level);
 	const bound = picked < 0 || got < 0 || picked === got ? "" : picked > got ? ", the highest allowed" : ", the lowest allowed";
 	const kind = kindOf(decision);
-	return `Thinking set to: ${level}${bound}${kind ? `, for ${kind}` : ""}`;
+	return `Thinking for this prompt: ${level}${bound}${kind ? `, for ${kind}` : ""}`;
 }
 
 export interface Problem {

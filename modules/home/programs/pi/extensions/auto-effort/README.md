@@ -56,8 +56,8 @@ footer.
 
 | Line | When |
 | :- | :- |
-| `Thinking set to: high, for multi-step work` | The decision changed the thinking level for this prompt. The words say why: a quick request, a small change, a typical task, multi-step work, a hard task, an exhaustive task (for a Jev answer, the kind of work its level stands for). |
-| `Thinking set to: xhigh, the highest allowed, for an exhaustive task` | It picked `max`, above `AUTO_EFFORT_MAX_EFFORT` (or what the model supports). `the lowest allowed` for the other end. |
+| `Thinking for this prompt: high, for multi-step work` | The decision changed the thinking level for this prompt. The words say why: a quick request, a small change, a typical task, multi-step work, a hard task, an exhaustive task (for a Jev answer, the kind of work its level stands for). |
+| `Thinking for this prompt: xhigh, the highest allowed, for an exhaustive task` | It picked `max`, above `AUTO_EFFORT_MAX_EFFORT` (or what the model supports). `the lowest allowed` for the other end. |
 | `Nisev starting: thinking stays at high until it is ready`, `Nisev downloading its model: …` | The server this extension started isn't ready yet. |
 | `Warning: The effort classifier did not answer, so thinking stays at high. See /auto-effort.` | A fallback: the decision model failed or timed out (`Nisev did not answer`, `Nisev is not running`, or `gave no usable answer` for the other cases). |
 

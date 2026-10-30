@@ -165,7 +165,7 @@ test("a confident Jev answer sets the thinking level of the run, then the sessio
 	// Right under the prompt it applies to, once.
 	assert.deepEqual(h.seen.chat, [
 		"user: Migrate every module from callbacks to async/await and make the tests pass",
-		"info: Thinking set to: high, for multi-step work",
+		"info: Thinking for this prompt: high, for multi-step work",
 	]);
 });
 
@@ -185,7 +185,7 @@ test("a lower pick says so, and the status names the level the last decision kep
 	let fail = false;
 	const h = harness({ fetch: () => (fail ? new TypeError("fetch failed") : jevReply("low", 0.8)) });
 	assert.equal(await h.prompt("Fix the typo in the README"), "low");
-	assert.deepEqual(h.lines(), ["info: Thinking set to: low, for a quick request"]);
+	assert.deepEqual(h.lines(), ["info: Thinking for this prompt: low, for a quick request"]);
 	fail = true;
 	await h.prompt("Fix the typo in the README");
 	const text = await h.command("status");
@@ -240,7 +240,7 @@ test("a pick equal to the session's level changes nothing, and says nothing", as
 test("the pick is capped at max_effort", async () => {
 	const h = harness({ fetch: () => jevReply("max", 0.99) });
 	assert.equal(await h.prompt("Audit every endpoint, leave nothing unchecked"), "xhigh");
-	assert.deepEqual(h.lines(), ["info: Thinking set to: xhigh, the highest allowed, for an exhaustive task"]);
+	assert.deepEqual(h.lines(), ["info: Thinking for this prompt: xhigh, the highest allowed, for an exhaustive task"]);
 });
 
 test("an HTTP error keeps the session effort and lets the prompt through", async () => {
@@ -330,7 +330,7 @@ test("a follow-up queued during a run applies to its own part, not the running o
 	assert.deepEqual(h.lines(), []);
 	assert.equal(await h.deliver("Then audit the auth module"), "xhigh");
 	// Under the follow-up, when Pi delivers it.
-	assert.deepEqual(h.seen.chat, ["user: Fix the flaky test", "user: Then audit the auth module", "info: Thinking set to: xhigh, for a hard task"]);
+	assert.deepEqual(h.seen.chat, ["user: Fix the flaky test", "user: Then audit the auth module", "info: Thinking for this prompt: xhigh, for a hard task"]);
 	await h.settle();
 	assert.equal(h.level(), "medium");
 });
@@ -425,7 +425,7 @@ test("Nisev is asked the category question, and its answer is mapped for the mod
 	assert.equal(req!.url, "http://127.0.0.1:8765/v1/systemone");
 	assert.equal(req!.body.model, "nisev");
 	assert.deepEqual(Object.keys(req!.body.questions.effort.criteria), ["trivial", "light", "ordinary", "multi_step", "hard", "exhaustive"]);
-	assert.deepEqual(h.lines(), ["info: Thinking set to: high, for multi-step work"]);
+	assert.deepEqual(h.lines(), ["info: Thinking for this prompt: high, for multi-step work"]);
 });
 
 test("ordinary work on Nisev keeps the model's default", async () => {
