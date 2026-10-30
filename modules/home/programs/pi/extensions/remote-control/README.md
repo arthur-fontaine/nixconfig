@@ -30,9 +30,28 @@ this extension plays the worker side:
    - `POST /worker/events/delivery` acknowledges them
 4. `POST /v1/code/sessions/{id}/archive` when Pi exits.
 
+Attachments come as `file_attachments[].file_uuid`, downloaded from
+`GET /api/oauth/files/{uuid}/content`.
+
+## From the apps
+
+Tested from the Claude iOS app:
+
+- The session shows the conversation so far, including when started mid-way.
+- Messages run in Pi; tool calls show with their input and output.
+- A message sent while Pi works joins the running turn (Pi's steer), as in
+  Claude Code. One the app marks `later` waits for the turn to end.
+- Stop interrupts the turn.
+- The model and effort pickers switch Pi's model (within its current
+  provider) and thinking level.
+- Photos reach the model; other files are saved under the system temp
+  directory and their path is given to Pi.
+- `/compact` compacts Pi's conversation. Other slash commands get a notice.
+
 ## Limits
 
 - No live streaming of the reply: messages appear once complete.
 - Pi asks no permissions, so the session reports `bypassPermissions` and refuses other modes.
-- Answers `initialize`, `interrupt`, `set_model`, `apply_flag_settings` (effort), `get_context_usage` and `mcp_status`; other control requests get an error.
+- Other control requests (side questions, MCP servers the app pushes, …) get an error.
 - A Pi killed without its normal shutdown leaves its session open until it times out.
+- `PI_REMOTE_CONTROL_DEBUG=<file>` logs the bridge's lifecycle.
