@@ -33,6 +33,13 @@ let
       "npm:pi-goal-x@0.34.1"
       # Pasted screenshots as [Image #N] markers with clickable links.
       "npm:pi-image-view@0.5.0"
+      # Messages between running sessions. Installed only: extensions/intercom
+      # loads it without its commands and adds the @session mentions.
+      {
+        source = "npm:pi-intercom@0.18.1";
+        extensions = [ ];
+        skills = [ ];
+      }
     ];
   };
   settingsJson = (pkgs.formats.json { }).generate "pi-settings.json" settings;
@@ -143,6 +150,7 @@ in
     ".pi/agent/extensions/you-should-know".source = ./extensions/you-should-know;
     # Claude Code's permission mode "auto", which Claude Code runs in (settings.json).
     ".pi/agent/extensions/auto-mode".source = ./extensions/auto-mode;
+    ".pi/agent/extensions/intercom".source = ./extensions/intercom;
   } // lib.mapAttrs' (name: src: lib.nameValuePair ".pi/agent/skills/${name}" { source = src; }) pluginSkills;
 
   # Pi writes settings.json itself (/model, /settings), so merge into a
