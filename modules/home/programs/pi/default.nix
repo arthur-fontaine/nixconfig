@@ -151,6 +151,8 @@ in
     # Claude Code's permission mode "auto", which Claude Code runs in (settings.json).
     ".pi/agent/extensions/auto-mode".source = ./extensions/auto-mode;
     ".pi/agent/extensions/intercom".source = ./extensions/intercom;
+    # Claude Code's /rename, renaming again when the task changes: the @ names above.
+    ".pi/agent/extensions/session-name".source = ./extensions/session-name;
     # Ctrl+B or `background: true` sends a bash call to the background.
     ".pi/agent/extensions/background-tools".source = ./extensions/background-tools;
     # Claude Haiku suggests how to continue the prompt, as dim text Tab inserts.
