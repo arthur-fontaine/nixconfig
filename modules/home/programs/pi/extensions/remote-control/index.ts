@@ -730,7 +730,8 @@ class RemoteControl {
 	}
 
 	private setStatus(text: string | undefined) {
-		if (this.ctx.hasUI) this.ctx.ui.setStatus(STATUS_KEY, text);
+		// Pi joins the extensions' footer entries with a space; a dim bar keeps them apart.
+		if (this.ctx.hasUI) this.ctx.ui.setStatus(STATUS_KEY, text && this.ctx.mode === "tui" ? this.ctx.ui.theme.fg("dim", "│ ") + text : text);
 	}
 }
 

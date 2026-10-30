@@ -167,7 +167,8 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 		const fill = usage ? { percent: usage.percent, threshold: compactionPoint(pi.getSettings(), ctx.model) } : null;
 		// ANSI colors only where Pi draws them: an RPC client gets the plain text.
 		const paint: Paint = ctx.mode === "tui" ? painter(ctx.ui.theme) : (_tone, text) => text;
-		ctx.ui.setStatus(STATUS_KEY, statusLine(shown.text, shown.tone, fill, paint));
+		// Pi joins the extensions' footer entries with a space; a dim bar keeps them apart.
+		ctx.ui.setStatus(STATUS_KEY, (ctx.mode === "tui" ? paint("dim", "│ ") : "") + statusLine(shown.text, shown.tone, fill, paint));
 	});
 	const show = (decision: Partial<Decision> | null, done = false) => {
 		label = decision ? { text: describe(decision, done), tone: toneOf(decision) } : null;

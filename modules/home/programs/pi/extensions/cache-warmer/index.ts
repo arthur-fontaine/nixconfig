@@ -193,7 +193,9 @@ export default function (pi: ExtensionAPI) {
 			if (!ui) return;
 			// Colors are for the terminal; RPC clients get plain text.
 			const paint = (line: Line | undefined) => line && (ctx?.mode === "tui" ? ui.theme.fg(line.tone, line.text) : line.text);
-			const status = paint(footer(state));
+			const line = paint(footer(state));
+			// Pi joins the extensions' footer entries with a space; a dim bar keeps them apart.
+			const status = line && ctx?.mode === "tui" ? ui.theme.fg("dim", "│ ") + line : line;
 			const below = paint(widget(state, cfg));
 			if (status !== shown.status) ui.setStatus(STATUS_KEY, status);
 			if (below !== shown.widget) ui.setWidget(STATUS_KEY, below === undefined ? undefined : [below], { placement: "belowEditor" });

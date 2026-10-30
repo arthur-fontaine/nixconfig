@@ -111,7 +111,9 @@ function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, com
 			theme: { fg: (_color: string, text: string) => text, bold: (text: string) => text },
 			setStatus: (key: string, text: string | undefined) => {
 				assert.equal(key, "auto-compact");
-				seen.statuses.push(text!);
+				// In the TUI, entries start with the bar that separates them from other extensions' entries.
+				if (mode === "tui") assert.ok(text!.startsWith("│ "), text!);
+				seen.statuses.push(mode === "tui" ? text!.slice(2) : text!);
 			},
 			notify: (text: string) => seen.notified.push(text),
 			select: async (title: string, options: string[]) => {

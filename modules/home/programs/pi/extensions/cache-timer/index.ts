@@ -30,7 +30,8 @@ export default function (pi: ExtensionAPI) {
 		// flicker near its full lifetime.
 		const line = running || !ctx.isIdle() ? undefined : label(lastTouch(newestFirst(ctx)), ttlMs, Date.now());
 		// Colors are for the terminal; RPC clients get plain text.
-		const text = line && (ctx.mode === "tui" ? ctx.ui.theme.fg(line.tone, line.text) : line.text);
+		// Pi joins the extensions' footer entries with a space; a dim bar keeps them apart.
+		const text = line && (ctx.mode === "tui" ? ctx.ui.theme.fg("dim", "│ ") + ctx.ui.theme.fg(line.tone, line.text) : line.text);
 		if (text === shown) return;
 		shown = text;
 		ctx.ui.setStatus(STATUS_KEY, text);

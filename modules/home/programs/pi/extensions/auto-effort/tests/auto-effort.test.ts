@@ -68,7 +68,8 @@ function harness({ env = ENV, fetch: respond, model = { id: "claude-opus-5-5", r
 		},
 	};
 	const ui = {
-		setStatus: (_key: string, text: string | undefined) => seen.labels.push(text),
+		// TUI labels start with the bar that separates them from other extensions' entries.
+		setStatus: (_key: string, text: string | undefined) => seen.labels.push(text?.replace(/^<dim>│ /, "")),
 		notify: (text: string) => seen.notices.push(text),
 		select: async () => answers.shift(),
 		input: async () => answers.shift(),

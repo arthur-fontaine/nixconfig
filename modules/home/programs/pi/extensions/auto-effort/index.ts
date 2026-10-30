@@ -178,7 +178,8 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 	function show(text: string | undefined, tone: Tone = "quiet") {
 		const v = holder.view;
 		try {
-			v?.ui.setStatus(STATUS_KEY, text && v.tui ? v.ui.theme.fg(COLORS[tone], text) : text);
+			// Pi joins the extensions' footer entries with a space; a dim bar keeps them apart.
+			v?.ui.setStatus(STATUS_KEY, text && v.tui ? v.ui.theme.fg("dim", "│ ") + v.ui.theme.fg(COLORS[tone], text) : text);
 		} catch {
 			// A replaced runtime's UI.
 		}
