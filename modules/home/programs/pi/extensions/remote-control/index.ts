@@ -181,7 +181,7 @@ class RemoteControl {
 		debug(`renamed to ${this.title(name)}`);
 	}
 
-	async stop() {
+	async stop({ archive = true } = {}) {
 		if (this.stopped.signal.aborted) return;
 		this.stopped.abort();
 		this.streamAbort?.abort();
@@ -189,6 +189,7 @@ class RemoteControl {
 		clearTimeout(this.regrantTimer);
 		this.setStatus(undefined);
 		debug(`stop ${this.session?.id}`);
+		if (!archive) return;
 		// Archive right away, skipping the outbox: Pi may exit soon after this handler starts.
 		const archived = await Promise.allSettled([this.session && archiveSession(this.creds, this.session.id)]);
 		debug(`stopped: ${archived[0].status === "rejected" ? String(archived[0].reason) : "archived"}`);
@@ -810,7 +811,9 @@ export default function (pi: ExtensionAPI) {
 		const current = rc;
 		rc = undefined;
 		if (current && !quitting) offerSendFile(false);
-		await current?.stop();
+		// remoteControlArchiveOnQuit: false keeps the conversation in the apps after Pi exits.
+		const keep = quitting && (pi.getSettings() as { remoteControlArchiveOnQuit?: boolean }).remoteControlArchiveOnQuit === false;
+		await current?.stop({ archive: !keep });
 	}
 
 	// Claude Code's SendUserFile, offered while Remote Control is on, as Claude Code

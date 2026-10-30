@@ -24,6 +24,8 @@ let
     fullscreenCopyOnSelect = false;
     # As Claude Code's: every interactive session shows in the Claude apps.
     remoteControlAtStartup = true;
+    # Keep the conversation in the Claude apps when Pi exits.
+    remoteControlArchiveOnQuit = false;
 
     # Pinned: Pi runs package code, so bump the commit after reading the diff.
     packages = [

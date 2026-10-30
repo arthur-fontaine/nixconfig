@@ -30,7 +30,9 @@ this extension plays the worker side:
    - `POST /worker/events` posts Claude Code stream-json (`system/init`, `user`, `assistant`, `result`, `control_response`)
    - `GET /worker/events/stream` (SSE, `client_event` frames) brings the controllers' messages and `control_request`s
    - `POST /worker/events/delivery` acknowledges them
-4. `POST /v1/code/sessions/{id}/archive` when Pi exits.
+4. `POST /v1/code/sessions/{id}/archive` when Pi exits, unless
+   `"remoteControlArchiveOnQuit": false` is in `settings.json`. `/remote-control`
+   off always archives.
 
 Attachments come as `file_attachments[].file_uuid`, downloaded from
 `GET /api/oauth/files/{uuid}/content`.
