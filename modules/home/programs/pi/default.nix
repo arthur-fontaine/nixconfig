@@ -155,6 +155,8 @@ in
     ".pi/agent/extensions/background-tools".source = ./extensions/background-tools;
     # Claude Haiku suggests how to continue the prompt, as dim text Tab inserts.
     ".pi/agent/extensions/input-autocomplete".source = ./extensions/input-autocomplete;
+    # The files each bash call changed, as a diff under its output.
+    ".pi/agent/extensions/bash-changes".source = ./extensions/bash-changes;
   } // lib.mapAttrs' (name: src: lib.nameValuePair ".pi/agent/skills/${name}" { source = src; }) pluginSkills;
 
   # Pi writes settings.json itself (/model, /settings), so merge into a
