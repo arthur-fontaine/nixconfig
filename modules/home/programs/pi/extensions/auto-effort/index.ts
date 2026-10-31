@@ -403,8 +403,8 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 			reported = null;
 			return;
 		}
-		if (found.kind !== reported) note = { text: found.text, type: found.type };
-		reported = found.kind;
+		if (!found.kind || found.kind !== reported) note = { text: found.text, type: found.type };
+		reported = found.kind || null;
 	}
 
 	function apply(decision: Decision | null, ctx: ExtensionContext) {

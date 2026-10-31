@@ -230,10 +230,14 @@ test('"default" applies the model\'s own level, and says so', async () => {
 	assert.deepEqual(h.lines(), ["info: Thinking for this prompt: medium, for a small change"]);
 });
 
-test("a low-confidence answer keeps the session effort, and says nothing", async () => {
+test("a low-confidence answer keeps the session effort, and says so every time", async () => {
 	const h = harness({ fetch: () => jevReply("low", 0.3) });
 	assert.equal(await h.prompt("hmm"), "medium");
-	assert.deepEqual(h.lines(), []);
+	assert.equal(await h.prompt("hmm again"), "medium");
+	assert.deepEqual(h.lines(), [
+		"info: Thinking for this prompt: medium, kept as the picker was unsure",
+		"info: Thinking for this prompt: medium, kept as the picker was unsure",
+	]);
 });
 
 test("a pick equal to the session's level still says so, so you see the picker ran", async () => {
