@@ -15,6 +15,13 @@ Thanks. Run the tests and show me the output      <- "Run …" is the dim sugges
 - Native autocomplete comes first. While a popup is open (slash commands,
   `@` files, or anything another extension stacks), the suggestion is hidden
   and Tab, Up and Down go to the popup.
+- pi-subagents' FleetView, the agent list under the editor, takes Down and
+  Left at an empty prompt. Down and Up still cycle the suggestions while
+  they can, as Claude Code's suggestion list keeps them: a terminal input
+  listener hands them to the editor before FleetView's sees them. Left, or
+  Down with nothing to cycle, goes to FleetView and clears the suggestion;
+  Escape back to the prompt brings it back. Leaving FleetView with Up above
+  `main` doesn't: the next one comes when you type.
 
 The editor is Pi's own `CustomEditor`, built with the same options as the
 default editor, working status in the top border included. Pi copies the
@@ -131,6 +138,7 @@ top of `predictor.ts`, `editor.ts` and `prediction.ts`.
 
 - `index.ts`: Pi wiring (events, editor factory, `/autocomplete-context`)
 - `editor.ts`: the `CustomEditor` subclass (ghost text, keys, history seeding)
+- `keys.ts`: Down and Up between the suggestions and FleetView. No Pi imports.
 - `predictor.ts`: model lookup, requests, retries, cache, last-request snapshot
 - `prediction.ts`: prompt, boundary rule, reply parsing, typed-ahead reuse, LRU. No Pi imports.
 - `context.ts`: conversation payload and branch prompts from session data

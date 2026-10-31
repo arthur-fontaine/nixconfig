@@ -77,6 +77,10 @@ let
   autoEffortJson = (pkgs.formats.json { }).generate "pi-auto-effort.json" autoEffort;
   # Likewise auto-compact's, as Claude Code's AUTO_COMPACT_PROVIDER: Spisev.
   autoCompactJson = (pkgs.formats.json { }).generate "pi-auto-compact.json" { provider = "spisev"; };
+  # pi-subagents' global settings: no widget above the editor, since FleetView under it
+  # lists the same agents. Its /agents menu writes the project's .pi/subagents.json, which
+  # overrides this file, and never this file.
+  subagentsJson = (pkgs.formats.json { }).generate "pi-subagents.json" { widgetMode = "off"; };
   mcpPath = "${config.home.homeDirectory}/.pi/agent/mcp.json";
   merge = import ../../lib/merge-json.nix { inherit pkgs; };
 
@@ -200,6 +204,7 @@ in
     ${merge mcpJson mcpPath}
     ${merge autoEffortJson "${config.home.homeDirectory}/.pi/agent/auto-effort.json"}
     ${merge autoCompactJson "${config.home.homeDirectory}/.pi/agent/auto-compact/config.json"}
+    ${merge subagentsJson "${config.home.homeDirectory}/.pi/agent/subagents.json"}
   '';
 
   # Before home-manager links the two folders: a real folder in their place

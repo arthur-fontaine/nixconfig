@@ -4,6 +4,8 @@ import {
 	CURSOR_MARKER,
 	type Component,
 	type EditorTheme,
+	isKeyRelease,
+	matchesKey,
 	type OverlayHandle,
 	type OverlayOptions,
 	renderFakeCursor,
@@ -15,6 +17,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { commandName, paintCommand } from "./command.ts";
 import { ReplayFilter } from "./history.ts";
+import { arbitrate, cycle, type Step } from "./keys.ts";
 import { wantsPrediction } from "./prediction.ts";
 import type { Predictor } from "./predictor.ts";
 
@@ -52,6 +55,8 @@ export class GhostEditor extends CustomEditor {
 	private pending?: AbortController;
 	private accepting = false;
 	private paused = false;
+	// Down or Left at the empty prompt may have moved into FleetView, which owns Up and Down from then on.
+	private yielded = false;
 	private disposed = false;
 	private replay = new ReplayFilter([]);
 	private provider?: AutocompleteProvider;
@@ -98,13 +103,9 @@ export class GhostEditor extends CustomEditor {
 		this.replay.disarm();
 		const shown = this.visibleSuggestion();
 		if (shown !== undefined) {
-			if (this.keys.matches(data, "tui.editor.cursorUp") && this.selected > 0) {
-				this.selected--;
-				this.tui.requestRender();
-				return;
-			}
-			if (this.keys.matches(data, "tui.editor.cursorDown") && this.suggestions.length > 1) {
-				this.selected = (this.selected + 1) % this.suggestions.length;
+			const next = cycle(this.step(data), this.suggestions.length, this.selected);
+			if (next !== undefined) {
+				this.selected = next;
 				this.tui.requestRender();
 				return;
 			}
@@ -128,6 +129,40 @@ export class GhostEditor extends CustomEditor {
 			if (this.isShowingAutocomplete()) (this as unknown as AutocompleteControl).updateAutocomplete();
 			this.changed();
 		}
+	}
+
+	// For a terminal input listener, which Pi runs before the focused editor: true when the
+	// key was handled here and must go no further. See keys.ts.
+	takeKey(data: string): boolean {
+		if (isKeyRelease(data)) return false;
+		const step = this.step(data);
+		const action = arbitrate({
+			idle: this.focused && this.getText() === "",
+			cycles: this.visibleSuggestion() !== undefined && cycle(step, this.suggestions.length, this.selected) !== undefined,
+			entersList: matchesKey(data, "down") || matchesKey(data, "left"),
+			leavesList: matchesKey(data, "escape"),
+		});
+		if (action === "take") {
+			this.handleInput(data);
+			return true;
+		}
+		if (action === "yield") {
+			// FleetView consumes the key, so the editor wouldn't clear the suggestion itself.
+			this.yielded = true;
+			this.cancel();
+			this.tui.requestRender();
+		}
+		if (action === "return" && this.yielded) {
+			this.yielded = false;
+			this.schedule();
+		}
+		return false;
+	}
+
+	private step(data: string): Step | undefined {
+		if (this.keys.matches(data, "tui.editor.cursorDown")) return "next";
+		if (this.keys.matches(data, "tui.editor.cursorUp")) return "previous";
+		return undefined;
 	}
 
 	override setText(text: string): void {
@@ -288,6 +323,7 @@ export class GhostEditor extends CustomEditor {
 
 	private changed(): void {
 		if (!this.ghost) return;
+		this.yielded = false;
 		this.cancel();
 		// An accepted suggestion is a finished thought: wait for the next keystroke.
 		if (!this.accepting) this.schedule();
@@ -296,7 +332,7 @@ export class GhostEditor extends CustomEditor {
 	private schedule(): void {
 		this.cancel();
 		const predictor = this.ghost?.predictor;
-		if (!predictor || this.paused || this.disposed || !predictor.ready() || !this.atEnd()) return;
+		if (!predictor || this.paused || this.yielded || this.disposed || !predictor.ready() || !this.atEnd()) return;
 		// A popup from another provider owns the moment; its ghost would stay hidden.
 		if (this.isShowingAutocomplete()) return;
 		const draft = this.getText();

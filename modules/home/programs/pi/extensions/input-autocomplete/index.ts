@@ -11,6 +11,7 @@ import { MODEL, PROVIDER, Predictor } from "./predictor.ts";
 export default function (pi: ExtensionAPI) {
 	let predictor: Predictor | undefined;
 	let editor: GhostEditor | undefined;
+	let stopKeys: (() => void) | undefined;
 
 	// /rename (the session-name extension) replaces Pi's /name: typing /name runs it,
 	// and only /rename is offered.
@@ -43,6 +44,11 @@ export default function (pi: ExtensionAPI) {
 		if (ctx.mode !== "tui") return;
 		predictor = new Predictor(ctx);
 		install(ctx, predictor);
+		// Pi runs input listeners in the order they were added, and loads this directory's
+		// extensions before packages': this one sees Down ahead of pi-subagents' FleetView,
+		// which adds its own in its session_start. One it adds again later goes last.
+		stopKeys?.();
+		stopKeys = ctx.ui.onTerminalInput((data) => (editor?.takeKey(data) ? { consume: true } : undefined));
 		if (hidingAliases) return;
 		hidingAliases = true;
 		// Pi's provider is a class: its methods are passed on one by one, not spread.
@@ -63,6 +69,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async () => {
+		stopKeys?.();
+		stopKeys = undefined;
 		editor?.dispose();
 		editor = undefined;
 		predictor = undefined;
