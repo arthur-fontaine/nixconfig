@@ -72,9 +72,11 @@ interface Setup {
 	mode?: "tui" | "print";
 	tokens?: number | null;
 	keepRecentTokens?: number;
+	// Stands in for remote-control on its dialog channel.
+	remote?: (dialog: any) => void;
 }
 
-function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, compactError, mode = "tui", tokens = 82_000, keepRecentTokens }: Setup = {}) {
+function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, compactError, mode = "tui", tokens = 82_000, keepRecentTokens, remote }: Setup = {}) {
 	Object.assign(process.env, env);
 	const handlers = new Map<string, ((event: any, ctx: any) => unknown)[]>();
 	const commands = new Map<string, any>();
@@ -118,9 +120,11 @@ function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, com
 				seen.notified.push(text);
 				seen.chat.push(type + ": " + text);
 			},
-			select: async (title: string, options: string[]) => {
+			select: async (title: string, options: string[], opts?: { signal?: AbortSignal }) => {
 				seen.selects.push(title);
-				return select?.(title, options);
+				if (select || !remote) return select?.(title, options);
+				// Up until the apps' answer dismisses it.
+				return new Promise((resolve) => opts?.signal?.addEventListener("abort", () => resolve(undefined)));
 			},
 			setWidget: (_key: string, content: unknown) => {
 				seen.widget = content;
@@ -155,6 +159,12 @@ function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, com
 		registerCommand: (name: string, options: any) => commands.set(name, options),
 		getSettings: () => ({ compaction: { reserveTokens: 16_384, ...(keepRecentTokens !== undefined && { keepRecentTokens }) } }),
 		exec: async () => ({ stdout: "", stderr: "", code: 1, killed: false }),
+		events: {
+			emit: (channel: string, data: any) => {
+				if (channel === "remote-control:dialog") remote?.(data);
+			},
+			on: () => () => {},
+		},
 	};
 	autoCompact(pi, {
 		summarizeMessages: (async (...args: unknown[]) => {
@@ -244,6 +254,31 @@ test("in suggest mode the press compacts before the prompt goes on", async () =>
 	await input("now set up CI for this repo");
 	assert.equal(seen.compactions.length, 1);
 	assert.deepEqual(seen.chat, ["[compaction]", "info: Context compacted, as you chose: this prompt starts a related task", "user: now set up CI for this repo"]);
+});
+
+test("with Remote Control on, the offer is also a choice in the Claude apps, and their answer wins", async () => {
+	const asked: any[] = [];
+	const { seen, input } = stub({
+		fetch: () => ({ status: 200, body: answer("related", 0.7) }),
+		// Answers as the apps would, which dismisses the terminal dialog.
+		remote: (dialog) => {
+			asked.push(dialog.request);
+			dialog.run = async (local: (signal: AbortSignal) => Promise<string | undefined>) => {
+				const dismiss = new AbortController();
+				const terminal = local(dismiss.signal);
+				dismiss.abort();
+				assert.equal(await terminal, undefined);
+				return dialog.request.options[0];
+			};
+		},
+	});
+	await input("now set up CI for this repo");
+	assert.equal(asked.length, 1);
+	assert.deepEqual(asked[0].options, ["Compact the context first", "Send as is"]);
+	assert.equal(asked[0].header, "auto-compact");
+	assert.match(asked[0].question, /^auto-compact: this prompt looks related \(70%\)\. Compact the context first\?/);
+	assert.equal(seen.selects.length, 1);
+	assert.equal(seen.compactions.length, 1);
 });
 
 test("with no one to ask (-p), suggest mode keeps the context, and says nothing", async () => {

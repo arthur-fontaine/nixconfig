@@ -33,6 +33,10 @@ const TREE_VERSION = 2;
 // wait for it a little rather than skip the decision. A download is never waited for.
 const START_WAIT_MS = 10_000;
 const CLEARED = "The conversation before this point was cleared: the next message starts an unrelated task.";
+// remote-control's dialog contract (remote-control/dialogs.ts): while Remote Control is on, it sets
+// `run`, which also asks in the Claude apps (a prompt sent from the phone waits on this offer) and
+// returns whichever answer comes first.
+const REMOTE_DIALOG = "remote-control:dialog";
 
 type ServerState = "starting" | "downloading" | "ready" | "stopped";
 interface Server {
@@ -505,8 +509,14 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 		const question = "auto-compact: this prompt looks " + decision.category!.replace("_", " ") + " (" +
 			Math.round(decision.confidence! * 100) + "%). " + verb + "?" +
 			(usage?.tokens ? " The context holds " + tokens(usage.tokens) + " tokens (" + Math.round(usage.percent ?? 0) + "%)." : "");
+		const options = [verb, "Send as is"];
+		const local = (signal: AbortSignal) => ctx.ui.select(question, options, { signal });
+		const dialog: { request: unknown; run?: (local: (signal: AbortSignal) => Promise<string | undefined>) => Promise<string | undefined> } = {
+			request: { kind: "choice", question, header: "auto-compact", options },
+		};
 		try {
-			return (await ctx.ui.select(question, [verb, "Send as is"])) === verb;
+			pi.events.emit(REMOTE_DIALOG, dialog);
+			return (await (dialog.run ? dialog.run(local) : local(new AbortController().signal))) === verb;
 		} catch {
 			return false;
 		}

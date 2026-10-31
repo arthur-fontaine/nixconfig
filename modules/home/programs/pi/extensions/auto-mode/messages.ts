@@ -25,6 +25,10 @@ export function unavailableMessage(model: string, tool: string, status: string):
 export const REJECTED =
 	"The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
 
+// Claude Code's, when the person gave a reason with the rejection (from the Claude apps).
+export const rejectedWithFeedback = (feedback: string) =>
+	`The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\n${feedback}`;
+
 export const TOO_LONG_REASON =
 	"Auto mode classifier transcript exceeded context window — falling back to manual approval (try /compact to reduce conversation size)";
 export const TOO_LONG_PROMPT =

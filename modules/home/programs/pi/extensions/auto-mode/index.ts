@@ -30,6 +30,12 @@ const DEFAULT_MODEL = "claude-sonnet-5";
 
 const run = promisify(execFile);
 
+// remote-control's dialog contract (remote-control/dialogs.ts): while Remote Control is on, it
+// sets `run`, which also shows the approval in the Claude apps as Claude Code's permission sheet
+// and returns whichever answer comes first.
+const REMOTE_DIALOG = "remote-control:dialog";
+type Approval = { allow: boolean; message?: string };
+
 // Set PI_AUTO_MODE_DEBUG to a file path to log each verdict there, as Claude Code's --debug does.
 function debug(record: Record<string, unknown>) {
 	const file = process.env.PI_AUTO_MODE_DEBUG;
@@ -156,9 +162,26 @@ export default function (pi: ExtensionAPI) {
 		return { verdict, model: model.id };
 	}
 
-	async function askPerson(ctx: ExtensionContext, title: string, text: string, tool: string, input: Record<string, unknown>) {
-		const approved = await ctx.ui.confirm(title, `${text}\n\n${claudeName(tool)}: ${summary(tool, input)}\n\nAllow it?`);
-		if (!approved) return { block: true, reason: msg.REJECTED };
+	// `reason` is what Claude Code gives the apps for the escalation; `text` is the terminal's wording.
+	async function askPerson(
+		ctx: ExtensionContext,
+		event: { toolCallId: string; toolName: string },
+		input: Record<string, unknown>,
+		text: string,
+		reason: string,
+		reasonCode?: string,
+	) {
+		const tool = event.toolName;
+		const local = async (signal: AbortSignal): Promise<Approval> => ({
+			allow: await ctx.ui.confirm("Auto mode", `${text}\n\n${claudeName(tool)}: ${summary(tool, input)}\n\nAllow it?`, { signal }),
+		});
+		const dialog: { request: unknown; signal?: AbortSignal; run?: (local: (signal: AbortSignal) => Promise<Approval>) => Promise<Approval> } = {
+			request: { kind: "permission", toolName: tool, toolCallId: event.toolCallId, input, reason, ...(reasonCode && { reasonCode }) },
+			signal: ctx.signal,
+		};
+		pi.events.emit(REMOTE_DIALOG, dialog);
+		const answer = dialog.run ? await dialog.run(local) : await local(ctx.signal ?? new AbortController().signal);
+		if (!answer.allow) return { block: true, reason: answer.message ? msg.rejectedWithFeedback(answer.message) : msg.REJECTED };
 		denials = allowed(denials);
 		return undefined;
 	}
@@ -195,7 +218,7 @@ export default function (pi: ExtensionAPI) {
 					const { text, next } = limitPrompt(denials, verdict.reason);
 					denials = next;
 					if (!ctx.hasUI) return { block: true, reason: msg.LIMIT_HEADLESS, terminate: true };
-					return askPerson(ctx, "Auto mode", text, event.toolName, input);
+					return askPerson(ctx, event, input, text, text);
 				}
 				notify(`Auto mode blocked ${tool}: ${verdict.reason}`);
 				return {
@@ -208,7 +231,7 @@ export default function (pi: ExtensionAPI) {
 				return { block: true, reason: msg.noVerdictMessage(verdict.reason, true) };
 			case "too_long":
 				if (!ctx.hasUI) return { block: true, reason: msg.TOO_LONG_HEADLESS, terminate: true };
-				return askPerson(ctx, "Auto mode", msg.TOO_LONG_PROMPT, event.toolName, input);
+				return askPerson(ctx, event, input, msg.TOO_LONG_PROMPT, msg.TOO_LONG_REASON, "classifier_transcript_too_long");
 			case "unavailable":
 			case "aborted":
 				notify(`Auto mode could not check ${tool}: ${verdict.reason}`);

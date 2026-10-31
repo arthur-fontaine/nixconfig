@@ -6,7 +6,9 @@ import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const API = "https://api.anthropic.com";
+// PI_REMOTE_CONTROL_API points the worker at a local fake of the service, for testing.
+const DEBUG_API = process.env.PI_REMOTE_CONTROL_API?.replace(/\/+$/, "");
+const API = DEBUG_API || "https://api.anthropic.com";
 const USER_AGENT = "pi-remote-control/0.1.0";
 
 export interface Credentials {
@@ -30,6 +32,8 @@ function keychainItem(): Promise<string> {
 // Read-only: refreshing would rotate the token Claude Code itself holds, so an
 // expired login is left for Claude Code to refresh.
 export async function loadCredentials(): Promise<Credentials> {
+	// The real login never goes to another host.
+	if (DEBUG_API) return { accessToken: "pi-remote-control-debug" };
 	let doc: any;
 	if (process.platform === "darwin") {
 		try {
@@ -195,7 +199,7 @@ export class Worker {
 
 	setState(state: {
 		worker_status?: "idle" | "running" | "requires_action";
-		requires_action_details?: Record<string, unknown>;
+		requires_action_details?: Record<string, unknown> | null;
 		external_metadata?: Record<string, unknown>;
 	}) {
 		return this.call("PUT", "/worker", { worker_epoch: this.grant.epoch, ...state }, "Updating the worker state");

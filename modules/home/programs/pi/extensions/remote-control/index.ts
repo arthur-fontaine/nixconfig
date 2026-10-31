@@ -24,6 +24,21 @@ import {
 	Worker,
 } from "./api.ts";
 import { claudeToolUse, claudeToolUseResult, isImageFile, mimeType } from "./claude-tools.ts";
+import {
+	askDetails,
+	canAsk,
+	choiceAnswer,
+	choiceLocalResponse,
+	choicePrompt,
+	DIALOG,
+	type DialogEvent,
+	firstAnswer,
+	NO_ANSWER,
+	permissionAnswer,
+	permissionLocalResponse,
+	permissionPrompt,
+	type Prompt,
+} from "./dialogs.ts";
 
 // The worker version claude.ai sees; it gates features on it like on a real Claude Code.
 const CLAUDE_CODE_VERSION = "2.1.314";
@@ -68,6 +83,19 @@ function toAnswerEntries(questions: AskQuestion[], answers: Record<string, unkno
 		const text = parts.filter((p) => indexOf(q, p) < 0 && p.trim()).join(", ");
 		return { questionIndex, optionIndexes, ...(text && { text }) };
 	});
+}
+
+// A prompt waiting in the apps: a questionnaire, a tool approval or a choice.
+interface Pending {
+	request: unknown;
+	details: Record<string, unknown>;
+	// The questionnaire's tool call, for ask_user_question's prompts.
+	toolCallId?: string;
+	// The apps' control_response.
+	answered(response: any): void;
+	// Taken back from Pi's side: dismissed by the apps' Stop, or not (Remote Control stopped). Unset
+	// for questionnaires, which the package closes itself.
+	gone?(dismissed: boolean): void;
 }
 
 type Content = string | ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[];
@@ -150,8 +178,8 @@ class RemoteControl {
 	// Controller messages wait here, not in Pi's own queue, so the apps can still cancel them.
 	private queue: { eventId: string; uuid?: string; content: Content }[] = [];
 	private processingIds: string[] = [];
-	// Questionnaires put to the apps, by control request id.
-	private asks = new Map<string, { toolCallId: string; questions: AskQuestion[]; request: any }>();
+	// Prompts put to the apps, by control request id.
+	private prompts = new Map<string, Pending>();
 	private remoteTexts: string[] = [];
 	private run?: { startedAt: number; turns: number; input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; lastText: string; error?: string };
 
@@ -198,7 +226,7 @@ class RemoteControl {
 
 	private async attach(creds: Credentials) {
 		this.worker = new Worker(this.session.id, await bridge(creds, this.session.id));
-		await this.worker.setState({ worker_status: this.ctx.isIdle() ? "idle" : "running", external_metadata: this.metadata() });
+		await this.worker.setState({ worker_status: this.ctx.isIdle() ? "idle" : "running", requires_action_details: null, external_metadata: this.metadata() });
 		await this.worker.heartbeat();
 	}
 
@@ -234,6 +262,12 @@ class RemoteControl {
 		this.setStatus(undefined);
 		debug(`stop ${this.session?.id}`);
 		if (!this.session) return;
+		// The apps' sheets go; Pi's own dialogs stay up and decide.
+		for (const [requestId, prompt] of this.prompts) {
+			this.prompts.delete(requestId);
+			this.send({ type: "control_cancel_request", ...this.base(), request_id: requestId });
+			prompt.gone?.(false);
+		}
 		if (!archive) {
 			this.pi.appendEntry<Saved>(SAVED, { sessionId: this.session.id, sequenceNum: this.lastSequenceNum, mirrored: this.ctx.sessionManager.getLeafId() ?? undefined });
 			// What's still queued, so the apps have the whole conversation; bounded, as Pi is exiting.
@@ -263,7 +297,13 @@ class RemoteControl {
 	}
 
 	private metadata() {
-		return { model: this.ctx.model?.id ?? null, effort_level: this.effort() ?? null, pending_action: null, task_summary: null };
+		return { model: this.ctx.model?.id ?? null, effort_level: this.effort() ?? null, ...this.pendingMetadata(), task_summary: null };
+	}
+
+	// As Claude Code lists what waits on the person: the latest prompt, then the others.
+	private pendingMetadata() {
+		const details = [...this.prompts.values()].map((p) => p.details).reverse();
+		return { pending_action: details[0] ?? null, pending_actions: details.length > 0 ? details : null };
 	}
 
 	private initEvent() {
@@ -395,7 +435,7 @@ class RemoteControl {
 	runStarted() {
 		if (this.run) return;
 		this.run = { startedAt: Date.now(), turns: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, lastText: "" };
-		this.setWorkerState("running");
+		this.reportState();
 	}
 
 	runSettled(aborted: boolean) {
@@ -419,7 +459,7 @@ class RemoteControl {
 			total_cost_usd: run.cost,
 			usage: { input_tokens: run.input, output_tokens: run.output, cache_read_input_tokens: run.cacheRead, cache_creation_input_tokens: run.cacheWrite },
 		});
-		this.setWorkerState("idle");
+		this.reportState();
 		if (this.processingIds.length > 0) {
 			this.ack(this.processingIds, "processed");
 			this.processingIds = [];
@@ -430,7 +470,9 @@ class RemoteControl {
 	// Hands the next queued controller message to Pi once it is idle. Its
 	// `processing` receipt tells the apps it left the queue and can no longer be cancelled.
 	private deliverNext() {
-		if (this.stopped.signal.aborted || this.queue.length === 0 || this.run) return;
+		// A prompt waiting before a turn (auto-compact's offer) still holds the message before; Pi
+		// counts as idle meanwhile.
+		if (this.stopped.signal.aborted || this.queue.length === 0 || this.run || this.prompts.size > 0) return;
 		if (!this.ctx.isIdle()) {
 			setTimeout(() => this.deliverNext(), 250);
 			return;
@@ -447,8 +489,17 @@ class RemoteControl {
 		this.worker.setState({ external_metadata: this.metadata() }).catch(() => {});
 	}
 
-	private setWorkerState(status: "idle" | "running") {
-		this.worker.setState({ worker_status: status }).catch(() => {});
+	// Claude Code's worker state: requires_action with the latest prompt's details while any
+	// waits, else running or idle. Chained so an older state never lands last.
+	private states: Promise<unknown> = Promise.resolve();
+	private reportState(promptsChanged = false) {
+		const details = [...this.prompts.values()].at(-1)?.details;
+		const state = {
+			worker_status: details ? "requires_action" : this.run ? "running" : "idle",
+			requires_action_details: details ?? null,
+			...(promptsChanged && { external_metadata: this.pendingMetadata() }),
+		} as const;
+		this.states = this.states.then(() => this.worker.setState(state)).catch(() => {});
 	}
 
 	// Chained so a message's `received` never lands after its `processing`.
@@ -535,72 +586,105 @@ class RemoteControl {
 		} else if (payload?.type === "control_request") {
 			void this.control(payload);
 		} else if (payload?.type === "control_response") {
-			this.askAnswered(payload.response);
+			this.promptAnswered(payload.response);
 		}
 	}
 
-	// ---- questionnaires (ask_user_question) ----
+	// ---- prompts: questionnaires (ask_user_question) and other extensions' dialogs ----
+
+	private putPrompt(requestId: string, prompt: Prompt, pending: Omit<Pending, "request" | "details">) {
+		const request = { type: "control_request", ...this.base(), request_id: requestId, request: prompt.request };
+		this.prompts.set(requestId, { ...pending, request, details: prompt.details });
+		this.send(request);
+		this.reportState(true);
+	}
+
+	private promptAnswered(response: any) {
+		const prompt = this.prompts.get(response?.request_id);
+		if (!prompt) return;
+		this.prompts.delete(response.request_id);
+		this.reportState(true);
+		prompt.answered(response);
+	}
+
+	// Takes a prompt back from the apps. As Claude Code does, the answer given in Pi, when
+	// known, goes first.
+	private withdraw(requestId: string, response?: unknown) {
+		if (!this.prompts.delete(requestId)) return;
+		if (response) this.send({ type: "control_response", session_id: this.session.id, response: { subtype: "success", request_id: requestId, response } });
+		this.send({ type: "control_cancel_request", ...this.base(), request_id: requestId });
+		this.reportState(true);
+	}
+
+	// The apps' Stop answers the dialogs waiting on the person, as Esc would in the terminal.
+	private dismissDialogs() {
+		for (const [requestId, prompt] of this.prompts) {
+			if (!prompt.gone) continue;
+			this.withdraw(requestId, { behavior: "deny", message: "User aborted" });
+			prompt.gone(true);
+		}
+	}
 
 	// Shows a questionnaire in the apps as Claude Code's AskUserQuestion prompt.
 	ask(toolCallId: string, questions: AskQuestion[]) {
 		const requestId = randomUUID();
+		const input = { questions };
 		const request = {
-			type: "control_request",
-			...this.base(),
-			request_id: requestId,
-			request: {
-				subtype: "can_use_tool",
-				tool_name: "AskUserQuestion",
-				display_name: "AskUserQuestion",
-				input: { questions },
-				tool_use_id: toolCallId,
-				description: questions[0]?.question,
-				requires_user_interaction: true,
-			},
+			subtype: "can_use_tool",
+			tool_name: "AskUserQuestion",
+			display_name: "AskUserQuestion",
+			input,
+			tool_use_id: toolCallId,
+			description: questions[0]?.question,
+			requires_user_interaction: true,
 		};
-		this.asks.set(requestId, { toolCallId, questions, request });
-		this.send(request);
-		this.worker
-			.setState({
-				worker_status: "requires_action",
-				requires_action_details: {
-					tool_name: "AskUserQuestion",
-					display_tool_name: "AskUserQuestion",
-					action_description: questions[0]?.question ?? "",
-					request_id: requestId,
-					tool_use_id: toolCallId,
-				},
-			})
-			.catch(() => {});
+		this.putPrompt(requestId, { request, details: askDetails(questions, requestId, toolCallId, input) }, {
+			toolCallId,
+			answered: (response) => this.askAnswered(toolCallId, requestId, questions, response),
+		});
 	}
 
-	private askAnswered(response: any) {
-		const ask = this.asks.get(response?.request_id);
-		if (!ask) return;
-		this.asks.delete(response.request_id);
-		this.setWorkerState("running");
-		const answers = response.response?.updatedInput?.answers;
-		const allowed = response.subtype === "success" && response.response?.behavior === "allow";
+	private askAnswered(toolCallId: string, requestId: string, questions: AskQuestion[], response: any) {
+		const answers = response?.response?.updatedInput?.answers;
+		const allowed = response?.subtype === "success" && response.response?.behavior === "allow";
 		// An empty answer map is how the apps dismiss the prompt.
 		if (!allowed || !answers || Object.keys(answers).length === 0) {
-			this.pi.events.emit(ASK_ANSWER, { toolCallId: ask.toolCallId, requestId: response.request_id, cancel: true });
+			this.pi.events.emit(ASK_ANSWER, { toolCallId, requestId, cancel: true });
 			return;
 		}
-		this.pi.events.emit(ASK_ANSWER, {
-			toolCallId: ask.toolCallId,
-			requestId: response.request_id,
-			answers: toAnswerEntries(ask.questions, answers),
-		});
+		this.pi.events.emit(ASK_ANSWER, { toolCallId, requestId, answers: toAnswerEntries(questions, answers) });
 	}
 
 	// The questionnaire closed in Pi (answered in the terminal, or the turn stopped): withdraw it from the apps.
 	askClosed(toolCallId: string) {
-		for (const [requestId, ask] of this.asks) {
-			if (ask.toolCallId !== toolCallId) continue;
-			this.asks.delete(requestId);
-			this.send({ type: "control_cancel_request", ...this.base(), request_id: requestId });
-			if (this.run) this.setWorkerState("running");
+		for (const [requestId, prompt] of this.prompts) {
+			if (prompt.toolCallId === toolCallId) this.withdraw(requestId);
 		}
+	}
+
+	// A dialog another extension opens (dialogs.ts has the contract): also shown in the apps,
+	// where the first answer wins.
+	dialog(event: DialogEvent) {
+		const request = event.request;
+		if (this.stopped.signal.aborted || (request.kind === "choice" && !canAsk(request))) return;
+		event.run = (local) => {
+			const requestId = randomUUID();
+			const prompt = request.kind === "permission" ? permissionPrompt(request, requestId) : choicePrompt(request, requestId, randomUUID());
+			const sent = prompt.request.input as Record<string, unknown>;
+			let resolve!: (answer: unknown) => void;
+			const remote = new Promise<unknown>((r) => (resolve = r));
+			this.putPrompt(requestId, prompt, {
+				answered: (response) => resolve(request.kind === "permission" ? permissionAnswer(response, sent) : choiceAnswer(response, request)),
+				gone: (dismissed) => resolve(!dismissed ? NO_ANSWER : request.kind === "permission" ? { allow: false } : undefined),
+			});
+			return firstAnswer<any>(
+				local,
+				remote,
+				(result, aborted) =>
+					this.withdraw(requestId, request.kind === "permission" ? permissionLocalResponse(result?.allow, sent, aborted) : choiceLocalResponse(result, request)),
+				event.signal,
+			);
+		};
 	}
 
 	askRejected(requestId: string, reason: string) {
@@ -726,7 +810,7 @@ class RemoteControl {
 							inbound_read_receipts: true,
 							session_state: this.run ? "running" : "idle",
 						},
-						pending_permission_requests: [...this.asks.values()].map((ask) => ask.request),
+						pending_permission_requests: [...this.prompts.values()].map((prompt) => prompt.request),
 						pending_user_dialog_requests: [],
 					});
 					this.send(this.initEvent());
@@ -737,6 +821,7 @@ class RemoteControl {
 					return reply({ subtype: "success", response: { cancelled: i >= 0 } });
 				}
 				case "interrupt":
+					this.dismissDialogs();
 					this.ctx.abort();
 					return reply({ subtype: "success" });
 				case "set_model": {
@@ -814,7 +899,11 @@ class RemoteControl {
 		this.regranting ??= (async () => {
 			try {
 				this.worker.grant = await bridge(await this.credentials(), this.session.id);
-				await this.worker.setState({ worker_status: this.run ? "running" : "idle", external_metadata: this.metadata() });
+				await this.worker.setState({
+					worker_status: this.prompts.size > 0 ? "requires_action" : this.run ? "running" : "idle",
+					requires_action_details: [...this.prompts.values()].at(-1)?.details ?? null,
+					external_metadata: this.metadata(),
+				});
 				this.streamAbort?.abort();
 				this.scheduleRegrant();
 			} finally {
@@ -967,6 +1056,10 @@ export default function (pi: ExtensionAPI) {
 
 	pi.events.on(ASK_BLOCKED, (data: any) => {
 		if (data?.active === false && typeof data.toolCallId === "string") rc?.askClosed(data.toolCallId);
+	});
+
+	pi.events.on(DIALOG, (data: any) => {
+		if (data?.request && (data.request.kind === "permission" || data.request.kind === "choice")) rc?.dialog(data);
 	});
 
 	pi.events.on(ASK_ANSWER_RESULT, (data: any) => {

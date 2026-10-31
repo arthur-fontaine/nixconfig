@@ -82,7 +82,9 @@ shows itself in four places:
 - **A notification** for a problem, once per kind: no provider set up, a failing decision model
   (under the prompt it happened on), paused summaries, a llama-server that did not start.
   `/auto-compact` keeps showing the last error, and Spisev's download progress.
-- **A dialog** (`ctx.ui.select`) for suggest mode, which also says how big the context is.
+- **A dialog** (`ctx.ui.select`) for suggest mode, which also says how big the context is. While
+  Remote Control is on, it is also asked in the Claude apps (remote-control's dialog contract), so a
+  prompt sent from the phone doesn't wait on the terminal; the first answer wins.
 - **The debug view**, a widget below the editor, only when asked for: it is too tall to stay.
 
 While a compaction runs, Pi shows its own compaction indicator (Escape cancels it).
