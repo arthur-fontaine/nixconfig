@@ -102,7 +102,8 @@ let
   # Cmd+C copies Pi's own selection in fullscreen mode (copy-on-select is off), as in any
   # app; Ghostty passes cmd+c through when it has no selection of its own.
   keybindingsJson = (pkgs.formats.json { }).generate "pi-keybindings.json" {
-    "app.message.copy" = [ "ctrl+x" "super+c" ];
+    # Ctrl+C copies a selection through input-autocomplete's editor, as in Claude Code.
+    "app.message.copy" = [ "super+c" ];
   };
   mcpPath = "${config.home.homeDirectory}/.pi/agent/mcp.json";
   merge = import ../../lib/merge-json.nix { inherit pkgs; };

@@ -32,6 +32,12 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 interface RenderedRows {
 	renderedAutocompleteHeight: number;
 }
+// The fullscreen renderer's selection, public on Pi's alt-screen TUI but not on the TUI type.
+interface Selection {
+	hasActiveSelection?(): boolean;
+	copyActiveSelectionToClipboard?(): Promise<boolean>;
+	resetTextSelection?(): void;
+}
 interface AutocompleteControl {
 	updateAutocomplete(): void;
 }
@@ -83,6 +89,14 @@ export class GhostEditor extends CustomEditor {
 		});
 	}
 
+	private copySelection(): boolean {
+		const screen = this.tui as unknown as Selection;
+		if (!screen.hasActiveSelection?.() || !screen.copyActiveSelectionToClipboard) return false;
+		// Dropped once copied, so the next Ctrl+C clears or exits as usual.
+		void screen.copyActiveSelectionToClipboard().finally(() => screen.resetTextSelection?.());
+		return true;
+	}
+
 	private aliased(text: string): string {
 		const name = commandName(text.trimStart());
 		const target = name && this.ghost?.commandAliases()[name];
@@ -100,6 +114,8 @@ export class GhostEditor extends CustomEditor {
 	}
 
 	override handleInput(data: string): void {
+		// Ctrl+C copies a selection, as in Claude Code; with none it clears and exits as in Pi.
+		if (this.keys.matches(data, "app.clear") && this.copySelection()) return;
 		this.replay.disarm();
 		const shown = this.visibleSuggestion();
 		if (shown !== undefined) {
