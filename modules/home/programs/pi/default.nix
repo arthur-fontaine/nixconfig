@@ -99,6 +99,11 @@ let
   # lists the same agents. Its /agents menu writes the project's .pi/subagents.json, which
   # overrides this file, and never this file.
   subagentsJson = (pkgs.formats.json { }).generate "pi-subagents.json" { widgetMode = "off"; };
+  # Cmd+C copies Pi's own selection in fullscreen mode (copy-on-select is off), as in any
+  # app; Ghostty passes cmd+c through when it has no selection of its own.
+  keybindingsJson = (pkgs.formats.json { }).generate "pi-keybindings.json" {
+    "app.message.copy" = [ "ctrl+x" "super+c" ];
+  };
   mcpPath = "${config.home.homeDirectory}/.pi/agent/mcp.json";
   merge = import ../../lib/merge-json.nix { inherit pkgs; };
 
@@ -223,6 +228,7 @@ in
     ${merge autoEffortJson "${config.home.homeDirectory}/.pi/agent/auto-effort.json"}
     ${merge autoCompactJson "${config.home.homeDirectory}/.pi/agent/auto-compact/config.json"}
     ${merge subagentsJson "${config.home.homeDirectory}/.pi/agent/subagents.json"}
+    ${merge keybindingsJson "${config.home.homeDirectory}/.pi/agent/keybindings.json"}
   '';
 
   # Before home-manager links the two folders: a real folder in their place
