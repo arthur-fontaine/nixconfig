@@ -42,7 +42,8 @@ let
       # Pasted screenshots as [Image #N] markers with clickable links.
       "npm:pi-image-view@0.5.0"
       # Claude Code's subagents: the Agent tool, FleetView, /agents, @agent mentions.
-      "npm:@tintinweb/pi-subagents@0.22.1"
+      # Patched (see piSubagents below), so a local path rather than npm.
+      "${piSubagents}"
       # Messages between running sessions. Installed only: extensions/intercom
       # loads it without its commands and adds the @session mentions.
       {
@@ -52,6 +53,23 @@ let
       }
     ];
   };
+  # @tintinweb/pi-subagents 0.22.1 with patches/pi-subagents-fleet-refresh.patch, until a
+  # release fixes FleetView staying hidden for background agents. Pi doesn't patch npm
+  # packages, and a local package brings its own dependencies: croner and nanoid have none.
+  piSubagents =
+    let
+      npm = name: version: hash: pkgs.fetchurl {
+        url = "https://registry.npmjs.org/${name}/-/${baseNameOf name}-${version}.tgz";
+        inherit hash;
+      };
+    in
+    pkgs.runCommand "pi-subagents-0.22.1-patched" { } ''
+      mkdir -p $out/node_modules/croner $out/node_modules/nanoid
+      tar xzf ${npm "@tintinweb/pi-subagents" "0.22.1" "sha256-KB8kkjDbiiXsnbizAhByYNH9Ap900jyvVMTyLRXQe3k="} -C $out --strip-components=1
+      tar xzf ${npm "croner" "10.0.1" "sha256-1tk8KGEl/tVnuYaldv8dqnTnLVa7Y/4oJIyhfPywDO4="} -C $out/node_modules/croner --strip-components=1
+      tar xzf ${npm "nanoid" "5.1.16" "sha256-0/2cvcnmyPlhepLmsGowjFamLHRPdI45PRAgOGbBs/g="} -C $out/node_modules/nanoid --strip-components=1
+      patch -d $out -p1 < ${./patches/pi-subagents-fleet-refresh.patch}
+    '';
   settingsJson = (pkgs.formats.json { }).generate "pi-settings.json" settings;
   settingsPath = "${config.home.homeDirectory}/.pi/agent/settings.json";
 

@@ -1,0 +1,17 @@
+FleetView lists only agents that have a session, and a background Agent spawn
+gets its session asynchronously, after the list's last refresh: the list stays
+hidden until a key is pressed. Refresh it once the session exists, as the
+foreground path already does.
+
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -2265,6 +2265,9 @@
+           if (rec?.outputFile) {
+             rec.outputCleanup = streamToOutputFile(session, rec.outputFile, id, ctx.cwd);
+           }
++          // The fleet list shows only agents with a session; it had none at spawn.
++          fleet.ensureTimer();
++          fleet.update();
+         };
+
+         // A throw here means the agent never started. Let it out: pi marks the
