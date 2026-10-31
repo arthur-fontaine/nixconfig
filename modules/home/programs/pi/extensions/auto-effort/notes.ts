@@ -42,13 +42,17 @@ export interface Problem {
 
 // Why a prompt keeps the session's level when it isn't the classifier's own choice; null when it is
 // (the model doesn't think), which needs no line: Pi's footer shows the level. An empty kind isn't deduplicated.
-export function problemNote(reason: string, level: string): Problem | null {
+export function problemNote(reason: string, level: string, leaned?: string): Problem | null {
 	switch (reason) {
 		case "model takes no effort":
 			return null;
 		// Not a problem, but silence read as the picker not running.
 		case "low confidence":
-			return { kind: "", text: `Thinking for this prompt: ${level}, kept as the picker was unsure`, type: "info" };
+			return {
+				kind: "",
+				text: `Thinking kept at: ${level}, ${leaned ? `the picker leaned to ${leaned} but was unsure` : "the picker was unsure"}`,
+				type: "info",
+			};
 		case "Nisev starting":
 			return { kind: "Nisev loading", text: `Nisev starting: thinking stays at ${level} until it is ready`, type: "info" };
 		case "Nisev downloading":

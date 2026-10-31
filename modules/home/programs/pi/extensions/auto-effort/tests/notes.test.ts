@@ -27,7 +27,8 @@ test("a level moved by the configured range or the model says so", () => {
 
 test("a model that doesn't think needs no line; an unsure pick says the level kept", () => {
 	assert.equal(problemNote("model takes no effort", "high"), null);
-	assert.equal(problemNote("low confidence", "high")?.text, "Thinking for this prompt: high, kept as the picker was unsure");
+	assert.equal(problemNote("low confidence", "high", "medium")?.text, "Thinking kept at: high, the picker leaned to medium but was unsure");
+	assert.equal(problemNote("low confidence", "high")?.text, "Thinking kept at: high, the picker was unsure");
 });
 
 test("problems say the level that stays, Nisev loading as one kind", () => {

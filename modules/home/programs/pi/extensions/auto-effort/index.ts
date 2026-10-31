@@ -416,7 +416,7 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 		if (!enabled || !decision || !ctx.model?.reasoning || !isLevel(baseline)) return restore();
 		if (!effort) {
 			restore();
-			return report(problemNote(decision.reason, sessionLevel()));
+			return report(problemNote(decision.reason, sessionLevel(), decision.choice));
 		}
 		report(null);
 		deps.log(`effort ${pi.getThinkingLevel()} → ${effort}`);

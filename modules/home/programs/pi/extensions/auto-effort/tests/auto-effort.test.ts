@@ -235,8 +235,8 @@ test("a low-confidence answer keeps the session effort, and says so every time",
 	assert.equal(await h.prompt("hmm"), "medium");
 	assert.equal(await h.prompt("hmm again"), "medium");
 	assert.deepEqual(h.lines(), [
-		"info: Thinking for this prompt: medium, kept as the picker was unsure",
-		"info: Thinking for this prompt: medium, kept as the picker was unsure",
+		"info: Thinking kept at: medium, the picker leaned to low but was unsure",
+		"info: Thinking kept at: medium, the picker leaned to low but was unsure",
 	]);
 });
 

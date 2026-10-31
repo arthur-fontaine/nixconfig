@@ -67,8 +67,8 @@ Why so:
   for Opus 5.5), so a session set to high runs ordinary work at medium. Every
   pick gets its line, even one equal to the session's level, so you see the
   picker ran. An unsure pick (under `AUTO_EFFORT_MIN_CONFIDENCE`)
-  keeps the session's level and says so: `Thinking for this prompt: high, kept
-  as the picker was unsure`. When thinking is off or the model doesn't reason,
+  keeps the session's level and says so: `Thinking kept at: high, the picker
+  leaned to medium but was unsure`. When thinking is off or the model doesn't reason,
   nothing is posted:
   Pi's footer already shows that level, and it is the right one.
 - A problem is posted once. The same problem on the next prompts stays silent
