@@ -26,7 +26,7 @@ test("a level moved by the configured range or the model says so", () => {
 });
 
 test("a level that stands needs no line", () => {
-	for (const reason of ["default", "low confidence", "model takes no effort"]) assert.equal(problemNote(reason, "high"), null);
+	for (const reason of ["low confidence", "model takes no effort"]) assert.equal(problemNote(reason, "high"), null);
 });
 
 test("problems say the level that stays, Nisev loading as one kind", () => {
@@ -46,8 +46,6 @@ test("problems say the level that stays, Nisev loading as one kind", () => {
 });
 
 test("the status names the level instead of default", () => {
-	assert.equal(describeDecision({ effort: null, choice: "default", confidence: 0.56, category: "light", reason: "default" }, "high"),
-		"kept high, the model's default fits a small change (56% sure)");
 	assert.equal(describeDecision({ effort: null, choice: "low", confidence: 0.3, reason: "low confidence" }, "high"), "kept high; it leaned to low but was only 30% sure");
 	assert.equal(describeDecision({ effort: "xhigh", choice: "max", confidence: 0.99, category: "exhaustive", reason: "jev" }, "medium"),
 		"set to xhigh, picked max, for an exhaustive task (99% sure)");

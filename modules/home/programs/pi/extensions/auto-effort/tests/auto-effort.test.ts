@@ -195,10 +195,13 @@ test("a lower pick says so, and the status names the level the last decision kep
 	assert.match(text, /Last problem: effort request failed: fetch failed/);
 });
 
-test("the status names the level a kept decision ran at, not \"default\"", async () => {
+test("the status names the level a decision ran at, not \"default\"", async () => {
 	const h = harness({ fetch: () => jevReply("default", 0.7), level: "high" });
 	await h.prompt("Add a --verbose flag to the CLI");
-	assert.match(await h.command("status"), /Last decision: kept high, the model's default fits \(70% sure\)/);
+	assert.match(await h.command("status"), /Last decision: set to medium, for a small change \(70% sure\)/);
+	const unsure = harness({ fetch: () => jevReply("low", 0.3), level: "high" });
+	await unsure.prompt("hmm");
+	assert.match(await unsure.command("status"), /Last decision: kept high; it leaned to low but was only 30% sure/);
 	const raised = harness();
 	await raised.prompt("Migrate the build to Vite");
 	assert.match(await raised.command("status"), /Last decision: set to high, for multi-step work \(90% sure\)/);
@@ -218,11 +221,13 @@ test("the request goes to the configured endpoint with the key and model", async
 	assert.deepEqual(Object.keys(req!.body.questions.effort.criteria), ["low", "medium", "default", "high", "xhigh", "max"]);
 });
 
-test('"default" keeps the session effort, and says nothing', async () => {
-	const h = harness({ fetch: () => jevReply("default", 0.95) });
+test('"default" applies the model\'s own level, and says so when it isn\'t the session\'s', async () => {
+	const same = harness({ fetch: () => jevReply("default", 0.95) });
+	assert.equal(await same.prompt("Add a --verbose flag to the CLI"), "medium");
+	assert.deepEqual(same.lines(), []);
+	const h = harness({ fetch: () => jevReply("default", 0.95), level: "high" });
 	assert.equal(await h.prompt("Add a --verbose flag to the CLI"), "medium");
-	assert.deepEqual(h.seen.levels, []);
-	assert.deepEqual(h.lines(), []);
+	assert.deepEqual(h.lines(), ["info: Thinking for this prompt: medium, for a small change"]);
 });
 
 test("a low-confidence answer keeps the session effort, and says nothing", async () => {
@@ -428,9 +433,13 @@ test("Nisev is asked the category question, and its answer is mapped for the mod
 	assert.deepEqual(h.lines(), ["info: Thinking for this prompt: high, for multi-step work"]);
 });
 
-test("ordinary work on Nisev keeps the model's default", async () => {
-	const h = harness({ env: NISEV_ENV, fetch: nisevFetch({ trivial: 0.05, light: 0.15, ordinary: 0.6, multi_step: 0.15, hard: 0.04, exhaustive: 0.01 }) });
+test("ordinary work on Nisev runs at the model's default, even under a higher session level", async () => {
+	const ordinary = { trivial: 0.05, light: 0.15, ordinary: 0.6, multi_step: 0.15, hard: 0.04, exhaustive: 0.01 };
+	const h = harness({ env: NISEV_ENV, fetch: nisevFetch(ordinary) });
 	assert.equal(await h.prompt("Add a --verbose flag"), "medium");
+	const high = harness({ env: NISEV_ENV, fetch: nisevFetch(ordinary), level: "high" });
+	assert.equal(await high.prompt("Add a --verbose flag"), "medium");
+	assert.deepEqual(high.lines(), ["info: Thinking for this prompt: medium, for a typical task"]);
 });
 
 test("the same answer means the default on a model whose default is high", async () => {

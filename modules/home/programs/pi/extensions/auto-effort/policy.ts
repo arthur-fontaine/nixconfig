@@ -323,8 +323,6 @@ function decideNisev(answer: Answer, config: Config, model: string | undefined):
 	const level = LEVELS.reduce<Level>((best, l) => (levels[l] > levels[best] ? l : best), LEVELS[0]);
 	const confidence = levels[level];
 	const category = answer.choice;
-	// The model's default is what `default` keeps: the session's own effort stands.
-	if (level === profileOf(model).default) return { effort: null, choice: "default", confidence, category, reason: "default" };
 	if (confidence < config.minConfidence) return { effort: null, choice: level, confidence, category, reason: "low confidence" };
 	return { effort: clamp(level, config.minEffort, config.maxEffort), choice: level, confidence, category, reason: "jev" };
 }
@@ -336,8 +334,10 @@ export function decide(response: any, config: Config, model?: string): Decision 
 		return { effort: null, reason: "no effort answer" };
 	}
 	if (config.provider === "nisev") return decideNisev(answer, config, model);
-	const { choice, confidence } = answer;
-	if (choice === "default") return { effort: null, choice, confidence, reason: "default" };
+	// `default` is the model's own level, applied like any pick: keeping the session's level
+	// instead ran Opus 5.5 at the user's high for work the classifier judged medium.
+	const choice = answer.choice === "default" && takesEffort(model) ? profileOf(model).default : answer.choice;
+	const { confidence } = answer;
 	if (!isLevel(choice)) return { effort: null, choice, confidence, reason: `unknown choice ${choice}` };
 	if (typeof confidence !== "number" || confidence < config.minConfidence) {
 		return { effort: null, choice, confidence, reason: "low confidence" };
@@ -351,7 +351,6 @@ export function describe(decision: Decision) {
 		const capped = decision.choice && decision.choice !== decision.effort ? ` (picked ${decision.choice})` : "";
 		return `effort ${decision.effort}${capped}${pct}`;
 	}
-	if (decision.reason === "default") return `effort default${pct}`;
 	if (decision.reason === "low confidence") return `effort default (unsure: ${decision.choice}${pct})`;
 	return `effort default (${decision.reason})`;
 }

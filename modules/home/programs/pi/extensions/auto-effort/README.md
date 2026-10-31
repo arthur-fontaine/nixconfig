@@ -63,8 +63,10 @@ footer.
 
 Why so:
 
-- When the session's level stands (the model's default fits, the classifier
-  wasn't sure, thinking is off, the model doesn't reason), nothing is posted:
+- The classifier's pick runs even when it is the model's own default (medium
+  for Opus 5.5), so a session set to high runs ordinary work at medium. When
+  the session's level stands (the pick equals it, the classifier wasn't sure,
+  thinking is off, the model doesn't reason), nothing is posted:
   Pi's footer already shows that level, and it is the right one.
 - A problem is posted once. The same problem on the next prompts stays silent
   until a prompt is decided again; `/auto-effort` keeps the details.
@@ -88,7 +90,7 @@ Why so:
 | :- | :- | :- |
 | Classify each prompt with the System One request (prompt clipped to 6,000/3,000 characters, previous reply to 1,500/800, model name) | `input` handler; previous reply from the session branch; model from `ctx.model.id` | Yes |
 | Jev question with `default`; Nisev category question mapped through per-model tables (Opus 5.5 defaults to `medium`) | `policy.ts`, ported as is | Yes |
-| Keep the session's effort on `default`, low confidence, timeout, errors, Nisev starting, no provider | Same rules | Yes |
+| Keep the session's effort on `default`, low confidence, timeout, errors, Nisev starting, no provider | `default` applies the model's own level instead (it kept a session set to high at high for work judged medium); the rest the same | No |
 | Clamp to `AUTO_EFFORT_MIN_EFFORT`–`MAX_EFFORT` | Same, then Pi clamps to what the model supports | Yes |
 | Cloudflare `result` wrapper, cloud settings left in the environment reported for Nisev | Same | Yes |
 | Override the effort of one turn only | Sets the thinking level when the prompt's run starts, puts the session's back when it settles | Not exactly, see below |

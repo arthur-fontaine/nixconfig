@@ -41,10 +41,9 @@ export interface Problem {
 }
 
 // Why a prompt keeps the session's level when it isn't the classifier's own choice; null when it is
-// (the model's default fits, or the classifier wasn't sure), which needs no line: Pi's footer shows the level.
+// (the classifier wasn't sure, or the model doesn't think), which needs no line: Pi's footer shows the level.
 export function problemNote(reason: string, level: string): Problem | null {
 	switch (reason) {
-		case "default":
 		case "low confidence":
 		case "model takes no effort":
 			return null;
@@ -72,7 +71,6 @@ export function describeDecision(decision: Decision, level: string) {
 		const picked = decision.choice && decision.choice !== decision.effort ? `, picked ${decision.choice}` : "";
 		return `set to ${decision.effort}${picked}${kind ? `, for ${kind}` : ""}${sure && ` (${sure})`}`;
 	}
-	if (decision.reason === "default") return `kept ${level}, the model's default fits${kind ? ` ${kind}` : ""}${sure && ` (${sure})`}`;
 	if (decision.reason === "low confidence") return `kept ${level}; it leaned to ${decision.choice} but was only ${sure}`;
 	return `kept ${level} (${decision.reason})`;
 }
