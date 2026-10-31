@@ -64,9 +64,11 @@ footer.
 Why so:
 
 - The classifier's pick runs even when it is the model's own default (medium
-  for Opus 5.5), so a session set to high runs ordinary work at medium. When
-  the session's level stands (the pick equals it, the classifier wasn't sure,
-  thinking is off, the model doesn't reason), nothing is posted:
+  for Opus 5.5), so a session set to high runs ordinary work at medium. Every
+  pick gets its line, even one equal to the session's level, so you see the
+  picker ran. When the session's level stands for another reason (the
+  classifier wasn't sure, thinking is off, the model doesn't reason), nothing
+  is posted:
   Pi's footer already shows that level, and it is the right one.
 - A problem is posted once. The same problem on the next prompts stays silent
   until a prompt is decided again; `/auto-effort` keeps the details.

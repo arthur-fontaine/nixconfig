@@ -423,7 +423,8 @@ export function autoEffort(pi: ExtensionAPI, deps: Deps) {
 		setLevel(effort);
 		const applied = pi.getThinkingLevel();
 		override = { baseline, applied };
-		if (applied !== baseline) note = { text: changeNote(decision, applied), type: "info" };
+		// Even when it matches the session's level: the line is how you see the picker ran.
+		note = { text: changeNote(decision, applied), type: "info" };
 	}
 
 	async function saveConfig(config: StoredConfig) {

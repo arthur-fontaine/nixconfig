@@ -221,10 +221,10 @@ test("the request goes to the configured endpoint with the key and model", async
 	assert.deepEqual(Object.keys(req!.body.questions.effort.criteria), ["low", "medium", "default", "high", "xhigh", "max"]);
 });
 
-test('"default" applies the model\'s own level, and says so when it isn\'t the session\'s', async () => {
+test('"default" applies the model\'s own level, and says so', async () => {
 	const same = harness({ fetch: () => jevReply("default", 0.95) });
 	assert.equal(await same.prompt("Add a --verbose flag to the CLI"), "medium");
-	assert.deepEqual(same.lines(), []);
+	assert.deepEqual(same.lines(), ["info: Thinking for this prompt: medium, for a small change"]);
 	const h = harness({ fetch: () => jevReply("default", 0.95), level: "high" });
 	assert.equal(await h.prompt("Add a --verbose flag to the CLI"), "medium");
 	assert.deepEqual(h.lines(), ["info: Thinking for this prompt: medium, for a small change"]);
@@ -236,10 +236,10 @@ test("a low-confidence answer keeps the session effort, and says nothing", async
 	assert.deepEqual(h.lines(), []);
 });
 
-test("a pick equal to the session's level changes nothing, and says nothing", async () => {
+test("a pick equal to the session's level still says so, so you see the picker ran", async () => {
 	const h = harness({ level: "high" });
 	assert.equal(await h.prompt("Migrate the build to Vite"), "high");
-	assert.deepEqual(h.lines(), []);
+	assert.deepEqual(h.lines(), ["info: Thinking for this prompt: high, for multi-step work"]);
 });
 
 test("the pick is capped at max_effort", async () => {
@@ -267,7 +267,8 @@ test("a classifier that stays down says so once, and again after it came back", 
 	await h.prompt("Add a flag");
 	down = true;
 	await h.prompt("Fix it again");
-	assert.equal(h.lines().length, 2);
+	// The warning, the pick once it came back, then the warning again.
+	assert.equal(h.lines().length, 3);
 });
 
 test("a failed fetch keeps the session effort", async () => {
@@ -332,10 +333,15 @@ test("a follow-up queued during a run applies to its own part, not the running o
 	assert.equal(await h.start("Fix the flaky test"), "medium");
 	await h.input("Then audit the auth module", "followUp");
 	assert.equal(h.level(), "medium");
-	assert.deepEqual(h.lines(), []);
+	assert.deepEqual(h.lines(), ["info: Thinking for this prompt: medium, for a small change"]);
 	assert.equal(await h.deliver("Then audit the auth module"), "xhigh");
-	// Under the follow-up, when Pi delivers it.
-	assert.deepEqual(h.seen.chat, ["user: Fix the flaky test", "user: Then audit the auth module", "info: Thinking for this prompt: xhigh, for a hard task"]);
+	// Each under its own prompt; the follow-up's when Pi delivers it.
+	assert.deepEqual(h.seen.chat, [
+		"user: Fix the flaky test",
+		"info: Thinking for this prompt: medium, for a small change",
+		"user: Then audit the auth module",
+		"info: Thinking for this prompt: xhigh, for a hard task",
+	]);
 	await h.settle();
 	assert.equal(h.level(), "medium");
 });
@@ -445,8 +451,7 @@ test("ordinary work on Nisev runs at the model's default, even under a higher se
 test("the same answer means the default on a model whose default is high", async () => {
 	const h = harness({ env: NISEV_ENV, fetch: nisevFetch(MULTI_STEP), model: { id: "claude-sonnet-5-5", reasoning: true }, level: "high" });
 	assert.equal(await h.prompt("Refactor the payment module and make the tests pass"), "high");
-	assert.deepEqual(h.lines(), []);
-	assert.deepEqual(h.seen.levels, []);
+	assert.deepEqual(h.lines(), ["info: Thinking for this prompt: high, for multi-step work"]);
 });
 
 test("when llama-server is not running, the extension starts it and the prompt keeps its level", async () => {
