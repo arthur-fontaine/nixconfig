@@ -10,7 +10,7 @@ change back into the repo by hand, or the next `rebuild` reverts it.
 | --- | --- | --- |
 | Symlink | The live file points into the Nix store. It is read-only. Edit the repo, then `rebuild`. | Ghostty, Karabiner, zsh, Pi, Mise, git, gh, Neovim (except its lockfile), ssh, Llama model overrides |
 | Copy | `rebuild` copies the file and leaves it writable. The app can edit it. `rebuild` resets it. | Zed, Claude Code, Neovim lockfile, 1Password SSH agent |
-| Merge | `rebuild` merges the listed keys into a file the app also writes. Keys the module does not list are left alone. | Codex, OpenLogi, Claude desktop, Claude Code MCP servers, Mixologist |
+| Merge | `rebuild` merges the listed keys into a file the app also writes. Keys the module does not list are left alone. | Codex, OpenLogi, Claude desktop, Claude Code MCP servers, Mixologist, Herdr |
 | macOS defaults | `rebuild` writes the listed keys with `defaults import`. Keys the module does not list are left alone. | Droppy, Smallcast Beta, Some Browser, Keka, AirBattery, BetterDisplay, ProtonVPN, DigUp, screenshots, system settings |
 
 ## Find what changed
@@ -154,6 +154,18 @@ The module sets all three keys (`hidingMethod`, `hiddenApps`,
 applies the file as soon as it changes and rewrites it whenever you change a
 setting, so no restart is needed. `hiddenApps` holds bundle ids: Mixologist
 hides every item an app shows. The list started as the apps Bartender 7 hid.
+
+## Herdr
+
+Folder: `~/.config/herdr-app`. Repo module: `modules/home/programs/herdr/`.
+
+| Live file | How it is managed |
+| --- | --- |
+| `settings.json` | Merge: font size, contrast, sounds. Settings and the zoom keys write it. |
+| `shared.json` | Merge: the shown layout (`nix`) and the Files/Changes panels (`workspace.panels`). The rest is mods' state. Herdr holds it in memory, so quit Herdr before `rebuild`. |
+| `layouts/nix.json`, `mods/nix-spaces/`, `mods/nix-agents/` | Symlinks. Copies of Herdr's `main` layout and `spaces`/`agents` mods, patched (bare-clone repo names, pi session names). Diff them against Herdr's after an update. |
+| `keys.json` | Not managed: Herdr's defaults. |
+| `layouts/.state/` | Not managed: clicks on the shipped layouts. Port a click you want to keep into `layouts/nix.json`. |
 
 ## Keka, AirBattery, BetterDisplay, ProtonVPN
 

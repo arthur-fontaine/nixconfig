@@ -135,7 +135,7 @@
             {
               "id": "panel",
               "type": "column",
-              "hidden": true,
+              "hidden": false,
               "size": {
                 "px": 368
               },
@@ -145,7 +145,7 @@
                 {
                   "id": "panel-body",
                   "type": "stack",
-                  "active": "files",
+                  "active": "changes",
                   "children": [
                     {
                       "id": "files",
