@@ -163,7 +163,7 @@ Folder: `~/.config/herdr-app`. Repo module: `modules/home/programs/herdr/`.
 | --- | --- |
 | `settings.json` | Merge: font size, contrast, sounds. Settings and the zoom keys write it. |
 | `shared.json` | Merge: the shown layout (`nix`) and the Files/Changes panels (`workspace.panels`). The rest is mods' state. Herdr holds it in memory, so quit Herdr before `rebuild`. |
-| `layouts/nix.json`, `mods/nix-*/` | Symlinks. Copies of Herdr's `main` layout and its `spaces`, `agents`, `files` and `changes` mods, patched: bare-clone repo names, pi session names, each file opens in Neovim in a tab of its own, the session's commits under Changes. Diff them against Herdr's after an update. |
+| `layouts/nix.json`, `mods/nix-*/` | Symlinks. Copies of Herdr's `main` layout and its `spaces`, `agents`, `files` and `changes` mods, patched: bare-clone repo names, pi session names, each file opens in Neovim in a tab of its own, Changes laid out like Zed's git panel (stage boxes, commit box, history with the session's commits), and `nix-diff`, the diff tab it opens for the uncommitted changes or a commit. Diff them against Herdr's after an update. |
 | `keys.json` | Not managed: Herdr's defaults. |
 | `layouts/.state/` | Not managed: clicks on the shipped layouts. Port a click you want to keep into `layouts/nix.json`. |
 
