@@ -26,10 +26,11 @@ let
 
   # Herdr rewrites its shipped mods and layouts on every start, so changes live
   # in copies: `nix` is the shipped `main` layout pointing at nix-spaces and
-  # nix-agents (shipped spaces/agents from herdr-app 0.1.11, then patched).
+  # nix-agents, nix-files and nix-changes (shipped from herdr-app 0.1.11, then
+  # patched).
   # Files are linked one by one: Herdr writes jsconfig.json and .d.ts files
   # into each mod folder, so the folders themselves must stay writable.
-  mods = [ "nix-spaces" "nix-agents" ];
+  mods = [ "nix-spaces" "nix-agents" "nix-files" "nix-changes" ];
   modFiles = lib.listToAttrs (lib.concatMap (mod: map (file: {
     name = "herdr-app/mods/${mod}/${file}";
     value.source = ./mods/${mod}/${file};
