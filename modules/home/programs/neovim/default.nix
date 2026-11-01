@@ -1,8 +1,8 @@
 { pkgs, ... }:
 let
   plugins = with pkgs.vimPlugins; [
-    neovim-ayu
-    mini-icons
+    # mini.base16 (the terminal's palette as a theme) and mini.icons.
+    mini-nvim
     snacks-nvim
     blink-cmp
     nvim-lspconfig
@@ -21,10 +21,17 @@ let
   # looks for packages on its own, ~/.local/share/nvim/site/pack.
   pack = pkgs.vimUtils.packDir { nix.start = plugins; };
 
+  # Exits 0 while Command is held: Cmd+click (init.lua).
+  cmdHeld = pkgs.runCommandCC "cmd-held" { } ''
+    mkdir -p $out/bin
+    $CC -O2 -framework CoreGraphics ${./cmd-held/cmd-held.c} -o $out/bin/cmd-held
+  '';
+
   # On Neovim's PATH only (init.lua), not the shell's.
   servers = pkgs.symlinkJoin {
-    name = "neovim-language-servers";
+    name = "neovim-tools";
     paths = with pkgs; [
+      cmdHeld
       typescript-language-server
       typescript
       vscode-langservers-extracted
