@@ -54,7 +54,65 @@ local function mix(a, b, t)
   return ("#%02x%02x%02x"):format(f(ar, br), f(ag, bg), f(ab, bb))
 end
 
+-- Zed's look on top of base16: no panel behind the gutter, one quiet color for
+-- punctuation, Zed's One theme roles for syntax (purple keywords, blue calls,
+-- cyan types and operators, green strings, orange constants, red properties),
+-- squiggles instead of loud end-of-line errors, git bars green/yellow/red.
+local function zed(p)
+  local bg, fg = p.bg, p.fg
+  local orange = mix(p[1], p[3], 0.5)
+  local dim, muted, faint = mix(bg, fg, 0.38), mix(bg, fg, 0.62), mix(bg, fg, 0.09)
+  local float = mix(bg, fg, 0.05)
+  local groups = {
+    -- Same background as the terminal, so the editor and Herdr's pane are one surface.
+    Normal = { fg = fg }, NormalNC = { fg = fg }, EndOfBuffer = { fg = bg }, SignColumn = {}, FoldColumn = {},
+    LineNr = { fg = mix(bg, fg, 0.3) }, CursorLineNr = { fg = fg }, CursorLine = { bg = mix(bg, fg, 0.045) },
+    CursorLineSign = {}, CursorLineFold = {}, WinSeparator = { fg = faint },
+    Visual = { bg = mix(bg, p[4], 0.28) }, Search = { bg = mix(bg, p[4], 0.4) }, CurSearch = { bg = mix(bg, p[4], 0.6) },
+    MatchParen = { bg = mix(bg, fg, 0.16) },
+    NormalFloat = { bg = float }, FloatBorder = { fg = mix(bg, fg, 0.2), bg = float }, FloatTitle = { fg = fg, bg = float },
+    Pmenu = { bg = float }, PmenuSel = { bg = mix(bg, fg, 0.13) }, PmenuThumb = { bg = mix(bg, fg, 0.25) },
+    StatusLine = { fg = muted, bg = mix(bg, fg, 0.03) }, StatusLineNC = { fg = dim, bg = mix(bg, fg, 0.03) },
+    Comment = { fg = dim }, ["@comment"] = { fg = dim },
+    Delimiter = { fg = muted }, ["@punctuation"] = { fg = muted }, ["@punctuation.bracket"] = { fg = muted },
+    ["@punctuation.delimiter"] = { fg = muted }, ["@punctuation.special"] = { fg = p[1] },
+    ["@variable"] = { fg = fg }, ["@variable.parameter"] = { fg = fg }, ["@variable.builtin"] = { fg = orange },
+    ["@variable.member"] = { fg = p[1] }, ["@property"] = { fg = p[1] },
+    Keyword = { fg = p[5] }, Statement = { fg = p[5] }, Conditional = { fg = p[5] }, Repeat = { fg = p[5] },
+    Exception = { fg = p[5] }, ["@keyword"] = { fg = p[5] }, ["@keyword.return"] = { fg = p[5] },
+    ["@keyword.conditional"] = { fg = p[5] }, ["@keyword.repeat"] = { fg = p[5] }, ["@keyword.exception"] = { fg = p[5] },
+    ["@keyword.operator"] = { fg = p[5] }, ["@keyword.import"] = { fg = p[5] }, ["@keyword.function"] = { fg = p[5] },
+    Function = { fg = p[4] }, ["@function"] = { fg = p[4] }, ["@function.call"] = { fg = p[4] },
+    ["@function.method"] = { fg = p[4] }, ["@function.method.call"] = { fg = p[4] }, ["@constructor"] = { fg = p[6] },
+    Type = { fg = p[6] }, ["@type"] = { fg = p[6] }, ["@type.builtin"] = { fg = p[6] }, ["@module"] = { fg = fg },
+    Operator = { fg = p[6] }, ["@operator"] = { fg = p[6] },
+    String = { fg = p[2] }, ["@string"] = { fg = p[2] }, ["@string.escape"] = { fg = muted }, ["@string.regexp"] = { fg = orange },
+    Number = { fg = orange }, Boolean = { fg = orange }, Constant = { fg = orange }, ["@number"] = { fg = orange },
+    ["@boolean"] = { fg = orange }, ["@constant"] = { fg = orange }, ["@constant.builtin"] = { fg = orange },
+    ["@tag"] = { fg = p[4] }, ["@tag.attribute"] = { fg = p[1] }, ["@tag.delimiter"] = { fg = muted },
+    DiagnosticError = { fg = p[1] }, DiagnosticWarn = { fg = p[3] }, DiagnosticInfo = { fg = p[4] }, DiagnosticHint = { fg = muted },
+    DiagnosticUnderlineError = { undercurl = true, sp = p[1] }, DiagnosticUnderlineWarn = { undercurl = true, sp = p[3] },
+    DiagnosticUnderlineInfo = { undercurl = true, sp = p[4] }, DiagnosticUnderlineHint = { undercurl = true, sp = muted },
+    GitSignsAdd = { fg = p[2] }, GitSignsChange = { fg = p[3] }, GitSignsDelete = { fg = p[1] },
+    SnacksIndent = { fg = faint }, SnacksIndentScope = { fg = mix(bg, fg, 0.22) },
+    LspReferenceText = { bg = mix(bg, p[4], 0.16) }, LspReferenceRead = { bg = mix(bg, p[4], 0.16) },
+    LspReferenceWrite = { bg = mix(bg, p[4], 0.16) },
+    BlinkCmpMenu = { bg = float }, BlinkCmpMenuBorder = { fg = mix(bg, fg, 0.2), bg = float },
+    BlinkCmpDoc = { bg = float }, BlinkCmpDocBorder = { fg = mix(bg, fg, 0.2), bg = float },
+  }
+  for name, spec in pairs(groups) do vim.api.nvim_set_hl(0, name, spec) end
+end
+
+-- The status bar, flat as Zed's: no colored blocks, the mode as plain text.
+local function statusTheme(p)
+  local bar = { fg = mix(p.bg, p.fg, 0.62), bg = mix(p.bg, p.fg, 0.03) }
+  local section = { a = bar, b = bar, c = bar }
+  return { normal = section, insert = section, visual = section, replace = section, command = section, inactive = section }
+end
+
+local palette
 local function apply(p)
+  palette = p
   local bg, fg = p.bg, p.fg
   local r, g, b = hex2rgb(bg)
   o.background = (0.299 * r + 0.587 * g + 0.114 * b) < 128 and "dark" or "light"
@@ -66,7 +124,9 @@ local function apply(p)
       base0C = p[6], base0D = p[4], base0E = p[5], base0F = mix(p[1], bg, 0.35),
     },
   })
+  zed(p)
   vim.g.colors_name = "terminal"
+  if package.loaded.lualine then require("lualine").setup({ options = { theme = statusTheme(p) } }) end
 end
 
 local function query()
@@ -130,18 +190,14 @@ vim.lsp.config("lua_ls", {
   settings = { Lua = { workspace = { library = vim.api.nvim_get_runtime_file("", true) } } },
 })
 
+-- As Zed: a squiggle under the problem, its message on hover (gh), nothing
+-- spilled onto the end of the line or into the gutter.
 vim.diagnostic.config({
   severity_sort = true,
-  virtual_text = { spacing = 2, prefix = "●" },
+  underline = true,
+  virtual_text = false,
+  signs = false,
   float = { border = "rounded", source = "if_many" },
-  signs = {
-    text = {
-      [vim.diagnostic.severity.ERROR] = "",
-      [vim.diagnostic.severity.WARN] = "",
-      [vim.diagnostic.severity.INFO] = "",
-      [vim.diagnostic.severity.HINT] = "",
-    },
-  },
 })
 o.winborder = "rounded"
 
@@ -174,7 +230,12 @@ Snacks.setup({
   scope = { enabled = true },
 })
 
-require("gitsigns").setup({ current_line_blame = false })
+-- Thin bars in the gutter, like Zed's.
+require("gitsigns").setup({
+  current_line_blame = false,
+  signs = { add = { text = "▎" }, change = { text = "▎" }, delete = { text = "▁" }, topdelete = { text = "▔" }, changedelete = { text = "▎" } },
+  signs_staged_enable = false,
+})
 
 require("bufferline").setup({
   options = {
@@ -188,19 +249,21 @@ require("bufferline").setup({
   },
 })
 
+-- Zed's status bar: the file and its problems on the left; position, vim mode
+-- and language on the right.
 require("lualine").setup({
   options = {
-    theme = "auto",
+    theme = palette and statusTheme(palette) or "auto",
     globalstatus = true,
     component_separators = "",
     section_separators = "",
   },
   sections = {
-    lualine_a = { "mode" },
-    lualine_b = { "branch", "diff" },
-    lualine_c = { { "filename", path = 1 } },
-    lualine_x = { "diagnostics", "filetype" },
-    lualine_y = { "location" },
+    lualine_a = {},
+    lualine_b = { { "filename", path = 1, symbols = { modified = " ●", readonly = "" } } },
+    lualine_c = { { "diagnostics", symbols = { error = "⊗ ", warn = "⚠ ", info = "ⓘ ", hint = "· " } } },
+    lualine_x = { "location", { "mode", fmt = function(m) return "-- " .. m .. " --" end } },
+    lualine_y = { { "filetype", icon_only = false } },
     lualine_z = {},
   },
 })
