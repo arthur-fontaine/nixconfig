@@ -1,12 +1,9 @@
 // A lazy file browser for the focused pane's folder. Shipped: files preview in
-// the panel. Here a file opens in Neovim beside the terminals, one Neovim per
-// tab that later files open in, for its language servers.
+// the panel. Here a file opens in Neovim, in a tab of its own.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run } from "herdr";
 
-// The Neovim a tab's files open in listens here; the tab id is [a-z0-9].
-const socket = (tab) => `/tmp/herdr-nvim-${tab.replace(/[^\w-]/g, "")}.sock`;
 
 function location() {
   const space = spaces().find(s => s.active), f = focused();
@@ -142,34 +139,25 @@ export default class Files extends View {
     });
   }
 
-  // Into the tab's Neovim if it still runs, else a new one right of the terminal.
+  // Each file in its own tab, in Neovim: the tab it already has, else a new one
+  // named after it. Quitting Neovim ends the terminal, which closes the tab
+  // (agents run in a shell that would otherwise stay open).
   edit(path, cx) {
-    const f = focused(), root = this.root, on = this.on, file = `${root}/${path}`;
-    if (!f?.tab || !root) return;
-    const tab = f.tab, sock = socket(tab);
-    this.editing ??= {};
+    const space = spaces().find((s) => s.active), root = this.root, file = `${root}/${path}`;
+    if (!space || !root) return;
+    this.tabs ??= {};
+    const known = this.tabs[file];
+    if (known && space.tabs.some((t) => t.id === known)) return run("tab.select", { id: known });
+    const before = new Set(space.tabs.map((t) => t.id));
+    run("tab.new", {
+      name: path.split("/").pop(), folder: root,
+      argv: ["sh", "-c", 'nvim "$1"; hc kill "$HC_TERMINAL_ID"', "nvim", file],
+    });
     cx.spawn(async (cx) => {
-      const mine = (pane) => panes().some((p) => p.pane === pane && p.tab === tab);
-      // Another machine's space: no shared socket, a Neovim each time.
-      const alive = !on && mine(this.editing[tab])
-        && (await exec("nvim", ["--server", sock, "--remote-expr", "1"]).catch(() => null))?.code === 0;
-      if (alive) {
-        await exec("nvim", ["--server", sock, "--remote", file]);
-        run("pane.focus", { pane: this.editing[tab] });
-        return;
-      }
-      // A socket left by a Neovim that died answers nothing and blocks --listen.
-      if (!on) await exec("rm", ["-f", sock]).catch(() => null);
-      const own = panes().filter((p) => p.tab === tab);
-      const lead = own.find((p) => p.pane === f.pane && p.terminal) ?? own.find((p) => p.program?.agent) ?? own.find((p) => p.terminal);
-      const before = new Set(own.map((p) => p.pane));
-      if (lead) run("pane.focus", { pane: lead.pane });
-      run("terminal.open", { place: "right", folder: root, argv: on ? ["nvim", file] : ["nvim", "--listen", sock, file] });
-      // The new pane, to send later files to.
       for (let i = 0; i < 20; i++) {
         await new Promise((r) => cx.timer.after(100, r));
-        const added = panes().find((p) => p.tab === tab && !before.has(p.pane));
-        if (added) { this.editing[tab] = added.pane; break; }
+        const added = spaces().find((s) => s.id === space.id)?.tabs.find((t) => !before.has(t.id));
+        if (added) { this.tabs[file] = added.id; break; }
       }
     });
   }
