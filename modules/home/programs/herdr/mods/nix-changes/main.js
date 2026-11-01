@@ -1,6 +1,21 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings } from "herdr";
+import { spaces, panes, focused, agents, hc, exec, readTextFile, watchFolder, theme, settings } from "herdr";
+
+// Shipped, plus the branch's recent commits under the changed files: those made
+// since the focused tab's agent started (its session) first, older ones dimmed.
+const LOG = 30;
+
+// The agent the panel follows: the focused one, else the first in the focused tab.
+function sessionAgent() {
+  const f = focused(), list = agents();
+  return list.find((a) => a.focused) ?? list.find((a) => a.tab === f?.tab) ?? null;
+}
+
+function ago(s) {
+  const m = Math.floor((Date.now() / 1000 - s) / 60);
+  return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
+}
 
 function location() {
   const space = spaces().find((s) => s.active), f = focused();
@@ -31,6 +46,7 @@ function diffRows(lines) {
 export default class Changes extends View {
   init(_props, cx) {
     this.files = []; this.rows = []; this.diffWidth = 0; this.message = ""; this.handle = cx.focus_handle();
+    this.commits = []; this.started = {};
     this.input = InputState.new({ placeholder: "Commit message" });
     this.input.on("change", (_e, cx) => {
       const hadMessage = Boolean(this.message.trim());
@@ -61,7 +77,7 @@ export default class Changes extends View {
     if (this.loading || this.busy) return;
     const { cwd, on } = location(), context = key();
     if (context !== this.context) {
-      this.context = context; this.root = null; this.files = []; this.open = null;
+      this.context = context; this.root = null; this.files = []; this.open = null; this.commits = []; this.shown = null;
       this.setLines([]); this.message = ""; this.input.set_value(""); this.error = null; this.note = null; this.watched = null; this.closed = false; this.limited = false;
     }
     if (!cwd) return;
@@ -98,9 +114,10 @@ export default class Changes extends View {
         if (key() !== context) return;
         this.root = root; this.on = on; this.hasHead = head.code === 0; this.files = files; this.limited = entries.length > 1000; this.error = null;
         this.watch(root, cx);
+        await this.loadLog(root, on, context);
         if (this.open && !files.some((f) => f.path === this.open)) { this.open = null; this.setLines([]); }
-        // The first file's diff shows until you pick another.
-        if (!this.open && !this.closed && files.length) this.open = files[0].path;
+        // The first file's diff shows until you pick another (or a commit).
+        if (!this.open && !this.shown && !this.closed && files.length) this.open = files[0].path;
         if (this.open) {
           try { await this.load(this.open, context); }
           catch { if (key() === context) this.setLines(["Cannot preview this diff (too large or unreadable)"]); }
@@ -131,13 +148,50 @@ export default class Changes extends View {
     if (key() === context && this.open === path) this.setLines(lines.slice(0, 1500).map(line => line.length > 4000 ? line.slice(0, 4000) + "… (line truncated)" : line));
   }
 
+  // When the session's agent started (its terminal's creation), asked once per agent.
+  async sessionStart() {
+    const a = sessionAgent();
+    if (!a) return null;
+    if (!(a.address in this.started)) {
+      const r = await hc(["get", a.address, "--json"]).catch(() => null);
+      let ms = null;
+      try { ms = JSON.parse(r?.stdout ?? "").created_ms ?? null; } catch {}
+      this.started[a.address] = ms;
+    }
+    return this.started[a.address];
+  }
+
+  async loadLog(root, on, context) {
+    const r = await exec("git", [...READ, "log", `-n${LOG}`, "--format=%H%x00%h%x00%ct%x00%s"], { cwd: root, on }).catch(() => null);
+    if (key() !== context) return;
+    if (r?.code !== 0) { this.commits = []; return; }
+    const since = await this.sessionStart();
+    this.commits = r.stdout.split("\n").filter(Boolean).map((line) => {
+      const [sha, short, time, subject] = line.split("\0");
+      return { sha, short, time: +time, subject, session: since !== null && +time * 1000 >= since };
+    });
+  }
+
+  showCommit(sha, cx) {
+    this.shown = this.shown === sha ? null : sha; this.open = null; this.closed = true; this.setLines([]); this.note = null;
+    const context = this.context, root = this.root, on = this.on;
+    if (this.shown) cx.spawn(async (cx) => {
+      const r = await exec("git", [...READ, "show", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", sha], { cwd: root, on }).catch(() => null);
+      if (key() !== context || this.shown !== sha) return;
+      if (r?.code !== 0) this.note = "Cannot show this commit";
+      else this.setLines(r.stdout.replace(/\n$/, "").split("\n").slice(0, 3000).map((l) => l.length > 4000 ? l.slice(0, 4000) + "… (line truncated)" : l));
+      cx.notify();
+    });
+    cx.notify();
+  }
+
   setLines(lines) {
     this.rows = diffRows(lines);
     this.diffWidth = Math.max(300, ...lines.map(line => line.length * 7 + 50));
   }
 
   pick(path, cx) {
-    this.open = this.open === path ? null : path; this.setLines([]); this.note = null;
+    this.open = this.open === path ? null : path; this.shown = null; this.setLines([]); this.note = null;
     this.closed = !this.open;
     const context = this.context;
     if (this.open) cx.spawn(async (cx) => {
@@ -163,6 +217,21 @@ export default class Changes extends View {
       finally { this.busy = false; this.refresh(cx); cx.notify(); }
     });
     cx.notify();
+  }
+
+  commitList(t) {
+    const mine = this.commits.filter((c) => c.session).length;
+    const row = (c) => h_flex().id(`commit-${c.sha}`).h(26).flex_none().px(8).gap(8).items_center().rounded(7).cursor_pointer()
+      .when(this.shown === c.sha, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.showCommit(c.sha, cx))
+      .child(div().w(7).h(7).flex_none().rounded(4).bg(c.session ? t.accent : t.border))
+      .child(div().flex_none().text_size(11).text_color(t.dim).font_family(settings().font_family ?? "JetBrains Mono").child(c.short))
+      .child(div().flex_1().min_w(0).truncate().text_color(c.session ? t.foreground : t.muted).child(c.subject))
+      .child(div().flex_none().text_size(11).text_color(t.dim).child(ago(c.time)));
+    return v_flex().flex_none().border_b(1).border_color(t.border)
+      .child(h_flex().h(30).flex_none().px(14).gap(8).items_center()
+        .child(div().font_semibold().text_size(12).child("Commits"))
+        .when(mine > 0, (e) => e.child(div().px(5).py(1).rounded(4).border_1().border_color(t.accent).text_size(10).text_color(t.accent).child(`${mine} this session`))))
+      .child(v_flex().id("changes-commits").h(Math.min(170, this.commits.length * 26 + 8)).overflow_y_scrollbar().px(6).pb(6).children(this.commits.map(row)));
   }
 
   diffRow({ kind, number, text }, t) {
@@ -192,12 +261,13 @@ export default class Changes extends View {
           .when(f.add > 0, (e) => e.child(div().text_size(11).text_color(t.ansi2).child(`+${f.add}`))).when(f.del > 0, (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`−${f.del}`)));
       })).when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder")))))
       .when(this.limited, el => el.child(div().px(12).py(4).text_size(11).text_color(t.dim).child("Showing the first 1,000 changed files")))
+      .when(this.commits.length > 0, (el) => el.child(this.commitList(t)))
       .child(div().flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(11)
         .child(div().id("changes-diff-x").size_full().overflow_x_scrollbar()
           .child(div().w_full().min_w(this.diffWidth).h_full().child(v_virtual_list("changes-diff", this.rows.length, 20, (i) => String(i),
             (range) => this.rows.slice(range.start, range.end).map((row) => this.diffRow(row, t))).size_full())))
         .child(Scrollbar.vertical("changes-diff").viewport_from_layout().absolute().inset_0())
-        .when(!this.open && this.files.length > 0, (e) => e.child(div().absolute().top(6).px(12).text_color(t.dim).child("Select a file to view its changes"))))
+        .when(!this.open && !this.shown && this.files.length > 0, (e) => e.child(div().absolute().top(6).px(12).text_color(t.dim).child("Select a file to view its changes"))))
       .when(Boolean(this.note), (e) => e.child(div().px(10).pb(8).text_size(11).text_color(t.ansi1).child(this.note)))
       .child(h_flex().flex_none().p(10).gap(8).border_t(1).border_color(t.border)
         .child(div().id("commit-message").flex_1().min_w(0).h(32).px(10).flex().items_center().rounded(8).border_1().border_color(this.typing ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(12).text_color(t.foreground)))

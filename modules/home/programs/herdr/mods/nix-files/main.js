@@ -1,7 +1,12 @@
-// A lazy file browser for the focused pane's folder, with bounded read-only previews.
+// A lazy file browser for the focused pane's folder. Shipped: files preview in
+// the panel. Here a file opens in Neovim beside the terminals, one Neovim per
+// tab that later files open in, for its language servers.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run } from "herdr";
+
+// The Neovim a tab's files open in listens here; the tab id is [a-z0-9].
+const socket = (tab) => `/tmp/herdr-nvim-${tab.replace(/[^\w-]/g, "")}.sock`;
 
 function location() {
   const space = spaces().find(s => s.active), f = focused();
@@ -137,13 +142,45 @@ export default class Files extends View {
     });
   }
 
+  // Into the tab's Neovim if it still runs, else a new one right of the terminal.
+  edit(path, cx) {
+    const f = focused(), root = this.root, on = this.on, file = `${root}/${path}`;
+    if (!f?.tab || !root) return;
+    const tab = f.tab, sock = socket(tab);
+    this.editing ??= {};
+    cx.spawn(async (cx) => {
+      const mine = (pane) => panes().some((p) => p.pane === pane && p.tab === tab);
+      // Another machine's space: no shared socket, a Neovim each time.
+      const alive = !on && mine(this.editing[tab])
+        && (await exec("nvim", ["--server", sock, "--remote-expr", "1"]).catch(() => null))?.code === 0;
+      if (alive) {
+        await exec("nvim", ["--server", sock, "--remote", file]);
+        run("pane.focus", { pane: this.editing[tab] });
+        return;
+      }
+      // A socket left by a Neovim that died answers nothing and blocks --listen.
+      if (!on) await exec("rm", ["-f", sock]).catch(() => null);
+      const own = panes().filter((p) => p.tab === tab);
+      const lead = own.find((p) => p.pane === f.pane && p.terminal) ?? own.find((p) => p.program?.agent) ?? own.find((p) => p.terminal);
+      const before = new Set(own.map((p) => p.pane));
+      if (lead) run("pane.focus", { pane: lead.pane });
+      run("terminal.open", { place: "right", folder: root, argv: on ? ["nvim", file] : ["nvim", "--listen", sock, file] });
+      // The new pane, to send later files to.
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => cx.timer.after(100, r));
+        const added = panes().find((p) => p.tab === tab && !before.has(p.pane));
+        if (added) { this.editing[tab] = added.pane; break; }
+      }
+    });
+  }
+
   rows(prefix, depth, out, t) {
     if (out.length >= TOTAL || depth > 40) return out;
     for (const entry of this.entries.get(prefix) ?? []) {
       if (out.length >= TOTAL) break;
       const path = prefix ? `${prefix}/${entry.name}` : entry.name, open = this.folders.has(path), mark = this.marks[`${this.root}/${path}`];
       out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
-        .on_click((_e, cx) => entry.dir ? this.toggle(path, cx) : this.show(path, cx))
+        .on_click((_e, cx) => entry.dir ? this.toggle(path, cx) : this.edit(path, cx))
         .child(entry.dir ? svg(`mods/files/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
         .child(svg(`mods/files/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
         .child(div().flex_1().min_w(0).truncate().child(entry.name))
