@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ lib, pkgs, ... }:
 let
   # herdr-core (`hc`) runs the Herdr app's terminals and agents; the app (the
   # `herdr-app` cask) won't open without it. Not in Homebrew or nixpkgs, and
@@ -23,7 +23,22 @@ let
     '';
     meta.platforms = [ "aarch64-darwin" ];
   };
+
+  # Herdr rewrites its shipped mods and layouts on every start, so changes live
+  # in copies: `nix` is the shipped `main` layout pointing at nix-spaces and
+  # nix-agents (shipped spaces/agents from herdr-app 0.1.11, then patched).
+  # Files are linked one by one: Herdr writes jsconfig.json and .d.ts files
+  # into each mod folder, so the folders themselves must stay writable.
+  mods = [ "nix-spaces" "nix-agents" ];
+  modFiles = lib.listToAttrs (lib.concatMap (mod: map (file: {
+    name = "herdr-app/mods/${mod}/${file}";
+    value.source = ./mods/${mod}/${file};
+  }) [ "main.js" "mod.json" ]) mods);
 in
 {
   home.packages = [ herdrCore ];
+
+  xdg.configFile = modFiles // {
+    "herdr-app/layouts/nix.json".source = ./layouts/nix.json;
+  };
 }

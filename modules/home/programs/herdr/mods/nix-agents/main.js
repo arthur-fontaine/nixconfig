@@ -33,12 +33,24 @@ function lead(tab, all = panes()) {
   return mine.find(p => p.program?.agent) ?? mine.find(p => p.focused) ?? mine[0];
 }
 
+// Pi titles its terminal "π - <session name> - <folder>", or "π - <folder>" before
+// it has a name: only the session name says anything.
+function piTitle(s) {
+  const parts = (s ?? "").split(" - ");
+  return parts[0] === "π" && parts.length > 2 ? parts.slice(1, -1).join(" - ") : "";
+}
+
 function title(tab, l) {
   const prog = l?.program?.name;
-  const live = clean(l?.title);
+  const live = l?.app === "pi" ? piTitle(l?.title) : clean(l?.title);
   const telling = live && live !== prog && !/^[~/]|^[A-Za-z]:\\/.test(live) && !live.includes("@") && live.toLowerCase() !== l?.program?.key;
-  return tab.name === prog && telling ? live : tab.name;
+  // Shipped: only a tab named after its program gives way. Here an automatic
+  // tab number does too, so a pi session reads by its name.
+  return (tab.name === prog || !tab.named) && telling ? live : tab.name;
 }
+
+// The names nix-spaces shows (a bare-clone worktree goes by its repo), else Herdr's.
+const spaceName = (a) => shared("nix-spaces.names")?.[a.space] ?? a.space_name;
 const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
 // A sub-agent without a pane isn't in agents(): its raw word, error counting as
 // blocked. It's never done: it reports to its parent, and the parent's done is the news.
@@ -272,9 +284,9 @@ export default class Agents extends View {
     };
     const detail = new Map(list.map(a => [a.address, /^\d+$/.test(label(a)) ? null : label(a)]));
     const seen = {};
-    for (const a of list) { const k = `${a.space_name}\u0000${detail.get(a.address) ?? ""}`; seen[k] = (seen[k] ?? 0) + 1; }
+    for (const a of list) { const k = `${spaceName(a)}\u0000${detail.get(a.address) ?? ""}`; seen[k] = (seen[k] ?? 0) + 1; }
     for (const a of list) {
-      if (detail.get(a.address) == null && seen[`${a.space_name}\u0000`] > 1) detail.set(a.address, label(a));
+      if (detail.get(a.address) == null && seen[`${spaceName(a)}\u0000`] > 1) detail.set(a.address, label(a));
     }
 
     const row = (a, i, subs = []) => {
@@ -318,7 +330,7 @@ export default class Agents extends View {
       // Under a space header the space goes without saying; an automatic tab number says nothing.
       // Without a space header above (priority, pinned) the row names its space.
       const full = byPriority || isPinned;
-      const name = full ? a.space_name || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
+      const name = full ? spaceName(a) || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
       return h_flex()
         .id(`ag-${a.address}`)
         .px(8)
@@ -359,7 +371,7 @@ export default class Agents extends View {
       const r = rankOf(a) || RANK.idle;
       const id = byPriority ? `sec-${r}` : `sp-${a.space}`;
       if (groups.at(-1)?.id === id) groups.at(-1).members.push(a);
-      else groups.push({ id, label: byPriority ? SECTION[r] : a.space_name || "", status: byPriority ? SECTION_STATUS[r] : null, members: [a] });
+      else groups.push({ id, label: byPriority ? SECTION[r] : spaceName(a) || "", status: byPriority ? SECTION_STATUS[r] : null, members: [a] });
     }
 
     // A group's header; it folds the group. Folded, it says how many and the most urgent state.
