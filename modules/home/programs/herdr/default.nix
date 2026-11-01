@@ -30,11 +30,18 @@ let
   # patched).
   # Files are linked one by one: Herdr writes jsconfig.json and .d.ts files
   # into each mod folder, so the folders themselves must stay writable.
-  mods = [ "nix-spaces" "nix-agents" "nix-files" "nix-changes" ];
-  modFiles = lib.listToAttrs (lib.concatMap (mod: map (file: {
+  # nix-diff is new: the diff tab nix-changes opens, laid out like Zed's.
+  mods = {
+    nix-spaces = [ "main.js" "mod.json" ];
+    nix-agents = [ "main.js" "mod.json" ];
+    nix-files = [ "main.js" "mod.json" ];
+    nix-changes = [ "main.js" "mod.json" ];
+    nix-diff = [ "main.js" "mod.json" "model.js" "syntax.js" ];
+  };
+  modFiles = lib.listToAttrs (lib.concatLists (lib.mapAttrsToList (mod: files: map (file: {
     name = "herdr-app/mods/${mod}/${file}";
     value.source = ./mods/${mod}/${file};
-  }) [ "main.js" "mod.json" ]) mods);
+  }) files) mods));
 
   merge = import ../../lib/merge-json.nix { inherit pkgs; };
   json = pkgs.formats.json { };
