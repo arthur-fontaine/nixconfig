@@ -7,7 +7,11 @@ import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, setting
 
 function location() {
   const space = spaces().find(s => s.active), f = focused();
-  const pane = f?.pane ? panes().find(p => p.pane === f.pane) : null;
+  // A mod pane (a diff, a board) has no folder: use the tab's terminal, else the space's.
+  const ps = panes(), tabs = new Set((space?.tabs ?? []).map((t) => t.id));
+  const own = (p) => p.terminal && p.cwd;
+  const pane = (f?.pane ? ps.find((p) => p.pane === f.pane && own(p)) : null)
+    ?? ps.find((p) => p.tab === f?.tab && own(p)) ?? ps.find((p) => tabs.has(p.tab) && own(p)) ?? null;
   const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
   return { cwd: pane?.cwd || f?.cwd || space?.folder, on, space: space?.id };
 }

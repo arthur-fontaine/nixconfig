@@ -30,18 +30,28 @@ let
   # patched).
   # Files are linked one by one: Herdr writes jsconfig.json and .d.ts files
   # into each mod folder, so the folders themselves must stay writable.
+  # Herdr refuses an import whose file resolves outside the mod's folder, and
+  # every linked file resolves into the store. So a mod split into modules
+  # (nix-diff: model.js and syntax.js, kept apart for `node --test`) is joined
+  # into one main.js here.
+  bundle = mod: modules: pkgs.runCommand "herdr-${mod}-main.js" { } ''
+    {
+      ${lib.concatMapStrings (m: "sed 's/^export //' ${./mods/${mod}/${m}}\n") modules}
+      grep -v '^import .* from "\./' ${./mods/${mod}/main.js}
+    } > $out
+  '';
   # nix-diff is new: the diff tab nix-changes opens, laid out like Zed's.
   mods = {
-    nix-spaces = [ "main.js" "mod.json" ];
-    nix-agents = [ "main.js" "mod.json" ];
-    nix-files = [ "main.js" "mod.json" ];
-    nix-changes = [ "main.js" "mod.json" ];
-    nix-diff = [ "main.js" "mod.json" "model.js" "syntax.js" ];
+    nix-spaces = { };
+    nix-agents = { };
+    nix-files = { };
+    nix-changes = { };
+    nix-diff = { main = bundle "nix-diff" [ "model.js" "syntax.js" ]; };
   };
-  modFiles = lib.listToAttrs (lib.concatLists (lib.mapAttrsToList (mod: files: map (file: {
-    name = "herdr-app/mods/${mod}/${file}";
-    value.source = ./mods/${mod}/${file};
-  }) files) mods));
+  modFiles = lib.listToAttrs (lib.concatLists (lib.mapAttrsToList (mod: o: [
+    { name = "herdr-app/mods/${mod}/main.js"; value.source = o.main or ./mods/${mod}/main.js; }
+    { name = "herdr-app/mods/${mod}/mod.json"; value.source = ./mods/${mod}/mod.json; }
+  ]) mods));
 
   merge = import ../../lib/merge-json.nix { inherit pkgs; };
   json = pkgs.formats.json { };
