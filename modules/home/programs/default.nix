@@ -30,5 +30,6 @@
     ./digup
     ./craft
     ./blender
+    ./herdr
   ];
 }
