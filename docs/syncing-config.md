@@ -8,8 +8,8 @@ change back into the repo by hand, or the next `rebuild` reverts it.
 
 | Method | What it means | Programs |
 | --- | --- | --- |
-| Symlink | The live file points into the Nix store. It is read-only. Edit the repo, then `rebuild`. | Ghostty, Karabiner, zsh, Pi, Mise, git, gh, Neovim (except its lockfile), ssh, Llama model overrides |
-| Copy | `rebuild` copies the file and leaves it writable. The app can edit it. `rebuild` resets it. | Zed, Claude Code, Neovim lockfile, 1Password SSH agent |
+| Symlink | The live file points into the Nix store. It is read-only. Edit the repo, then `rebuild`. | Ghostty, Karabiner, zsh, Pi, Mise, git, gh, Neovim, ssh, Llama model overrides |
+| Copy | `rebuild` copies the file and leaves it writable. The app can edit it. `rebuild` resets it. | Zed, Claude Code, 1Password SSH agent |
 | Merge | `rebuild` merges the listed keys into a file the app also writes. Keys the module does not list are left alone. | Codex, OpenLogi, Claude desktop, Claude Code MCP servers, Mixologist, Herdr |
 | macOS defaults | `rebuild` writes the listed keys with `defaults import`. Keys the module does not list are left alone. | Droppy, Smallcast Beta, Some Browser, Keka, AirBattery, BetterDisplay, ProtonVPN, DigUp, screenshots, system settings |
 
@@ -206,13 +206,10 @@ Repo module: `modules/home/programs/claude-desktop/default.nix`. Merged into
 
 ## Neovim
 
-Live files: `~/.config/nvim/`. Repo files: `modules/home/programs/neovim/`.
-`init.lua` and `lua/` are symlinked. `lazy-lock.json` is copied, because
-`:Lazy update` rewrites it. To keep updated plugin pins:
-
-```sh
-cp ~/.config/nvim/lazy-lock.json modules/home/programs/neovim/
-```
+Repo module: `modules/home/programs/neovim/`. `~/.config/nvim/init.lua` is
+symlinked; plugins, tree-sitter parsers and language servers come from
+nixpkgs (`~/.local/share/nvim/site/pack/nix`), so there is no plugin manager
+and no lockfile. Bump them with `nix flake update`.
 
 ## ssh and the 1Password SSH agent
 

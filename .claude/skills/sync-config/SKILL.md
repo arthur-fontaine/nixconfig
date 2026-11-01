@@ -88,7 +88,7 @@ referenced as `${VAR}`.
 2. Pick the method:
    - plist prefs: `targets.darwin.defaults`, plus `nixconfig.defaultsData` for data keys
    - a file the app never writes: `xdg.configFile` or `home.file` (a read-only symlink)
-   - a file the app rewrites in full: copy it in a `home.activation` step, like `zed/` or `neovim/`
+   - a file the app rewrites in full: copy it in a `home.activation` step, like `zed/`
    - a file the app rewrites with keys of its own: merge into it with `modules/home/lib/merge-json.nix`, like `claude-desktop/`
    - a private file (mode 600): `install -m 600` in an activation step, like `onepassword/`
 3. Create `modules/home/programs/<app>/default.nix` and add it to `modules/home/programs/default.nix`.
