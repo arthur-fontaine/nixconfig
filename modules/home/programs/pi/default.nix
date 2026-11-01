@@ -182,6 +182,8 @@ let
     rewind = ./extensions/rewind;
     # Pi's footer as two lines: where you are, then what's going on.
     footer = ./extensions/footer;
+    # web_search and web_fetch through TinyFish, and view_image to look at a URL's image.
+    web = ./extensions/web;
   };
   skills = pluginSkills // {
     context7-mcp = ../claude/skills/context7-mcp;
