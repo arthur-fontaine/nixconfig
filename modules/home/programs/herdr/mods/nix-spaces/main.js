@@ -38,6 +38,10 @@ export function repoName(common) {
 const label = (w, g) => (!w.named && g ? g.name : w.name);
 // Where nix-agents reads the names this list shows.
 export const NAMES = "nix-spaces.names";
+const since = (s) => {
+  const d = Date.now() / 1000 - s;
+  return d < 3600 ? `${Math.max(1, Math.round(d / 60))}m` : d < 86400 ? `${Math.round(d / 3600)}h` : d < 86400 * 60 ? `${Math.round(d / 86400)}d` : `${Math.round(d / 86400 / 30)}mo`;
+};
 // Changes made outside Herdr (an editor's save, a commit in another app): looked
 // for this often, in repos the list shows, while the window is in front.
 const FALLBACK = 60000;
@@ -65,6 +69,8 @@ export default class Spaces extends View {
     this.ready = {}; // machine -> its layout was readable at the last look
     this.at = {}; // space -> its where() at the last look
     this.watching = new Set(); // local repos' git folders
+    this.trees = {}; // repo -> its checkouts (loadTrees)
+    this.expanded = new Set(JSON.parse(localStorage.getItem("trees.expanded") ?? "[]"));
     // Spaces made while this runs wait (at most a moment) for their git, so a
     // worktree appears under its repo instead of jumping there.
     this.shown = new Set(spaces().map((s) => s.id));
@@ -184,12 +190,32 @@ export default class Spaces extends View {
         }
       }
       this.git[key] = info;
+      await this.loadTrees(on, repo);
       if (!on) this.watch(repo, cx);
     } catch {
       // Couldn't ask (the machine is away): keep what it showed, look again later.
       this.git[key] ??= null;
       this.unsure.add(key);
     }
+  }
+
+  // A repo's checkouts, most recently committed first, for the rows under its
+  // spaces that open the ones without a space: { path, branch, at }.
+  async loadTrees(on, common) {
+    const id = JSON.stringify([on, common]);
+    const list = await exec("git", ["--git-dir", common, "worktree", "list", "--porcelain"], { cwd: common, on }).catch(() => null);
+    if (list?.code !== 0) { this.trees[id] = []; return; }
+    const refs = await exec("git", ["--git-dir", common, "for-each-ref", "--format=%(refname:short)%09%(committerdate:unix)", "refs/heads"], { cwd: common, on }).catch(() => null);
+    const when = new Map((refs?.stdout ?? "").split("\n").map((l) => l.split("\t")).map(([b, at]) => [b, Number(at) || 0]));
+    const out = [];
+    for (const block of list.stdout.split(/\n\n+/)) {
+      const lines = block.split("\n");
+      const path = lines.find((l) => l.startsWith("worktree "))?.slice(9);
+      if (!path || lines.some((l) => l === "bare" || l.startsWith("prunable"))) continue;
+      const branch = lines.find((l) => l.startsWith("branch "))?.slice(7).replace(/^refs\/heads\//, "") ?? null;
+      out.push({ path, branch, at: branch ? (when.get(branch) ?? 0) : 0 });
+    }
+    this.trees[id] = out.sort((a, b) => b.at - a.at);
   }
 
   watch(repo, cx) {
@@ -231,6 +257,19 @@ export default class Spaces extends View {
       const kids = list.filter((k) => nested(k) && k.g.repo === r.g.repo);
       kids.forEach((k, n) => out.push({ ...k, tree: n === kids.length - 1 ? "└─" : "├─" }));
     }
+    // Under each repo's last space: its checkouts without a space, behind one folded row.
+    const inside = (p, dir) => p === dir || p.startsWith(dir + "/");
+    const places = sp.map((w) => ({ on: w.machine ?? null, at: place(w, ps) }));
+    for (const repo of new Set(list.map((r) => r.g?.repo).filter(Boolean))) {
+      const [on] = JSON.parse(repo);
+      const idle = (this.trees[repo] ?? []).filter((c) => !places.some((x) => x.on === on && x.at && inside(x.at, c.path)));
+      if (!idle.length) continue;
+      const last = out.findLastIndex((r) => r.g?.repo === repo);
+      const open = this.expanded.has(repo);
+      const extra = [{ extra: "fold", repo, count: idle.length, open, w: { machine: on } },
+        ...(open ? idle.map((c) => ({ extra: "tree", repo, c, w: { machine: on } })) : [])];
+      out.splice(last + 1, 0, ...extra);
+    }
     const names = Object.fromEntries(list.map((r) => [r.w.id, r.label]));
     // setShared re-renders every mod: only when a name changed.
     if (JSON.stringify(names) !== JSON.stringify(shared(NAMES) ?? {})) setShared(NAMES, names);
@@ -240,7 +279,7 @@ export default class Spaces extends View {
   // The rows, under a header per machine once one isn't this computer.
   grouped(t, collapsed) {
     const rows = this.ordered();
-    const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t));
+    const draw = (r) => (r.extra ? (collapsed ? null : this.treeRow(r, t)) : collapsed ? this.compact(r, t) : this.row(r, t));
     const remote = [...new Set([...rows.map(r => r.w.machine).filter(Boolean), ...this.machines.map(m => m.name)])].sort();
     const loading = m => {
       const layout = machines().find(k => k.name === m)?.layout;
@@ -248,7 +287,7 @@ export default class Spaces extends View {
         || spaces().some(s => (s.machine ?? null) === m && !this.shown.has(s.id));
     };
     const loadingRow = m => div().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(8).text_size(12).text_color(t.dim).child(collapsed ? "…" : "Loading…");
-    if (!remote.length) return loading(null) && !rows.length ? [loadingRow(null)] : rows.map(draw);
+    if (!remote.length) return loading(null) && !rows.length ? [loadingRow(null)] : rows.map(draw).filter(Boolean);
     const machineNames = [null, ...remote];
     return machineNames.flatMap((m) => {
       const mine = rows.filter((r) => (r.w.machine ?? null) === m);
@@ -273,7 +312,7 @@ export default class Spaces extends View {
         .text_size(12).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
         .on_click(() => run("space.new", m ? { machine: m } : {}))
         .child(svg("mods/workspace-chrome/plus.svg").size(12)).when(!collapsed, el => el.child("New space there"));
-      return [head, ...(folded ? [] : mine.length ? mine.map(draw) : [loading(m) ? loadingRow(m) : empty])];
+      return [head, ...(folded ? [] : mine.length ? mine.map(draw).filter(Boolean) : [loading(m) ? loadingRow(m) : empty])];
     });
   }
 
@@ -351,6 +390,29 @@ export default class Spaces extends View {
           .child(div().flex_shrink(0).max_w(150).truncate().text_color(t.foreground).child(name))
           .child(g ? this.gitTail(g, tree, name, t) : div().flex_1()),
       );
+  }
+
+  // "▸ 4 other worktrees", and once unfolded, one row per checkout without a space.
+  treeRow(r, t) {
+    if (r.extra === "fold") {
+      return h_flex().id(`trees-${r.repo}`).h(24).flex_none().pl(32).pr(8).gap(6).items_center().rounded(6)
+        .text_size(11.5).text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.muted))
+        .on_click((_e, cx) => {
+          this.expanded.has(r.repo) ? this.expanded.delete(r.repo) : this.expanded.add(r.repo);
+          localStorage.setItem("trees.expanded", JSON.stringify([...this.expanded]));
+          cx.notify();
+        })
+        .child(svg(`mods/workspace-chrome/chevron-${r.open ? "down" : "right"}.svg`).size(10).flex_none())
+        .child(`${r.count} other ${r.count === 1 ? "worktree" : "worktrees"}`);
+    }
+    const name = r.c.branch ?? r.c.path.split("/").pop();
+    return h_flex().id(`tree-${r.c.path}`).h(24).flex_none().pl(32).pr(8).gap(7).items_center().rounded(6)
+      .text_size(12).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .tooltip(r.c.path)
+      .on_click(() => run("space.new", { folder: r.c.path, machine: r.w.machine }))
+      .child(svg("mods/workspace-chrome/branch.svg").size(12).flex_none().text_color(t.dim))
+      .child(div().flex_1().min_w(0).truncate().child(name))
+      .when(r.c.at > 0, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(since(r.c.at))));
   }
 
   compact({ w, i }, t) {
