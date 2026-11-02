@@ -5,7 +5,7 @@
 // "Uncommitted Changes", a commit opens its own diff, shown the same way.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { spaces, panes, focused, agents, hc, exec, watchFolder, theme, settings, shared, setShared, run } from "herdr";
+import { spaces, panes, focused, agents, hc, exec, watchFolder, theme, settings, shared, setShared, run, openOverlay } from "herdr";
 
 function location() {
   const space = spaces().find((s) => s.active), f = focused();
@@ -22,6 +22,18 @@ const key = () => JSON.stringify(location());
 // the folder watch would see it, and every refresh would start the next one.
 const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false", "-c", "core.quotepath=false"];
 const LOG = 40;
+// A PR's state is asked at most this often per branch (gh/glab are slow and rate-limited).
+const PR_TTL = 120000;
+
+// GitHub's checks as one word: "fail", "pending", "pass", or null when there are none.
+function checksOf(rollup) {
+  if (!rollup?.length) return null;
+  const bad = new Set(["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"]);
+  if (rollup.some((c) => bad.has(c.conclusion) || bad.has(c.state))) return "fail";
+  if (rollup.some((c) => (c.status && c.status !== "COMPLETED") || c.state === "PENDING" || c.state === "EXPECTED")) return "pending";
+  return "pass";
+}
+const PIPELINE = { success: "pass", failed: "fail", canceled: "fail", running: "pending", pending: "pending", created: "pending" };
 const ICON = (name) => `mods/workspace-chrome/${name}.svg`;
 
 function ago(s) {
@@ -32,6 +44,7 @@ function ago(s) {
 export default class Changes extends View {
   init(_props, cx) {
     this.files = []; this.commits = []; this.branch = null; this.started = {}; this.tabs = {};
+    this.prs = {}; // root\0branch -> { at, pr: {...} | null, tool }
     this.message = ""; this.handle = cx.focus_handle(); this.focusN = 0;
     this.input = InputState.new({ placeholder: "Commit message" });
     this.input.on("change", (_e, cx) => {
@@ -78,6 +91,8 @@ export default class Changes extends View {
         if (key() !== context) return;
         if (top.code !== 0) { this.root = null; this.files = []; this.commits = []; this.error = "Not a git repository"; return; }
         this.root = top.stdout.trim(); this.on = on;
+        const common = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, on });
+        this.mainCheckout = common.code === 0 && common.stdout.trim() === `${this.root}/.git` ? this.root : null;
         const [status, numstat, branch] = await Promise.all([
           this.git(["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
           this.git(["diff", "HEAD", "--numstat", "-z", "--no-renames"]),
@@ -116,6 +131,7 @@ export default class Changes extends View {
         this.files = files; this.branch = b; this.error = null;
         await this.loadLog(context);
         this.watch(this.root, cx);
+        this.loadPr(context, cx);
       } catch (e) { if (key() === context) this.error = String(e.message ?? e); }
       finally { this.loading = false; cx.notify(); }
     });
@@ -151,6 +167,84 @@ export default class Changes extends View {
       const [sha, short, time, author, subject] = line.split("\0");
       return { sha, short, time: +time, author, subject, session: since !== null && +time * 1000 >= since };
     });
+  }
+
+  // The PR (GitHub, through gh) or MR (GitLab, through glab) of this branch.
+  // Nothing for the default branch, a detached HEAD, other hosts, or without the tool.
+  loadPr(context, cx, force = false) {
+    const b = this.branch, root = this.root, on = this.on;
+    if (!b?.name || b.name === "(detached)" || !root) return;
+    const id = `${root}\0${b.name}`, known = this.prs[id];
+    if (!force && known && Date.now() - known.at < PR_TTL) return;
+    this.prs[id] = { ...(known ?? { pr: null, tool: null }), at: Date.now() };
+    cx.spawn(async (cx) => {
+      const run = (cmd, args) => exec(cmd, args, { cwd: root, on }).catch(() => null);
+      const remote = await run("git", ["remote", "get-url", "origin"]);
+      const url = remote?.code === 0 ? remote.stdout.trim() : "";
+      const head = await run("git", ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+      if (head?.code === 0 && head.stdout.trim().replace(/^origin\//, "") === b.name) return;
+      let pr = null, tool = null;
+      if (/github\.com[:/]/.test(url)) {
+        tool = "gh";
+        const r = await run("gh", ["pr", "view", b.name, "--json", "number,title,state,isDraft,url,reviewDecision,statusCheckRollup"]);
+        if (r?.code === 0) {
+          const d = JSON.parse(r.stdout);
+          pr = { number: d.number, title: d.title, state: d.state.toLowerCase(), draft: d.isDraft, url: d.url, checks: checksOf(d.statusCheckRollup), review: d.reviewDecision || null };
+        } else if (!/no pull requests found/i.test(r?.stderr ?? "")) tool = null; // not installed or not logged in
+      } else if (/gitlab/.test(url)) {
+        tool = "glab";
+        const r = await run("glab", ["mr", "view", b.name, "-F", "json"]);
+        if (r?.code === 0) {
+          const d = JSON.parse(r.stdout);
+          pr = { number: d.iid, title: d.title, state: d.state === "opened" ? "open" : d.state, draft: d.draft, url: d.web_url, checks: PIPELINE[d.head_pipeline?.status] ?? null, review: null };
+        } else if (!/no open merge request|not found/i.test(r?.stderr ?? "")) tool = null;
+      }
+      this.prs[id] = { at: Date.now(), pr, tool };
+      if (key() === context) cx.notify();
+    });
+  }
+
+  // Push the branch (setting its upstream), then ask about its PR again.
+  push(cx) {
+    this.act(["push", "-u", "origin", "HEAD"], cx);
+    cx.spawn(async (cx) => { await new Promise((r) => cx.timer.after(4000, r)); this.loadPr(this.context, cx, true); });
+  }
+
+  createPr(tool, cx) {
+    const args = tool === "gh" ? ["pr", "create", "--fill", "--web"] : ["mr", "create", "--fill", "--web"];
+    exec(tool, args, { cwd: this.root, on: this.on }).catch(() => null);
+  }
+
+  // A merged branch's worktree can go: the worktree dialog, branch deletion checked.
+  reap() {
+    const space = spaces().find((s) => s.active);
+    openOverlay({ mod: "nix-worktree", kind: "dialog", width: 480, height: 300, props: { space: space?.id, folder: this.root, machine: this.on, action: "remove" } });
+  }
+
+  prSection(t) {
+    const b = this.branch;
+    const entry = b?.name && this.root ? this.prs[`${this.root}\0${b.name}`] : null;
+    if (!entry?.tool) return null;
+    const pr = entry.pr, word = entry.tool === "gh" ? "PR" : "MR";
+    const button = (id, label, onClick) => div().id(id).px(8).py(3).rounded(6).text_size(12).text_color(t.muted).cursor_pointer()
+      .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(onClick).child(label);
+    const row = h_flex().h(34).px(12).gap(8).items_center().text_size(12).border_t(1).border_color(t.border);
+    if (!pr) {
+      return row.child(div().text_color(t.dim).child(b.upstream ? `No ${word} yet` : "Not pushed yet")).child(div().flex_1())
+        .when(!b.upstream || b.ahead > 0, (e) => e.child(button("push", b.upstream ? `Push ↑${b.ahead}` : "Push", (_e, cx) => this.push(cx))))
+        .when(Boolean(b.upstream), (e) => e.child(button("create-pr", `Create ${word}`, (_e, cx) => this.createPr(entry.tool, cx))));
+    }
+    const state = pr.state === "merged" ? ["Merged", t.ansi5] : pr.state === "closed" ? ["Closed", t.ansi1] : pr.draft ? ["Draft", t.dim] : ["Open", t.ansi2];
+    const checks = { pass: ["✓", t.ansi2], fail: ["✗", t.ansi1], pending: ["●", t.ansi3] }[pr.checks];
+    const review = pr.review === "APPROVED" ? ["approved", t.ansi2] : pr.review === "CHANGES_REQUESTED" ? ["changes requested", t.ansi1] : null;
+    return row
+      .child(div().flex_none().px(6).py(1).rounded(4).bg(state[1] + "26").text_size(11).text_color(state[1]).child(state[0]))
+      .child(div().id("pr-open").min_w(0).flex_1().truncate().cursor_pointer().text_color(t.foreground).hover((s) => s.text_color(t.accent))
+        .on_click(() => exec("open", [pr.url]).catch(() => null)).child(`#${pr.number} ${pr.title}`))
+      .when(Boolean(checks), (e) => e.child(div().flex_none().text_color(checks[1]).child(checks[0])))
+      .when(Boolean(review), (e) => e.child(div().flex_none().text_size(11).text_color(review[1]).child(review[0])))
+      .when(pr.state === "open" && b.ahead > 0, (e) => e.child(button("push", `Push ↑${b.ahead}`, (_e, cx) => this.push(cx))))
+      .when(pr.state === "merged" && this.root !== this.mainCheckout, (e) => e.child(button("reap", "Remove worktree…", () => this.reap())));
   }
 
   // A diff in the middle: the tab it already has, else a new one. The new tab's
@@ -300,7 +394,8 @@ export default class Changes extends View {
         .when(!this.files.length, (e) => e.child(div().p(10).text_color(t.dim)
           .child(this.error || (this.loading ? "Loading changes…" : this.root ? "Nothing to commit" : "No folder")))))
       .when(Boolean(this.note), (e) => e.child(div().px(12).py(6).text_size(11.5).text_color(t.ansi1).child(this.note)))
-      // Branch, then the commit box.
+      // The branch's PR, then the branch and the commit box.
+      .when(Boolean(this.prSection(t)), (e) => e.child(this.prSection(t)))
       .child(v_flex().flex_none().border_t(1).border_color(t.border)
         .when(Boolean(b?.name), (e) => e.child(h_flex().h(32).px(12).gap(7).items_center().text_size(12).text_color(t.muted)
           .child(svg(ICON("git-branch")).size(13).flex_none().text_color(t.dim))
