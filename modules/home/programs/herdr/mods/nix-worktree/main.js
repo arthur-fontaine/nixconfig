@@ -164,7 +164,7 @@ export default class Worktree extends View {
   }
 
   close() {
-    closeOverlay(props().overlay);
+    if (props()?.overlay) closeOverlay(props().overlay);
   }
 
   go(cx) {

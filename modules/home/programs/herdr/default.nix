@@ -54,6 +54,7 @@ let
     nix-new-menu = { };
     nix-tabs = { };
     nix-status = { };
+    nix-dispatch = { shared = [ "repo.js" ]; };
   };
   modFiles = lib.listToAttrs (lib.concatLists (lib.mapAttrsToList (mod: o: [
     { name = "herdr-app/mods/${mod}/main.js"; value.source = if o == { } then ./mods/${mod}/main.js else bundle mod o; }
@@ -71,6 +72,16 @@ let
     minimum_contrast = 1;
     sounds.enabled = true;
   };
+  # Keys for the nix-* mods, all on cmd (terminals never get it, so nothing is
+  # taken from typing). nix-status is always shown, so it runs them.
+  keys.global = {
+    "cmd-shift-n" = "nix-status.dispatch";
+    "cmd-j" = "nix-status.jump";
+    "cmd-shift-j" = "nix-status.back";
+    "cmd-shift-b" = "nix-status.worktrees";
+    "cmd-shift-r" = "nix-status.review";
+    "cmd-shift-o" = "nix-status.editor";
+  };
   shared = {
     layout = "nix";
     # The Files and Changes panels the tab bar offers (picked in the welcome).
@@ -85,6 +96,14 @@ in
       live = "~/.config/herdr-app/settings.json";
       repo = "modules/home/programs/herdr/default.nix (settings)";
       ignore = [ "^zoom$" ];
+    };
+    herdr-keys = {
+      method = "json-merge";
+      managed = keys;
+      live = "~/.config/herdr-app/keys.json";
+      repo = "modules/home/programs/herdr/default.nix (keys)";
+      # Herdr's own defaults, written on first start.
+      ignore = [ "^global\\." "^terminal\\." ];
     };
     herdr-shared = {
       method = "json-merge";
@@ -103,6 +122,7 @@ in
   home.activation.herdrSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     ${merge (json.generate "herdr-settings.json" settings) "${home}/settings.json"}
     ${merge (json.generate "herdr-shared.json" shared) "${home}/shared.json"}
+    ${merge (json.generate "herdr-keys.json" keys) "${home}/keys.json"}
   '';
 
   xdg.configFile = modFiles // {
