@@ -37,7 +37,7 @@ link() {
 
 case "${1:-}" in
   start)
-    [ -n "$(pid)" ] && { echo "already running ($(pid))"; exit 0; }
+    if [ -n "$(pid)" ]; then echo "already running ($(pid))"; exit 0; fi
     mkdir -p "$HOME_DIR"
     # Skip the welcome, start on the given layout.
     printf '{"frame.welcomed":"finished","layout":"%s","workspace.panels":["changes","files"]}\n' "${2:-nix}" > "$HOME_DIR/shared.json"
@@ -48,7 +48,8 @@ case "${1:-}" in
   relink) link; echo linked ;;
   shot) HERDR_APP_HOME="$HOME_DIR" herdr-app shot "${2:-/tmp/herdr-dev-shot.png}" ;;
   stop)
-    p="$(pid)"; [ -n "$p" ] && kill "$p"
+    p="$(pid)"
+    if [ -n "$p" ]; then kill $p; fi
     rm -rf "$HOME_DIR" "$HOME_DIR.log"; echo stopped ;;
   *) sed -n 2,13p "$0"; exit 1 ;;
 esac
