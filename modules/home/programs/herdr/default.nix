@@ -25,31 +25,38 @@ let
   };
 
   # Herdr rewrites its shipped mods and layouts on every start, so changes live
-  # in copies: `nix` is the shipped `main` layout pointing at nix-spaces and
-  # nix-agents, nix-files and nix-changes (shipped from herdr-app 0.1.11, then
-  # patched).
+  # in copies: `nix` is the shipped `main` layout pointing at nix-* copies of
+  # its mods (shipped in herdr-app 0.1.11, then patched; each first commit is
+  # the shipped file, to diff against after an update).
   # Files are linked one by one: Herdr writes jsconfig.json and .d.ts files
   # into each mod folder, so the folders themselves must stay writable.
   # Herdr refuses an import whose file resolves outside the mod's folder, and
-  # every linked file resolves into the store. So a mod split into modules
-  # (nix-diff: model.js and syntax.js, kept apart for `node --test`) is joined
-  # into one main.js here.
-  bundle = mod: modules: pkgs.runCommand "herdr-${mod}-main.js" { } ''
+  # every linked file resolves into the store. So a mod split into modules is
+  # joined into one main.js here: the shared mods/_lib files it imports, then its
+  # own modules (both without `export`), then main.js without those imports.
+  # Kept apart in the repo so `node --test` runs them.
+  bundle = mod: { shared ? [ ], modules ? [ ] }: pkgs.runCommand "herdr-${mod}-main.js" { } ''
     {
-      ${lib.concatMapStrings (m: "sed 's/^export //' ${./mods/${mod}/${m}}\n") modules}
-      grep -v '^import .* from "\./' ${./mods/${mod}/main.js}
+      ${lib.concatMapStrings (f: "sed 's/^export //' ${./mods/_lib/${f}}\n") shared}
+      ${lib.concatMapStrings (f: "sed 's/^export //' ${./mods/${mod}/${f}}\n") modules}
+      grep -v -E '^import .* from "(\./|\.\./_lib/)' ${./mods/${mod}/main.js}
     } > $out
   '';
-  # nix-diff is new: the diff tab nix-changes opens, laid out like Zed's.
+  # The patched copies of shipped mods, and nix-diff (the diff tab nix-changes opens).
   mods = {
     nix-spaces = { };
     nix-agents = { };
     nix-files = { };
     nix-changes = { };
-    nix-diff = { main = bundle "nix-diff" [ "model.js" "syntax.js" ]; };
+    nix-diff = { modules = [ "model.js" "syntax.js" ]; };
+    nix-worktree = { shared = [ "repo.js" ]; };
+    nix-menu = { };
+    nix-new-menu = { };
+    nix-tabs = { };
+    nix-status = { };
   };
   modFiles = lib.listToAttrs (lib.concatLists (lib.mapAttrsToList (mod: o: [
-    { name = "herdr-app/mods/${mod}/main.js"; value.source = o.main or ./mods/${mod}/main.js; }
+    { name = "herdr-app/mods/${mod}/main.js"; value.source = if o == { } then ./mods/${mod}/main.js else bundle mod o; }
     { name = "herdr-app/mods/${mod}/mod.json"; value.source = ./mods/${mod}/mod.json; }
   ]) mods));
 

@@ -1,9 +1,15 @@
 // Worktree dialog: { space, action: "new" | "open" | "remove" } or
-// { folder, machine } for a repo without a space; optional { branch, tab, argv }.
+// { folder, machine } for a repo without a space; optional { branch, tab, argv, task }.
+// Shipped, but convention-aware (../_lib/repo.js): a bare clone's worktrees go
+// beside it, a repo's go where its others are, else ~/.herdr/worktrees as
+// shipped; a branch on origin is tracked, a new one starts from origin's
+// default branch; Open also lists branches only on origin; Remove can delete
+// the branch (checked when merged) and prunes.
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar } from "gpui-base";
 import { run, props, closeOverlay, theme, spaces, panes, exec, home } from "herdr";
+import { repoOf, createWorktree, removeWorktree, branchMerged, defaultBranch, remoteOnly, worktrees } from "../_lib/repo.js";
 
 // Where a space is now: its first terminal's live folder, else where it was made.
 function place(s) {
@@ -12,35 +18,28 @@ function place(s) {
   return panes().find((p) => tabs.has(p.tab) && p.cwd)?.cwd || s.folder || null;
 }
 
-// Checkouts go to <ROOT>/<repo>/<branch, slashes as dashes>.
-const ROOT = (home) => `${home}/.herdr/worktrees`;
 // Home as ~ (git says C:/Users/x where Windows says C:\Users\x).
 const tilde = (path, userHome) => {
   const [p, h] = [path, userHome].map((s) => s.replace(/\\/g, "/"));
   return p.startsWith(h) ? `~${p.slice(h.length)}` : path;
 };
-const slug = (branch) => branch.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
 const ago = (s) => {
   const d = Date.now() / 1000 - s;
   return d < 3600 ? `${Math.max(1, Math.round(d / 60))}m` : d < 86400 ? `${Math.round(d / 3600)}h` : d < 86400 * 60 ? `${Math.round(d / 86400)}d` : `${Math.round(d / 86400 / 30)}mo`;
 };
 
-// Every checkout of a repo (`git worktree list`), the main one first, then
-// the most recently committed: { path, branch, main, at }.
+// Every checkout of a repo, the default branch's first, then the most recently
+// committed; then branches only on origin: { path, branch, main, at, remote }.
 async function checkouts(repo, on) {
-  const list = await git(repo.main, ["worktree", "list", "--porcelain"], on);
-  if (!list.ok) return [];
+  const g = gitOn(on);
+  const list = await worktrees(g, repo.main);
   const refs = await git(repo.main, ["for-each-ref", "--format=%(refname:short)%09%(committerdate:unix)", "refs/heads"], on);
   const when = new Map(refs.out.split("\n").map((l) => l.split("\t")).map(([b, at]) => [b, Number(at) || 0]));
-  const out = [];
-  for (const block of list.out.split(/\n\n+/)) {
-    const lines = block.split("\n");
-    const path = lines.find((l) => l.startsWith("worktree "))?.slice(9);
-    if (!path || lines.some((l) => l === "bare" || l.startsWith("prunable"))) continue;
-    const branch = lines.find((l) => l.startsWith("branch "))?.slice(7).replace(/^refs\/heads\//, "") ?? null;
-    out.push({ path, branch, main: out.length === 0, at: branch ? (when.get(branch) ?? 0) : 0 });
-  }
-  return out.sort((a, b) => b.main - a.main || b.at - a.at);
+  const def = await defaultBranch(g, repo.main);
+  const out = list.map((w) => ({ ...w, main: w.branch ? w.branch === def : w.path === repo.main, at: w.branch ? (when.get(w.branch) ?? 0) : 0 }));
+  out.sort((a, b) => b.main - a.main || b.at - a.at);
+  const taken = new Set(out.map((c) => c.branch).filter(Boolean));
+  return [...out, ...(await remoteOnly(g, repo.main, taken)).map((b) => ({ path: null, branch: b.branch, main: false, at: b.at, remote: true }))];
 }
 
 // The space showing a checkout: its first terminal is in it (the deepest checkout wins).
@@ -49,7 +48,7 @@ function spaceOf(path, all, on) {
   return spaces().find((s) => (s.machine ?? null) === (on ?? null) && (() => {
     const at = place(s)?.replace(/\\/g, "/");
     if (!at || !inside(at, path)) return false;
-    return !all.some((c) => c.path !== path && c.path.length > path.length && inside(at, c.path));
+    return !all.some((c) => c.path && c.path !== path && c.path.length > path.length && inside(at, c.path));
   })());
 }
 
@@ -57,6 +56,8 @@ async function git(cwd, args, on) {
   const r = await exec("git", args, { cwd, on });
   return { ok: r.code === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? r.stdout ?? "").trim() };
 }
+// The lib's git: the same, on one machine.
+const gitOn = (on) => (cwd, args) => git(cwd, args, on).catch((e) => ({ ok: false, out: "", err: String(e) }));
 
 // The submodule repos git keeps for a checkout (nested ones too, checked out
 // or not): { name, dir, pinned }. `config` is the args that read its
@@ -94,14 +95,13 @@ async function submodules(top, on) {
   return { mods, unpushed };
 }
 
-// The repo a folder belongs to: its main checkout and name, and whether
-// the folder is itself a linked worktree. null outside git.
-async function repoOf(folder, on) {
-  const top = await git(folder, ["rev-parse", "--show-toplevel"], on);
-  const common = await git(folder, ["rev-parse", "--path-format=absolute", "--git-common-dir"], on);
-  if (!top.ok || !common.ok) return null;
-  const main = common.out.endsWith("/.git") ? common.out.slice(0, -5) : common.out;
-  return { top: top.out, main, name: main.split("/").pop(), linked: main !== top.out };
+// The repo a folder belongs to (../_lib/repo.js), null outside git.
+const repoAt = (folder, on, userHome) => repoOf(gitOn(on), folder, userHome);
+
+// The repo's root, as people see it: "~/…/pnpm", "~/.herdr/worktrees/x".
+function where(repo, userHome) {
+  const kind = repo.layout === "sibling" ? "beside the other checkouts of this bare clone" : repo.layout === "existing" ? "beside its other worktrees" : "Herdr's worktree folder";
+  return `${tilde(repo.root, userHome)}/ (${kind})`;
 }
 
 export default class Worktree extends View {
@@ -140,10 +140,15 @@ export default class Worktree extends View {
         }
         this.folder = props()?.folder || place(this.space()) || this.userHome;
         // The repo is set last: Enter does nothing until the warnings it consents to are known.
-        const repo = await repoOf(this.folder, this.on);
-        if (repo && props().action === "remove") {
+        const repo = await repoAt(this.folder, this.on, this.userHome);
+        if (repo && props().action === "remove" && repo.linked) {
           this.dirty = (await git(repo.top, ["--no-optional-locks", "-c", "core.fsmonitor=false", "status", "--porcelain"], this.on)).out !== "";
           this.unpushed = (await submodules(repo.top, this.on)).unpushed;
+          const head = await git(repo.top, ["symbolic-ref", "--quiet", "--short", "HEAD"], this.on);
+          this.branch = head.ok ? head.out : null;
+          this.merged = this.branch ? await branchMerged(gitOn(this.on), repo.main, this.branch) : false;
+          // As the house rule: a merged branch goes with its worktree; an unmerged one stays unless asked.
+          this.deleteBranch = this.merged;
         }
         if (repo && this.opening) this.list = await checkouts(repo, this.on);
         this.repo = repo;
@@ -179,17 +184,12 @@ export default class Worktree extends View {
     cx.notify();
   }
 
-  async create() {
-    const branch = this.text.trim();
+  async create(branch = this.text.trim()) {
     if (!branch) return "Type a branch name.";
-    const path = `${ROOT(this.userHome)}/${this.repo.name}/${slug(branch)}`;
-    const exists = (await git(this.repo.main, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], this.on)).ok;
-    const add = exists ? ["worktree", "add", path, branch] : ["worktree", "add", "-b", branch, path, "HEAD"];
-    const r = await git(this.repo.top, add, this.on);
-    if (!r.ok) return r.err || "git worktree add failed.";
+    const { path } = await createWorktree(gitOn(this.on), this.repo, branch);
     const p = props();
     // Leave spaces unnamed so they follow the checkout folder and nest under the repo.
-    run("space.new", { folder: path, machine: this.on, tab: p.tab, argv: p.argv });
+    run("space.new", { folder: path, machine: this.on, tab: p.tab, argv: p.argv, task: p.task });
     return "";
   }
 
@@ -198,8 +198,14 @@ export default class Worktree extends View {
     return (this.list ?? []).filter((c) => !f || `${c.branch ?? ""} ${c.path}`.toLowerCase().includes(f));
   }
 
-  open(c) {
+  open(c, cx) {
     if (!c) return;
+    if (c.remote) {
+      // A branch only on origin: check it out first, as New would.
+      this.text = c.branch;
+      this.opening = false;
+      return cx?.spawn(async (cx) => { this.busy = true; cx.notify(); try { this.error = await this.create(c.branch); } catch (e) { this.error = String(e.message ?? e); } this.busy = false; if (!this.error) this.close(); this.opening = true; cx.notify(); });
+    }
     this.close();
     const s = spaceOf(c.path, this.list, this.on);
     if (s) run("space.select", { id: s.id });
@@ -221,15 +227,15 @@ export default class Worktree extends View {
     // Terminals first: a shell sitting in the folder keeps it busy on Windows.
     run("space.close", { id: s.id, confirmed: true });
     const force = this.dirty || mods.length > 0;
-    const r = await git(this.repo.main, ["worktree", "remove", ...(force ? ["--force"] : []), this.repo.top], this.on);
-    return r.ok ? "" : r.err || "git worktree remove failed.";
+    await removeWorktree(gitOn(this.on), this.repo, this.repo.top, { branch: this.branch, deleteBranch: this.deleteBranch, force });
+    return "";
   }
 
   key(e, cx) {
     if (e.key === "escape") return this.close();
     if (this.opening) {
       const n = this.shown().length;
-      if (e.key === "enter") this.open(this.shown()[this.at]);
+      if (e.key === "enter") this.open(this.shown()[this.at], cx);
       else if ((e.key === "down" || e.key === "up") && n) this.at = (this.at + (e.key === "down" ? 1 : n - 1)) % n;
       else return;
       cx.stop_propagation();
@@ -255,19 +261,21 @@ export default class Worktree extends View {
         .cursor_pointer()
         .when(on, (el) => el.bg(t.selected))
         .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
-        .on_click(() => this.open(c))
+        .on_click((_e, cx) => this.open(c, cx))
         .child(
           h_flex()
             .gap(8)
             .items_center()
-            .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(c.branch ?? "detached"))
-            .when(c.main, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child("main checkout")))
+            .child(div().flex_1().min_w(0).truncate().text_color(c.remote ? t.muted : t.foreground).child(c.branch ?? "detached"))
+            .when(c.main, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child("default branch")))
+            .when(Boolean(c.remote), (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child("on origin · ↵ checks out")))
             .when(Boolean(there), (el) => el.child(div().flex_none().text_size(11).text_color(t.accent).child("open")))
             .when(!there && c.at > 0, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(ago(c.at)))),
         )
-        .child(div().truncate().text_size(11.5).text_color(t.dim).child(tilde(c.path, this.userHome ?? "")));
+        .child(div().truncate().text_size(11.5).text_color(t.dim).child(c.path ? tilde(c.path, this.userHome ?? "") : `${tilde(r.root, this.userHome ?? "")}/${c.branch.replace(/[^A-Za-z0-9._-]+/g, "-")}`));
     };
-    const count = rows.length === all.length ? `${all.length} checkouts` : `${rows.length}/${all.length} checkouts`;
+    const local = all.filter((c) => !c.remote).length;
+    const count = rows.length === all.length ? `${local} checkouts` : `${rows.filter((c) => !c.remote).length}/${local} checkouts`;
     return v_flex()
       .id("worktree")
       .track_focus(this.handle)
@@ -308,7 +316,7 @@ export default class Worktree extends View {
     const remove = props()?.action === "remove";
     const s = this.space();
     const r = this.repo;
-    const title = remove ? `Remove worktree ${s?.name ?? ""}?` : `New worktree${r ? ` of ${r.name}` : ""}`;
+    const title = remove ? `Remove worktree ${this.branch || s?.name || (r?.top ?? "").split("/").pop()}?` : `New worktree${r ? ` of ${r.name}` : ""}`;
     const detail =
       r === undefined
         ? "…"
@@ -317,8 +325,8 @@ export default class Worktree extends View {
           : remove
             ? !r.linked
               ? "This is the repository's main checkout, not a worktree."
-              : `Closes the space and deletes ${tilde(r.top, this.userHome)}. The branch stays.`
-            : `A new space on a checkout in ${tilde(ROOT(this.userHome), this.userHome)}/${r.name}/. A branch that exists is checked out; a new one starts from here.`;
+              : `Closes the space, deletes ${tilde(r.top, this.userHome)} and prunes the worktree list.`
+            : `A new space on a checkout in ${where(r, this.userHome)}. A branch on origin is checked out tracking it; a new one starts from origin's default branch.`;
     const blocked = !r || (remove && !r.linked);
     return v_flex()
       .id("worktree")
@@ -333,6 +341,13 @@ export default class Worktree extends View {
       .child(div().text_color(t.muted).child(detail))
       .when(remove && this.dirty, (el) => el.child(div().text_color(t.blocked).child("It has uncommitted changes: they will be lost.")))
       .when(remove && this.unpushed.length > 0, (el) => el.child(div().text_color(t.blocked).child(`Submodule ${this.unpushed.join(", ")} has commits that aren't pushed anywhere: they will be lost.`)))
+      .when(remove && Boolean(r?.linked && this.branch), (el) => el.child(
+        h_flex().id("delete-branch").gap(8).items_center().cursor_pointer()
+          .on_click((_e, cx) => { this.deleteBranch = !this.deleteBranch; cx.notify(); })
+          .child(div().size(15).flex_none().rounded(4).border_1().border_color(this.deleteBranch ? t.accent : t.input).when(this.deleteBranch, (e) => e.bg(t.accent))
+            .flex().items_center().justify_center().when(this.deleteBranch, (e) => e.child(div().text_size(10).text_color(t.accent_foreground ?? t.background).child("✓"))))
+          .child(div().text_color(t.foreground).child(`Also delete branch ${this.branch}`))
+          .child(div().text_size(11.5).text_color(this.merged ? t.dim : t.blocked).child(this.merged ? "merged" : "not merged: its commits will be lost"))))
       .when(!remove && !blocked, (el) =>
         el.child(
           Input.new(this.input)
