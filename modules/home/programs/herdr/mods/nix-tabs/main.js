@@ -2,6 +2,12 @@ import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings } from "herdr";
 
+// Pi titles its terminal "π - <session name> - <folder>", or "π - <folder>" before it has one.
+function piSession(title) {
+  const parts = (title ?? "").split(" - ");
+  return parts[0] === "π" && parts.length > 2 ? parts.slice(1, -1).join(" - ") : "";
+}
+
 function find(node, id) {
   if (node?.id === id) return node;
   for (const child of node?.children ?? []) {
@@ -54,7 +60,11 @@ export default class Tabs extends View {
       .on_mouse_down("left", stop).on_click(action).child(label);
     const item = (c, i) => {
       const program = panes().find(p => p.tab === c.id && p.program?.agent)?.program ?? panes().find(p => p.tab === c.id)?.program;
-      const name = /^tb\d+$/.test(c.name) ? program?.name ?? "Terminal" : c.name;
+      // An unnamed tab reads as its agent's session: Pi's "π - <name> - <folder>" title,
+      // else Herdr's label. Nothing is renamed, so Herdr's numbering still holds.
+      const lead = panes().find(p => p.tab === c.id && p.program?.agent);
+      const session = !c.named && lead?.app === "pi" ? piSession(lead.title) : "";
+      const name = session || (/^tb\d+$/.test(c.name) ? program?.name ?? "Terminal" : c.name);
       return h_flex().id(`tab-${c.id}`).h(29).px(10).gap(7).rounded(7).items_center().flex_none().text_size(12.8)
         .border(1).border_color(c.active ? t.border : t.chrome).bg(c.active ? t.raised : t.chrome).text_color(c.active ? t.foreground : t.muted)
         .hover(s => s.bg(t.hover))
