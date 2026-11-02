@@ -19,7 +19,7 @@ user="$(id -un)"
 
 pid() {
   for p in $(pgrep -f 'Herdr.app/Contents/MacOS/Herdr' || true); do
-    ps eww -p "$p" | grep -q "HERDR_APP_HOME=$HOME_DIR" && echo "$p"
+    case "$(ps eww -p "$p")" in *"HERDR_APP_HOME=$HOME_DIR"*) echo "$p" ;; esac
   done
 }
 
