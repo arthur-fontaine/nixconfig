@@ -163,9 +163,29 @@ Folder: `~/.config/herdr-app`. Repo module: `modules/home/programs/herdr/`.
 | --- | --- |
 | `settings.json` | Merge: font size, contrast, sounds. Settings and the zoom keys write it. |
 | `shared.json` | Merge: the shown layout (`nix`) and the Files/Changes panels (`workspace.panels`). The rest is mods' state. Herdr holds it in memory, so quit Herdr before `rebuild`. |
-| `layouts/nix.json`, `mods/nix-*/` | Symlinks. Copies of Herdr's `main` layout and its `spaces`, `agents`, `files` and `changes` mods, patched: bare-clone repo names, pi session names, each file opens in Neovim in a tab of its own, Changes laid out like Zed's git panel (stage boxes, commit box, history with the session's commits), and `nix-diff`, the diff tab it opens for the uncommitted changes or a commit. Diff them against Herdr's after an update. |
-| `keys.json` | Not managed: Herdr's defaults. |
+| `keys.json` | Merge: the `nix-status.*` keys below. Herdr's defaults stay. |
+| `layouts/nix.json`, `mods/nix-*/` | Symlinks. Copies of Herdr's `main` layout and its mods, patched (each mod's first commit is the shipped file, to diff against after a Herdr update), plus `nix-diff` and `nix-dispatch`. Mods split into modules (`mods/_lib/`, `nix-diff/model.js`…) are joined into one `main.js` by the module, since Herdr won't import across folders. |
 | `layouts/.state/` | Not managed: clicks on the shipped layouts. Port a click you want to keep into `layouts/nix.json`. |
+
+What the `nix` layout adds to Herdr's `main`:
+
+- Worktrees follow the repo's convention (`mods/_lib/repo.js`): beside a bare clone (`repo/.bare`, as `git bclone`), else where the repo's worktrees already are, else `~/.herdr/worktrees`. A branch on origin is tracked, a new one starts from origin's default branch, and removing one can delete its branch (checked when merged) and prunes.
+- The sidebar names bare-clone spaces after the repo and lists each repo's worktrees that have no space; tabs and agents go by their Pi session name.
+- Files opens a file in Neovim in its own tab. Changes is laid out like Zed's git panel, with the branch's PR or MR (`gh`/`glab`), and opens diffs in the middle (`nix-diff`).
+
+| Key | Does |
+| --- | --- |
+| ⌘⇧N | New task: a task, its branch, a new worktree or here, an agent |
+| ⌘J / ⌘⇧J | The agent that needs you (blocked, then done) / back |
+| ⌘⇧B | Open a worktree (local, or a branch on origin) |
+| ⌘⇧R | The diff of the focused checkout |
+| ⌘⇧O | The focused checkout in Zed (else another GUI editor, else Neovim) |
+
+Test a change without touching the live config: `scripts/herdr-dev.sh start`
+opens a second Herdr window whose mods are linked from the build as `rebuild`
+links them. Spaces live in herdr-core, which both windows share: close any you
+open there. `scripts/herdr-dev.sh stop` closes it. Tests: `node --test` in
+`mods/_lib` and `mods/nix-diff`.
 
 ## Keka, AirBattery, BetterDisplay, ProtonVPN
 
