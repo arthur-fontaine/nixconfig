@@ -1,66 +1,61 @@
+// What + starts, in a space (props.space, else the shown one): Pi, or a plain
+// terminal to start anything by hand (Claude Code, Codex…). The agent is Pi
+// when it's installed, else the one Herdr ranks first. 1 and 2 pick from the keyboard.
 import { View, div, svg, image } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
-import { theme, spaces, panes, knownAgents, run, openOverlay, closeOverlay, props, window, keys } from "herdr";
+import { v_flex, h_flex } from "gpui-base";
+import { theme, spaces, knownAgents, run, closeOverlay, props, window, keys } from "herdr";
 
 function shortcut(name) {
-  const k = keys().find(b => b.section === "global" && b.action === name);
+  const k = keys().find((b) => b.section === "global" && b.action === name);
   if (!k?.keys.trim()) return "";
   const mac = window()?.platform === "macos";
-  const names = mac ? { ctrl: "⌃", alt: "⌥", shift: "⇧", cmd: "⌘", fn: "fn" } : { ctrl: "Ctrl", alt: "Alt", shift: "Shift", cmd: "Super", fn: "Fn" };
-  const alias = { secondary: mac ? "cmd" : "ctrl", super: "cmd", win: "cmd" };
-  return k.keys.trim().split(/\s+/).map(stroke => {
-    const parts = stroke.split("-");
-    let key = parts.pop();
-    if (key === "") { key = "-"; parts.pop(); }
-    const held = new Set(parts.map(m => alias[m.toLowerCase()] ?? m.toLowerCase()));
-    if (/^[A-Z]$/.test(key)) held.add("shift");
-    const label = key.length === 1 ? key.toUpperCase() : key[0].toUpperCase() + key.slice(1).toLowerCase();
-    return [...Object.keys(names).filter(m => held.has(m)).map(m => names[m]), label].join(mac ? "" : "+");
-  }).join(" ");
+  const names = mac ? { ctrl: "⌃", alt: "⌥", shift: "⇧", cmd: "⌘" } : { ctrl: "Ctrl+", alt: "Alt+", shift: "Shift+", cmd: "Super+" };
+  return k.keys.trim().split("-").map((p, i, all) => (i < all.length - 1 ? names[p] ?? p : p.toUpperCase())).join("");
 }
 
 export default class NewMenu extends View {
   init(_props, cx) {
-    this.agents = [];
+    this.agent = undefined;
     this.handle = cx.focus_handle();
     this.handle.focus();
-    cx.spawn(async cx => {
-      try { this.agents = await knownAgents({ on: spaces().find(s => s.active)?.machine }); }
-      catch { this.failed = true; }
+    cx.spawn(async (cx) => {
+      try {
+        const all = (await knownAgents({ on: this.space()?.machine })).filter((a) => a.installed);
+        this.agent = all.find((a) => a.key === "pi") ?? all[0] ?? null;
+      } catch { this.agent = null; }
       cx.notify();
     });
   }
-  row(id, icon, name, action, hint = "", enabled = true) {
-    const t = theme();
-    return h_flex().id(id).h(31).px(9).gap(10).rounded(7).items_center().flex_none()
-      .text_color(enabled ? t.foreground : t.dim).when(enabled, el => el.hover(s => s.bg(t.selected)))
-      .on_click(() => { if (enabled) { closeOverlay(props().overlay); action(); } })
-      .child(icon).child(div().flex_1().child(name)).child(div().text_size(11).text_color(t.dim).child(hint));
+
+  space() {
+    return spaces().find((s) => s.id === props()?.space) ?? spaces().find((s) => s.active);
   }
+
+  start(argv, name) {
+    closeOverlay(props().overlay);
+    const space = this.space();
+    run("space.select", { id: space?.id });
+    run("tab.new", { space: space?.id, ...(argv ? { argv, name } : {}) });
+  }
+
+  row(id, icon, label, hint, action, t) {
+    return h_flex().id(id).h(34).px(10).gap(10).rounded(7).items_center().flex_none().cursor_pointer()
+      .hover((s) => s.bg(t.selected)).on_click(() => action())
+      .child(icon).child(div().flex_1().text_color(t.foreground).child(label))
+      .child(div().text_size(11).text_color(t.dim).child(hint));
+  }
+
   render() {
-    const t = theme();
-    const space = spaces().find(s => s.active);
-    const installed = this.agents.filter(a => a.installed);
-    const choices = [...installed, ...this.agents.filter(a => !a.installed).slice(0, 2)];
-    return v_flex().min_h(0).w_full().h(Math.min(522, 198 + Math.max(1, choices.length) * 31)).bg(t.popover).p(5).text_size(12.8)
-      .id("new-menu").track_focus(this.handle)
+    const t = theme(), a = this.agent;
+    const pic = a ? (a.tint ? svg(a.icon).size(15).text_color(t.foreground) : image(a.icon).size(15)) : null;
+    return v_flex().id("new-menu").track_focus(this.handle).size_full().bg(t.popover).p(5).gap(1).text_size(13)
       .on_key_down((e) => {
         if (e.modifiers.control || e.modifiers.platform || e.modifiers.alt) return;
-        const agent = /^[1-9]$/.test(e.key) ? installed[Number(e.key) - 1] : null;
-        if (!agent) return;
-        closeOverlay(props().overlay);
-        run("tab.new", { name: agent.name, space: space?.id, argv: agent.run });
+        if (e.key === "1" && a) this.start(a.run, a.name);
+        else if (e.key === "2" || (e.key === "1" && a === null)) this.start(null);
       })
-      .child(this.row("task", svg("mods/workspace-chrome/plus.svg").size(14), "New task\u2026", () => openOverlay({ mod: "nix-dispatch", kind: "dialog", width: 620, height: 420, props: { space: space?.id, folder: panes().find(p => p.focused)?.cwd } }), shortcut("nix-status.dispatch")))
-      .child(this.row("terminal", svg("icons/shell.svg").size(14), "Terminal", () => run("tab.new", { space: space?.id }), shortcut("tab.new")))
-      .child(div().px(9).pt(8).pb(4).text_size(11).text_color(t.dim).child("Start an agent"))
-      .child(v_flex().flex_1().min_h(0).overflow_y_scrollbar()
-        .children(choices.map((a, i) => this.row(a.key, a.tint ? svg(a.icon).size(14).text_color(t.foreground) : image(a.icon).size(14), a.name,
-          () => run("tab.new", { name: a.name, space: space?.id, argv: a.run }), a.installed ? (i < 9 ? String(i + 1) : "") : "not installed", a.installed)))
-        .when(this.agents.length === 0, el => el.child(div().px(9).py(6).text_color(t.dim).child(this.failed ? "Could not load agents" : "Checking installed agents…"))))
-      .child(div().h(1).mx(4).my(5).bg(t.border))
-      .child(this.row("space", div().w(14).child("+"), "New space", () => run("space.new"), shortcut("space.new")))
-      .child(this.row("worktree", svg("mods/workspace-chrome/branch.svg").size(14), "New worktree…", () => openOverlay({ mod: "nix-worktree", kind: "dialog", width: 480, height: 300, props: { space: space?.id, folder: panes().find(p => p.focused)?.cwd, action: "new" } }), "", Boolean(space)))
-      .child(this.row("worktree-open", svg("mods/workspace-chrome/branch.svg").size(14), "Open worktree\u2026", () => openOverlay({ mod: "nix-worktree", kind: "dialog", width: 560, height: 480, props: { space: space?.id, folder: panes().find(p => p.focused)?.cwd, action: "open" } }), "", Boolean(space)));
+      .when(Boolean(a), (el) => el.child(this.row("start-agent", pic, a.name, "1", () => this.start(a.run, a.name), t)))
+      .when(a === undefined, (el) => el.child(div().h(34).px(10).flex().items_center().text_color(t.dim).child("…")))
+      .child(this.row("start-terminal", svg("icons/shell.svg").size(15).text_color(t.foreground), "Terminal", a === null ? "1" : shortcut("tab.new") || "2", () => this.start(null), t));
   }
 }

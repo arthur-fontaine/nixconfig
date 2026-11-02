@@ -44,8 +44,7 @@ let
   '';
   # The patched copies of shipped mods, and nix-diff (the diff tab nix-changes opens).
   mods = {
-    nix-spaces = { };
-    nix-agents = { };
+    nix-sidebar = { };
     nix-files = { };
     nix-changes = { };
     nix-diff = { modules = [ "model.js" "syntax.js" ]; };
@@ -75,7 +74,7 @@ let
   # Keys for the nix-* mods, all on cmd (terminals never get it, so nothing is
   # taken from typing). nix-status is always shown, so it runs them.
   keys.global = {
-    "cmd-shift-n" = "nix-status.dispatch";
+    "cmd-shift-n" = "nix-status.dispatch"; # new worktree
     "cmd-j" = "nix-status.jump";
     "cmd-shift-j" = "nix-status.back";
     "cmd-shift-b" = "nix-status.worktrees";
@@ -111,7 +110,7 @@ in
       live = "~/.config/herdr-app/shared.json";
       repo = "modules/home/programs/herdr/default.nix (shared)";
       # Mods' own state: onboarding, colors, sidebar width, list sorting.
-      ignore = [ "^frame\\." "^space\\.colors" "^sidebar\\." "^agents\\." "^nix-spaces\\." ];
+      ignore = [ "^frame\\." "^space\\.colors" "^sidebar\\." "^agents\\." "^nix-spaces\\." "^nix\\." ];
     };
   };
 

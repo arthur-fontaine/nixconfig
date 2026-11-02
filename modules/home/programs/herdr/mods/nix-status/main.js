@@ -2,7 +2,7 @@
 // to `nix-status.<command>` (a key reaches shown copies only):
 //   jump      the agent that needs you (blocked, then done), most recent first
 //   back      where jump came from
-//   dispatch  the dispatch dialog: a task, a worktree, an agent
+//   dispatch  new worktree: a branch, then Pi or a terminal in it
 //   worktree  the worktree dialog (new), worktrees (open)
 //   review    the diff of the focused checkout, in the middle
 //   editor    the focused checkout in Zed, else $VISUAL's GUI editor, else a Neovim tab
@@ -45,7 +45,7 @@ export default class Status extends View {
       const pane = shared("nix.jumpBack");
       if (pane && panes().some((p) => p.pane === pane)) run("pane.focus", { pane });
     } else if (c === "dispatch") {
-      openOverlay({ mod: "nix-dispatch", kind: "dialog", width: 620, height: 420, props: { space: space?.id, folder: cwd } });
+      openOverlay({ mod: "nix-dispatch", kind: "dialog", width: 460, height: 230, props: { space: space?.id, folder: cwd, machine: on } });
     } else if (c === "worktree" || c === "worktrees") {
       openOverlay({ mod: "nix-worktree", kind: "dialog", ...(c === "worktrees" ? { width: 560, height: 480 } : { width: 480, height: 300 }), props: { space: space?.id, folder: cwd, action: c === "worktrees" ? "open" : "new" } });
     } else if (c === "review") {
@@ -78,7 +78,7 @@ export default class Status extends View {
       const parts = b && b.keys.endsWith("--") ? [...b.keys.slice(0, -2).split("-"), "-"] : b?.keys.split("-");
       return parts && parts.map((p) => mod[p.toLowerCase()] ?? p.toUpperCase()).join("");
     };
-    return [["nix-status.dispatch", "new task"], ["nix-status.jump", "needs you"], ["app.palette", "commands"]]
+    return [["nix-status.dispatch", "new worktree"], ["nix-status.jump", "needs you"], ["app.palette", "commands"]]
       .map(([a, label]) => (show(a) ? `${show(a)} ${label}` : null)).filter(Boolean).join("   ");
   }
 

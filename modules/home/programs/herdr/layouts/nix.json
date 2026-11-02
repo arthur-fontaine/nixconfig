@@ -20,7 +20,7 @@
       "id": "sidebar",
       "type": "column",
       "size": {
-        "px": 268
+        "px": 288
       },
       "min": 44,
       "max": 480,
@@ -39,32 +39,15 @@
           }
         },
         {
-          "id": "sidebar-lists",
-          "type": "column",
-          "children": [
-            {
-              "id": "spaces",
-              "type": "block",
-              "size": {
-                "weight": 1
-              },
-              "min": 90,
-              "content": {
-                "mod": "nix-spaces"
-              }
-            },
-            {
-              "id": "agents",
-              "type": "block",
-              "size": {
-                "weight": 1
-              },
-              "min": 90,
-              "content": {
-                "mod": "nix-agents"
-              }
-            }
-          ]
+          "id": "sidebar-tree",
+          "type": "block",
+          "size": {
+            "weight": 1
+          },
+          "min": 120,
+          "content": {
+            "mod": "nix-sidebar"
+          }
         },
         {
           "id": "sidebar-footer",

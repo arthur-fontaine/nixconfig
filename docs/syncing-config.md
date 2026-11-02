@@ -170,12 +170,13 @@ Folder: `~/.config/herdr-app`. Repo module: `modules/home/programs/herdr/`.
 What the `nix` layout adds to Herdr's `main`:
 
 - Worktrees follow the repo's convention (`mods/_lib/repo.js`): beside a bare clone (`repo/.bare`, as `git bclone`), else where the repo's worktrees already are, else `~/.herdr/worktrees`. A branch on origin is tracked, a new one starts from origin's default branch, and removing one can delete its branch (checked when merged) and prunes.
-- The sidebar names bare-clone spaces after the repo and lists each repo's worktrees that have no space; tabs and agents go by their Pi session name.
+- One sidebar on the left (`nix-sidebar`): repos, their worktrees, each worktree's tabs (agents by their Pi session name), what needs you pinned on top, a filter, and each repo's worktrees without a space folded under it.
+- New worktree (+ on a repo, ⌘⇧N): a branch, then Pi or a terminal in it. + on a worktree starts Pi or a terminal there.
 - Files opens a file in Neovim in its own tab. Changes is laid out like Zed's git panel, with the branch's PR or MR (`gh`/`glab`), and opens diffs in the middle (`nix-diff`).
 
 | Key | Does |
 | --- | --- |
-| ⌘⇧N | New task: a task, its branch, a new worktree or here, an agent |
+| ⌘⇧N | New worktree: a branch, then Pi or a terminal in it |
 | ⌘J / ⌘⇧J | The agent that needs you (blocked, then done) / back |
 | ⌘⇧B | Open a worktree (local, or a branch on origin) |
 | ⌘⇧R | The diff of the focused checkout |
