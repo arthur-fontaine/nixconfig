@@ -373,7 +373,9 @@ export default class Changes extends View {
     const n = files.length;
     const add = files.reduce((s, f) => s + f.add, 0), del = files.reduce((s, f) => s + f.del, 0);
     // The list takes what its rows need, at most half the panel; History has the rest.
-    const listH = Math.min(n * 26 + 8, Math.max(120, (this.height ?? 600) / 2));
+    // Capped at half the panel, rounded down to whole rows so none is cut in half.
+    const cap = Math.max(120, (this.height ?? 600) / 2);
+    const listH = Math.min(n * 26 + 8, 8 + 26 * Math.floor((cap - 8) / 26));
     const textButton = (id, label, onClick) => div().id(id).h(24).px(8).flex().flex_none().items_center().rounded(6).text_size(12).font_medium()
       .text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(onClick).child(label);
     const empty = this.error || (this.loading && !this.root ? "Loading changes…" : this.root ? "Nothing to commit" : "No folder");
