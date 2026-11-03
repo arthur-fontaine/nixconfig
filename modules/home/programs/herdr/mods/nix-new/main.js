@@ -400,8 +400,10 @@ export default class New extends View {
 
   rows(t) {
     const list = this.items(), cur = this.current(list);
+    // The models are rebuilt per call, so rows are matched by what they stand for.
+    const key = (r) => r && `${r.kind}:${r.file ?? r.path ?? r.space?.id ?? r.name ?? ""}`;
     const rows = [];
-    const add = (r) => rows.push(this.row(r, r === cur, t));
+    const add = (r) => rows.push(this.row(r, key(r) === key(cur), t));
     if (this.here) {
       const m = this.model2();
       m.actions.forEach(add);
