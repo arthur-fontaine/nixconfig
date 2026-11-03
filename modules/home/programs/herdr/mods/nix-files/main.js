@@ -1,8 +1,28 @@
 // A lazy file browser for the focused pane's folder. Shipped: files preview in
-// the panel. Here a file opens in Neovim, in a tab of its own.
+// the panel. Here a file opens in the editor (nix-editor), in a tab of its own.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, shared, setShared } from "herdr";
+
+// A file in the editor (nix-editor): the tab it already has in this space, else a new one
+// named after it. nix-files and nix-diff share the tab → file map, so either finds the
+// other's tab; a line moves that editor there through nix-editor.goto.
+function openInEditor(file, line) {
+  const space = spaces().find((s) => s.active);
+  if (!space) return;
+  const tabs = shared("nix.editorTabs") ?? {};
+  const known = space.tabs.find((t) => tabs[t.id] === file);
+  if (known) {
+    run("tab.select", { id: known.id });
+    if (line) setShared("nix-editor.goto", { file, line, n: Date.now() });
+    return;
+  }
+  const before = new Set(space.tabs.map((t) => t.id));
+  run("tab.new", { name: file.split("/").pop(), mod: "nix-editor", props: { file, ...(line ? { line } : {}) } });
+  const added = spaces().find((s) => s.id === space.id)?.tabs.find((t) => !before.has(t.id));
+  if (added) setShared("nix.editorTabs", { ...tabs, [added.id]: file });
+}
+
 
 
 function location() {
@@ -144,27 +164,8 @@ export default class Files extends View {
     });
   }
 
-  // Each file in its own tab, in Neovim: the tab it already has, else a new one
-  // named after it. Quitting Neovim ends the terminal, which closes the tab
-  // (agents run in a shell that would otherwise stay open).
-  edit(path, cx) {
-    const space = spaces().find((s) => s.active), root = this.root, file = `${root}/${path}`;
-    if (!space || !root) return;
-    this.tabs ??= {};
-    const known = this.tabs[file];
-    if (known && space.tabs.some((t) => t.id === known)) return run("tab.select", { id: known });
-    const before = new Set(space.tabs.map((t) => t.id));
-    run("tab.new", {
-      name: path.split("/").pop(), folder: root,
-      argv: ["sh", "-c", 'nvim "$1"; hc kill "$HC_TERMINAL_ID"', "nvim", file],
-    });
-    cx.spawn(async (cx) => {
-      for (let i = 0; i < 20; i++) {
-        await new Promise((r) => cx.timer.after(100, r));
-        const added = spaces().find((s) => s.id === space.id)?.tabs.find((t) => !before.has(t.id));
-        if (added) { this.tabs[file] = added.id; break; }
-      }
-    });
+  edit(path) {
+    if (this.root) openInEditor(`${this.root}/${path}`);
   }
 
   // A tree row: a 16px indent per level with its guide (rows touch, so guides join into lines),

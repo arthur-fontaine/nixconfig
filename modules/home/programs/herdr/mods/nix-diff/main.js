@@ -5,9 +5,28 @@
 // tab, with props { root, on, commit? }: the uncommitted changes, or a commit.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } from "gpui-base";
-import { props, exec, readTextFile, watchFolder, theme, settings, shared, run } from "herdr";
+import { props, exec, readTextFile, watchFolder, theme, settings, shared, setShared, spaces, run } from "herdr";
 import { addedFile, parsePatch, rowsOf } from "./model.js";
 import { languageOf, splitAt, tokenize } from "./syntax.js";
+
+// A file in the editor (nix-editor): the tab it already has in this space, else a new one
+// named after it. nix-files and nix-diff share the tab → file map, so either finds the
+// other's tab; a line moves that editor there through nix-editor.goto.
+function openInEditor(file, line) {
+  const space = spaces().find((s) => s.active);
+  if (!space) return;
+  const tabs = shared("nix.editorTabs") ?? {};
+  const known = space.tabs.find((t) => tabs[t.id] === file);
+  if (known) {
+    run("tab.select", { id: known.id });
+    if (line) setShared("nix-editor.goto", { file, line, n: Date.now() });
+    return;
+  }
+  const before = new Set(space.tabs.map((t) => t.id));
+  run("tab.new", { name: file.split("/").pop(), mod: "nix-editor", props: { file, ...(line ? { line } : {}) } });
+  const added = spaces().find((s) => s.id === space.id)?.tabs.find((t) => !before.has(t.id));
+  if (added) setShared("nix.editorTabs", { ...tabs, [added.id]: file });
+}
 
 // Writes nothing under .git, so the folder watch doesn't wake itself.
 const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false", "-c", "core.quotepath=false"];
@@ -114,11 +133,7 @@ export default class Diff extends View {
   }
 
   openFile(path, line) {
-    const file = `${this.root}/${path}`;
-    run("tab.new", {
-      name: path.split("/").pop(), folder: this.root,
-      argv: ["sh", "-c", 'nvim "+$2" "$1"; hc kill "$HC_TERMINAL_ID"', "nvim", file, String(line ?? 1)],
-    });
+    openInEditor(`${this.root}/${path}`, line ?? 1);
   }
 
   colors(t) {
@@ -152,7 +167,7 @@ export default class Diff extends View {
   }
 
   // One handler for the whole list (rows can't hold their own): a header folds
-  // its file, a line opens the file in Neovim there, as clicking a line in Zed's
+  // its file, a line opens the file in the editor there, as clicking a line in Zed's
   // diff jumps to it.
   click(key, cx) {
     const r = this.rows[+key.split(":")[1]];
