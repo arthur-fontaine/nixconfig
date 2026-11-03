@@ -60,8 +60,15 @@ function token() {
 }
 const TOKEN = token();
 
-// The login shell's PATH, once: mise and friends put the servers there.
+// The login shell's PATH, once, after the bridge's own: launchd gives the bridge the
+// interactive shell's (mise's shims), which a login shell rebuilds without.
 function loginPath() {
+  const own = (process.env.PATH || "").split(":").filter(Boolean);
+  const login = loginShellPath().split(":").filter(Boolean);
+  return [...new Set([...own, ...login])].join(":");
+}
+
+function loginShellPath() {
   try {
     const out = execFileSync("/bin/zsh", ["-lc", 'printf "__PATH__%s\\n" "$PATH"'], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"] });
     const line = out.split("\n").find((l) => l.startsWith("__PATH__"));

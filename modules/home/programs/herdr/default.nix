@@ -148,7 +148,21 @@ in
   launchd.agents.herdr-lsp-bridge = {
     enable = true;
     config = {
-      ProgramArguments = [ "/bin/zsh" "-lc" "exec node ${./lsp-bridge/bridge.js}" ];
+      # mise is activated in the interactive shell only (a login shell has no node and no
+      # language servers), so the bridge runs on mise's node shim with that shell's PATH.
+      ProgramArguments = [ "${config.home.homeDirectory}/.local/share/mise/shims/node" "${./lsp-bridge/bridge.js}" ];
+      EnvironmentVariables.PATH = lib.concatStringsSep ":" [
+        "${config.home.homeDirectory}/.local/share/mise/shims"
+        "/etc/profiles/per-user/${config.home.username}/bin"
+        "/run/current-system/sw/bin"
+        "/nix/var/nix/profiles/default/bin"
+        "/opt/homebrew/bin"
+        "/usr/local/bin"
+        "/usr/bin"
+        "/bin"
+        "/usr/sbin"
+        "/sbin"
+      ];
       RunAtLoad = true;
       KeepAlive = true;
       StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/herdr-lsp-bridge.log";
