@@ -198,6 +198,8 @@ let
     startup-header = ./extensions/startup-header;
     # Claude Code's /rewind (Esc twice), and /restore to bring rewound prompts back.
     rewind = ./extensions/rewind;
+    # Herdr's Info panel: labels the terminal with its session file, keeps the Claude usage.
+    herdr-session = ./extensions/herdr-session;
     # Pi's footer as two lines: where you are, then what's going on.
     footer = ./extensions/footer;
     # web_search and web_fetch through TinyFish, and view_image to look at a URL's image.
