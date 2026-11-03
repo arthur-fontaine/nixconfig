@@ -397,8 +397,10 @@ export default class Sidebar extends View {
     if (this.filter && !this.matches(name) && !(s.tabs ?? []).some((x) => this.matches(this.tabInfo(x, ps).label))) return [];
     const rows = this.worktreeRow({ s, g: null }, ps, t, order);
     // A folder has no repo row above it: its row carries the icon instead of the indent.
+    // One selected row, as for a worktree: the folder's only when no tab row shows.
+    const lone = s.active && (this.folded.has(s.id) || !(s.tabs ?? []).some((x) => !x.settled));
     rows[0] = this.hoverable(`space-${s.id}`, h_flex().h(28).px(10).gap(8).items_center().rounded(6).cursor_pointer()
-      .when(s.active, (e) => e.bg(t.selected)).when(!s.active, (e) => e.hover((x) => x.bg(t.hover)))
+      .when(lone, (e) => e.bg(t.selected)).when(!lone, (e) => e.hover((x) => x.bg(t.hover)))
       .on_click(() => run("space.select", { id: s.id }))
       .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 260, props: { tab: "space", target: { id: s.id } } }))
       .child(svg(ICON("folder")).size(14).flex_none().text_color(t.muted))

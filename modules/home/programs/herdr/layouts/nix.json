@@ -95,7 +95,7 @@
                   "background": "background",
                   "lone": false,
                   "border": {
-                    "width": 1,
+                    "width": 0,
                     "color": "border"
                   },
                   "focus": {
