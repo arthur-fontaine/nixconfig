@@ -45,7 +45,7 @@ case "${1:-}" in
     if [ -n "$(pid)" ]; then echo "already running ($(pid))"; exit 0; fi
     mkdir -p "$HOME_DIR"
     # Skip the welcome, start on the given layout.
-    printf '{"frame.welcomed":"finished","layout":"%s","workspace.panels":["changes","files"]}\n' "${2:-nix}" > "$HOME_DIR/shared.json"
+    printf '{"frame.welcomed":"finished","layout":"%s","workspace.panels":["changes","files","info"]}\n' "${2:-nix}" > "$HOME_DIR/shared.json"
     # and What's new, as the real window has already shown it.
     cp "$HOME/.config/herdr-app/update-notes.json" "$HOME_DIR/" 2>/dev/null || true
     link

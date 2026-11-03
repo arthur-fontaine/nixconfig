@@ -59,6 +59,8 @@ let
     # The code editor: a renderer for a headless Neovim; grid.js (its UI as a grid) and
     # nvim.js (msgpack-RPC to it) joined in.
     nix-editor = { modules = [ "grid.js" "nvim.js" ]; };
+    # The Info panel: the selected Pi session and the Claude usage; model.js (the figures) joined in.
+    nix-info = { modules = [ "model.js" ]; };
   };
   modFiles = lib.listToAttrs (lib.concatLists (lib.mapAttrsToList (mod: o: [
     { name = "herdr-app/mods/${mod}/main.js"; value.source = if o == { } then ./mods/${mod}/main.js else bundle mod o; }
@@ -89,7 +91,7 @@ let
   shared = {
     layout = "nix";
     # The Files and Changes panels the tab bar offers (picked in the welcome).
-    "workspace.panels" = [ "changes" "files" ];
+    "workspace.panels" = [ "changes" "files" "info" ];
   };
 in
 {

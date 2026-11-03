@@ -118,9 +118,9 @@
               "type": "column",
               "hidden": false,
               "size": {
-                "px": 320
+                "px": 360
               },
-              "min": 280,
+              "min": 300,
               "max": 900,
               "children": [
                 {
@@ -140,6 +140,13 @@
                       "type": "block",
                       "content": {
                         "mod": "nix-changes"
+                      }
+                    },
+                    {
+                      "id": "info",
+                      "type": "block",
+                      "content": {
+                        "mod": "nix-info"
                       }
                     }
                   ]
