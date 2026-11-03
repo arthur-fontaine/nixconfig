@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { charIndex, Grid, hex, nvimKey } from "../grid.js";
 
-const text = (g: Grid, row: number) => g.lines[row].map((c) => c[0]).join("");
+const text = (g: Grid, row: number, id = 1) => g.grids.get(id)!.lines[row].map((c) => c[0]).join("");
 
 test("grid_line carries the highlight over and repeats cells", () => {
   const g = new Grid();
@@ -11,8 +11,8 @@ test("grid_line carries the highlight over and repeats cells", () => {
   const flushed = g.apply([["grid_line", [1, 0, 0, [["a", 3], ["b"], [" ", 0, 2], ["c", 4]]]], ["flush", []]]);
   assert.equal(flushed, true);
   assert.equal(text(g, 0), "ab  c ");
-  assert.deepEqual(g.lines[0].map((c) => c[1]), [3, 3, 0, 0, 4, 0]);
-  assert.deepEqual(g.runs(0), [
+  assert.deepEqual(g.grids.get(1)!.lines[0].map((c) => c[1]), [3, 3, 0, 0, 4, 0]);
+  assert.deepEqual(g.runs(1, 0), [
     { col: 0, cells: 2, text: "ab", hl: 3 },
     { col: 2, cells: 2, text: "  ", hl: 0 },
     { col: 4, cells: 1, text: "c", hl: 4 },
@@ -59,7 +59,8 @@ test("cursor shape follows the mode", () => {
 
 test("popup menu shows, selects and hides", () => {
   const g = new Grid();
-  g.apply([["popupmenu_show", [[["foo", "f", "", ""]], -1, 3, 4, 1]], ["popupmenu_select", [0]]]);
+  g.apply([["popupmenu_show", [[["foo", "f", "", ""]], -1, 3, 4, 2]], ["popupmenu_select", [0]]]);
+  assert.equal(g.popup?.grid, 2);
   assert.equal(g.popup?.selected, 0);
   g.apply([["popupmenu_hide", []]]);
   assert.equal(g.popup, null);
@@ -102,4 +103,26 @@ test("cmdline: shown with its prefix, cursor in characters, hidden", () => {
   g.apply([["cmdline_hide", [1, false]]]);
   assert.equal(g.cmdline, null);
   assert.equal(charIndex("aé", 3), 2);
+});
+
+test("multigrid: windows are placed, floats float, the cursor names its grid", () => {
+  const g = new Grid();
+  g.apply([
+    ["grid_resize", [1, 20, 10], [2, 20, 9], [4, 8, 2]],
+    ["win_pos", [2, 1000, 0, 0, 20, 9]],
+    ["win_float_pos", [4, 1001, "NW", 2, 3, 5, true, 50, 1, 3, 5]],
+    ["grid_line", [2, 0, 0, [["a", 0, 20]]], [4, 0, 0, [["h", 0, 8]]]],
+    ["grid_cursor_goto", [2, 1, 2]],
+  ]);
+  assert.deepEqual(g.windows().map((w) => w.id), [1, 2]);
+  assert.deepEqual(g.floats().map((f) => [f.id, f.row, f.col]), [[4, 3, 5]]);
+  assert.deepEqual(g.cursor, { grid: 2, row: 1, col: 2 });
+  assert.equal(text(g, 0, 4), "hhhhhhhh");
+  // The pointer over the float reaches the float, elsewhere the window.
+  assert.deepEqual(g.at(3, 6), { grid: 4, row: 0, col: 1 });
+  assert.deepEqual(g.at(0, 0), { grid: 2, row: 0, col: 0 });
+  g.apply([["win_hide", [4]]]);
+  assert.deepEqual(g.floats(), []);
+  g.apply([["win_close", [2]]]);
+  assert.deepEqual(g.windows().map((w) => w.id), [1]);
 });

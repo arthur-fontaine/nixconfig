@@ -1,33 +1,47 @@
-// Neovim's UI as a grid, from its `redraw` events (ext_linegrid, one grid: no
-// ext_multigrid), the way Neovide keeps it: cells of text + highlight id, the
-// highlight table, the cursor and its shape per mode, and the popup menu. Pure,
-// so `node --test` checks it; main.js draws it.
+// Neovim's UI from its `redraw` events (ext_linegrid + ext_multigrid), the way Neovide
+// keeps it: grid 1 is the screen, every window has a grid of its own placed on it
+// (win_pos) or floating over it (win_float_pos); cells are text + highlight id; then the
+// highlight table, the cursor and its shape per mode, the popup menu, messages and the
+// cmdline. Pure, so `node --test` checks it; main.js draws it.
 
 export const hex = (n) => (n == null || n < 0 ? null : "#" + (n >>> 0).toString(16).padStart(6, "0").slice(-6));
 
+const blank = (n) => Array.from({ length: n }, () => [" ", 0]);
+
 export class Grid {
   constructor() {
-    this.cols = 0;
-    this.rows = 0;
-    this.lines = []; // rows of cells: [text, hl]
+    // id → { id, cols, rows, lines, row, col, float, hidden }
+    this.grids = new Map();
     this.hl = new Map([[0, {}]]);
     this.defaults = { fg: null, bg: null, sp: null };
-    this.cursor = { row: 0, col: 0 };
+    this.cursor = { grid: 1, row: 0, col: 0 };
     this.modes = [];
     this.mode = 0;
-    this.popup = null; // { items: [[word, kind, menu, info]], selected, row, col }
+    this.popup = null; // { items: [[word, kind, menu, info]], selected, row, col, grid }
     this.title = "";
     this.busy = false;
     this.mouse = true;
     this.options = {};
     this.message = null; // { kind, text, error } from ext_messages, the latest one
-    this.cmdline = null; // { text, pos } from ext_cmdline: what's typed after ":" or "/"
-    this.dirty = new Set(); // rows changed since the last flush
+    this.cmdline = null; // { lead, text, pos } from ext_cmdline
     this.flushed = false;
   }
 
-  // Applies one `redraw` notification's params: [[name, args...], ...]. Returns
-  // whether a `flush` came, i.e. whether the screen should be drawn now.
+  // The screen: grid 1's size.
+  get cols() { return this.grids.get(1)?.cols ?? 0; }
+  get rows() { return this.grids.get(1)?.rows ?? 0; }
+
+  grid(id) {
+    let g = this.grids.get(id);
+    if (!g) {
+      g = { id, cols: 0, rows: 0, lines: [], row: 0, col: 0, float: null, hidden: false };
+      this.grids.set(id, g);
+    }
+    return g;
+  }
+
+  // Applies one `redraw` notification's params: [[name, args...], ...]. Returns whether a
+  // `flush` came, i.e. whether the screen should be drawn now.
   apply(events) {
     let flush = false;
     for (const [name, ...calls] of events) {
@@ -38,66 +52,82 @@ export class Grid {
     return flush;
   }
 
-  blank(n) {
-    return Array.from({ length: n }, () => [" ", 0]);
-  }
-
   event(name, args) {
     switch (name) {
       case "grid_resize": {
-        const [, width, height] = args;
-        const old = this.lines;
-        this.cols = width;
-        this.rows = height;
-        this.lines = Array.from({ length: height }, (_, r) => {
-          const row = this.blank(width);
+        const [id, width, height] = args;
+        const g = this.grid(id), old = g.lines;
+        g.cols = width;
+        g.rows = height;
+        g.lines = Array.from({ length: height }, (_, r) => {
+          const row = blank(width);
           for (let c = 0; c < Math.min(width, old[r]?.length ?? 0); c++) row[c] = old[r][c];
           return row;
         });
-        for (let r = 0; r < height; r++) this.dirty.add(r);
         break;
       }
-      case "grid_clear":
-        this.lines = Array.from({ length: this.rows }, () => this.blank(this.cols));
-        for (let r = 0; r < this.rows; r++) this.dirty.add(r);
+      case "grid_clear": {
+        const g = this.grid(args[0]);
+        g.lines = Array.from({ length: g.rows }, () => blank(g.cols));
+        break;
+      }
+      case "grid_destroy":
+      case "win_close":
+        this.grids.delete(args[0]);
         break;
       case "grid_line": {
         // [grid, row, col_start, cells, wrap]; a cell is [text, hl?, repeat?] and an
         // omitted hl repeats the previous cell's in this event.
-        const [, row, colStart, cells] = args;
-        const line = this.lines[row];
+        const [id, row, colStart, cells] = args;
+        const g = this.grid(id), line = g.lines[row];
         if (!line) break;
         let col = colStart, hl = 0;
         for (const cell of cells) {
           const [text] = cell;
           if (cell.length > 1) hl = cell[1];
           const repeat = cell.length > 2 ? cell[2] : 1;
-          for (let k = 0; k < repeat && col < this.cols; k++) line[col++] = [text, hl];
+          for (let k = 0; k < repeat && col < g.cols; k++) line[col++] = [text, hl];
         }
-        this.dirty.add(row);
         break;
       }
       case "grid_scroll": {
         // [grid, top, bot, left, right, rows, cols]: the region [top, bot) × [left, right)
         // moves up by `rows` (down when negative); what it uncovers is redrawn by nvim.
-        const [, top, bot, left, right, rows] = args;
-        const copy = (to, from) => { for (let c = left; c < right; c++) this.lines[to][c] = this.lines[from][c]; };
+        const [id, top, bot, left, right, rows] = args;
+        const lines = this.grid(id).lines;
+        const copy = (to, from) => { for (let c = left; c < right; c++) lines[to][c] = lines[from][c]; };
         if (rows > 0) for (let r = top; r < bot - rows; r++) copy(r, r + rows);
         else for (let r = bot - 1; r >= top - rows; r--) copy(r, r + rows);
-        for (let r = top; r < bot; r++) this.dirty.add(r);
         break;
       }
       case "grid_cursor_goto": {
-        const [, row, col] = args;
-        this.dirty.add(this.cursor.row);
-        this.cursor = { row, col };
-        this.dirty.add(row);
+        const [grid, row, col] = args;
+        this.cursor = { grid, row, col };
         break;
       }
+      case "win_pos": {
+        // [grid, win, startrow, startcol, width, height]: a window on the screen.
+        const [id, , row, col] = args;
+        Object.assign(this.grid(id), { row, col, float: null, hidden: false });
+        break;
+      }
+      case "win_float_pos": {
+        // [grid, win, anchor, anchor_grid, anchor_row, anchor_col, mouse_enabled, zindex,
+        //  compindex, screen_row, screen_col]: Neovim's own placement is screen_row/col.
+        const [id, , anchor, anchorGrid, anchorRow, anchorCol, mouse, zindex, , screenRow, screenCol] = args;
+        const g = this.grid(id);
+        Object.assign(g, {
+          row: screenRow ?? 0, col: screenCol ?? 0, hidden: false,
+          float: { anchor, anchorGrid, anchorRow, anchorCol, mouse: mouse !== false, zindex: zindex ?? 50 },
+        });
+        break;
+      }
+      case "win_hide":
+        this.grid(args[0]).hidden = true;
+        break;
       case "default_colors_set": {
         const [fg, bg, sp] = args;
         this.defaults = { fg: hex(fg), bg: hex(bg), sp: hex(sp) };
-        for (let r = 0; r < this.rows; r++) this.dirty.add(r);
         break;
       }
       case "hl_attr_define": {
@@ -110,7 +140,6 @@ export class Grid {
         break;
       case "mode_change":
         this.mode = args[1] ?? 0;
-        this.dirty.add(this.cursor.row);
         break;
       case "busy_start": this.busy = true; break;
       case "busy_stop": this.busy = false; break;
@@ -119,8 +148,8 @@ export class Grid {
       case "set_title": this.title = args[0] ?? ""; break;
       case "option_set": this.options[args[0]] = args[1]; break;
       case "popupmenu_show": {
-        const [items, selected, row, col] = args;
-        this.popup = { items, selected, row, col };
+        const [items, selected, row, col, grid] = args;
+        this.popup = { items, selected, row, col, grid: grid ?? 1 };
         break;
       }
       case "popupmenu_select":
@@ -142,8 +171,6 @@ export class Grid {
       case "msg_clear":
         this.message = null;
         break;
-      case "msg_showmode": case "msg_showcmd": case "msg_ruler": case "msg_history_show":
-        break;
       // ext_cmdline: [content, pos, firstc, prompt, indent, level]; pos is a byte offset.
       case "cmdline_show": {
         const [content, pos, firstc, prompt, indent] = args;
@@ -162,8 +189,30 @@ export class Grid {
     }
   }
 
-  // A highlight's colors with nvim's rules: unset falls back to the defaults,
-  // reverse swaps foreground and background.
+  // The windows to draw under the floats: grid 1, then each placed window grid.
+  windows() {
+    const out = [];
+    for (const g of this.grids.values()) if (!g.float && !g.hidden && g.rows) out.push(g);
+    return out.sort((a, b) => (a.id === 1 ? -1 : b.id === 1 ? 1 : a.id - b.id));
+  }
+
+  floats() {
+    const out = [];
+    for (const g of this.grids.values()) if (g.float && !g.hidden && g.rows) out.push(g);
+    return out.sort((a, b) => a.float.zindex - b.float.zindex);
+  }
+
+  // The grid under a screen cell, and the cell in it: the top float first, then the
+  // windows, else the screen itself.
+  at(row, col) {
+    const inside = (g) => row >= g.row && row < g.row + g.rows && col >= g.col && col < g.col + g.cols;
+    const hit = [...this.floats().filter((g) => g.float.mouse).reverse(), ...this.windows().filter((g) => g.id !== 1)].find(inside);
+    const g = hit ?? this.grids.get(1) ?? { id: 1, row: 0, col: 0 };
+    return { grid: g.id, row: row - g.row, col: col - g.col };
+  }
+
+  // A highlight's colors with nvim's rules: unset falls back to the defaults, reverse
+  // swaps foreground and background.
   style(id) {
     const a = this.hl.get(id) ?? {};
     let fg = hex(a.foreground) ?? this.defaults.fg, bg = hex(a.background) ?? this.defaults.bg;
@@ -179,10 +228,10 @@ export class Grid {
     };
   }
 
-  // A row as runs of one highlight: [{ col, cells, text, hl }]. A double-width
+  // A grid row as runs of one highlight: [{ col, cells, text, hl }]. A double-width
   // character is followed by an empty cell, which only adds to the run's width.
-  runs(row) {
-    const line = this.lines[row] ?? [];
+  runs(id, row) {
+    const line = this.grids.get(id)?.lines[row] ?? [];
     const out = [];
     for (let c = 0; c < line.length; c++) {
       const [text, hl] = line[c];
@@ -198,12 +247,6 @@ export class Grid {
   cursorShape() {
     const m = this.modes[this.mode] ?? {};
     return { shape: m.cursor_shape ?? "block", percentage: m.cell_percentage ?? 100, name: m.name ?? "" };
-  }
-
-  takeDirty() {
-    const d = this.dirty;
-    this.dirty = new Set();
-    return d;
   }
 }
 

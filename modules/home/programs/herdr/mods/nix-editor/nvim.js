@@ -311,8 +311,9 @@ export async function startNvim({ file, cwd, width, height, onRedraw, onNotify, 
   });
 
   // ext_messages and ext_cmdline: no message area and so no hit-enter prompt; the view
-  // shows messages in its status strip and the cmdline as its own line.
-  await request("nvim_ui_attach", width, height, { ext_linegrid: true, ext_popupmenu: true, ext_messages: true, ext_cmdline: true, ext_hlstate: false, rgb: true });
+  // shows messages in its status strip and the cmdline as its own line. ext_multigrid:
+  // each window is its own grid, so the view draws floats (hover, diagnostics) itself.
+  await request("nvim_ui_attach", width, height, { ext_linegrid: true, ext_multigrid: true, ext_popupmenu: true, ext_messages: true, ext_cmdline: true, ext_hlstate: false, rgb: true });
   if (file) await request("nvim_cmd", { cmd: "edit", args: [file] }, {});
   return {
     request,

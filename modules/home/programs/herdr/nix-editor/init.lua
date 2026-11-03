@@ -16,6 +16,11 @@ end
 local o = vim.opt
 o.number = true
 o.signcolumn = "yes"
+-- The current line's number stands out; the line itself isn't highlighted.
+o.cursorline = true
+o.cursorlineopt = "number"
+-- Floats come without a border: the mod draws their frame.
+o.winborder = "none"
 o.laststatus = 0
 o.ruler = false
 o.showmode = false
@@ -81,18 +86,43 @@ vim.diagnostic.config({
   signs = { text = { [vim.diagnostic.severity.ERROR] = "●", [vim.diagnostic.severity.WARN] = "●", [vim.diagnostic.severity.INFO] = "●", [vim.diagnostic.severity.HINT] = "●" } },
   severity_sort = true,
   update_in_insert = true,
-  float = { border = "rounded", source = "if_many" },
+  float = { border = "none", source = "if_many" },
 })
--- Problems as a wavy line in their color, as editors draw them; again after every
--- colorscheme load (the mod switches `background` with Herdr's appearance).
-local function undercurls()
+-- Colors from Herdr's theme, sent by the mod when it starts and whenever the theme
+-- changes (_G.herdr_theme): nvim's background follows the appearance, and the surfaces
+-- and the groups the design sets take the theme's colors. Kept, so a colorscheme reload
+-- (switching `background` is one) applies them again.
+local theme
+local function apply_theme()
+  local hl = function(name, spec) vim.api.nvim_set_hl(0, name, spec) end
+  local levels = theme and { Error = theme.blocked, Warn = theme.ansi3, Info = theme.ansi4, Hint = theme.dim } or {}
+  if theme then
+    hl("Normal", { fg = theme.foreground, bg = theme.background })
+    hl("NormalFloat", { fg = theme.foreground, bg = theme.popover })
+    hl("FloatBorder", { fg = theme.border, bg = theme.popover })
+    hl("SignColumn", { bg = theme.background })
+    hl("CursorLineNr", { fg = theme.foreground })
+    hl("Search", { bg = theme.selection })
+    hl("CurSearch", { fg = theme.accent_foreground, bg = theme.accent })
+    hl("IncSearch", { fg = theme.accent_foreground, bg = theme.accent })
+    hl("Visual", { bg = theme.selection })
+    hl("MatchParen", { bg = theme.raised, bold = true })
+    for level, color in pairs(levels) do hl("Diagnostic" .. level, { fg = color }) end
+  end
+  -- Signs and wavy lines from the diagnostic colors, the theme's or the scheme's.
   for _, level in ipairs({ "Error", "Warn", "Info", "Hint" }) do
-    local sign = vim.api.nvim_get_hl(0, { name = "Diagnostic" .. level, link = false })
-    vim.api.nvim_set_hl(0, "DiagnosticUnderline" .. level, { undercurl = true, sp = sign.fg })
+    local fg = levels[level] or vim.api.nvim_get_hl(0, { name = "Diagnostic" .. level, link = false }).fg
+    hl("DiagnosticSign" .. level, { fg = fg, bg = theme and theme.background or nil })
+    hl("DiagnosticUnderline" .. level, { undercurl = true, sp = fg })
   end
 end
-undercurls()
-vim.api.nvim_create_autocmd("ColorScheme", { callback = undercurls })
+_G.herdr_theme = function(colors)
+  theme = colors
+  if vim.o.background ~= colors.appearance then vim.o.background = colors.appearance end
+  apply_theme()
+end
+apply_theme()
+vim.api.nvim_create_autocmd("ColorScheme", { callback = apply_theme })
 
 vim.api.nvim_create_autocmd("LspAttach", {
   callback = function(args)
@@ -209,7 +239,10 @@ local function show_hover(at)
 end
 map({ "n", "i" }, "<MouseMove>", function()
   local at = under_mouse()
-  if at and at.key == hover.at then return end
+  -- Same cell: nothing to do while its float is up (or still coming); once it has closed
+  -- (the cursor moved, the text changed), resting there again shows it again.
+  local open = hover.win and vim.api.nvim_win_is_valid(hover.win)
+  if at and at.key == hover.at and (open or hover.timer:get_due_in() > 0) then return end
   close_hover()
   hover.timer:stop()
   hover.at = at and at.key

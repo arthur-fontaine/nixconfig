@@ -9,7 +9,8 @@ import { Grid, nvimKey } from "./grid.js";
 import { startNvim } from "./nvim.js";
 
 const STATUS = 24; // px, the strip under the grid
-const PAD = { x: 8, y: 6 }; // px around the grid
+const PAD = { x: 8, y: 8 }; // px around the grid
+const FLOAT = { x: 8, y: 6, gap: 4 }; // a float's padding, and its distance from the line it's about
 // Cmd chords the editor keeps; any other Cmd chord stays Herdr's (new tab, palette…).
 const OWN_CMD = new Set(["s", "z", "a", "c", "x", "v", "f", "/", "[", "]", "left", "right", "up", "down", "backspace", "d", "p"]);
 
@@ -126,12 +127,24 @@ export default class Editor extends View {
     }
   }
 
+  // The grid cell under the pointer, as nvim_input_mouse wants it (multigrid): a float by
+  // where we drew it, else the window or the screen under that screen cell.
   cell(e) {
-    const { cw, lh } = this.metrics();
+    const m = this.metrics(), g = this.grid;
     const p = e.local_position ?? { x: 0, y: 0 };
-    const col = Math.max(0, Math.min(this.grid.cols - 1, Math.floor((p.x - PAD.x) / cw)));
-    const row = Math.max(0, Math.min(this.grid.rows - 1, Math.floor((p.y - PAD.y) / lh)));
-    return { row, col };
+    for (const f of [...g.floats()].reverse()) {
+      if (!f.float.mouse) continue;
+      const r = this.placeFloat(f, m);
+      if (p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h) {
+        const col = Math.max(0, Math.min(f.cols - 1, Math.floor((p.x - r.x - FLOAT.x) / m.cw)));
+        const row = Math.max(0, Math.min(f.rows - 1, Math.floor((p.y - r.y - FLOAT.y) / m.lh)));
+        return { grid: f.id, row, col };
+      }
+    }
+    const col = Math.max(0, Math.min(g.cols - 1, Math.floor((p.x - PAD.x) / m.cw)));
+    const row = Math.max(0, Math.min(g.rows - 1, Math.floor((p.y - PAD.y) / m.lh)));
+    const hit = g.at(row, col);
+    return { ...hit, screen: `${row}:${col}` };
   }
 
   mods(m) {
@@ -141,63 +154,64 @@ export default class Editor extends View {
   mouseDown(e, cx) {
     this.handle.focus();
     if (!this.nvim || !this.grid.mouse) return;
-    const { row, col } = this.cell(e);
+    const { grid, row, col, screen } = this.cell(e);
     this.dragging = true;
-    this.last = { row, col };
+    this.last = screen;
     if (e.modifiers.platform) {
       // Cmd+click: the caret there, then the LSP's definition.
-      this.nvim.inputMouse("left", "press", "", 0, row, col);
-      this.nvim.inputMouse("left", "release", "", 0, row, col);
+      this.nvim.inputMouse("left", "press", "", grid, row, col);
+      this.nvim.inputMouse("left", "release", "", grid, row, col);
       this.dragging = false;
       cx.spawn(async () => { await this.nvim?.request("nvim_exec_lua", "vim.lsp.buf.definition()", []).catch(() => {}); });
       return;
     }
-    this.nvim.inputMouse("left", "press", this.mods(e.modifiers), 0, row, col);
+    this.nvim.inputMouse("left", "press", this.mods(e.modifiers), grid, row, col);
   }
 
   // Drags select; plain moves reach nvim's <MouseMove>, which shows the hover float.
   mouseMove(e) {
     if (!this.nvim || !this.grid.mouse) return;
-    const { row, col } = this.cell(e);
-    if (row === this.last?.row && col === this.last?.col) return;
-    this.last = { row, col };
-    if (this.dragging) this.nvim.inputMouse("left", "drag", this.mods(e.modifiers), 0, row, col);
-    else this.nvim.inputMouse("move", "", this.mods(e.modifiers), 0, row, col);
+    const { grid, row, col, screen } = this.cell(e);
+    const at = screen ?? `${grid}/${row}:${col}`;
+    if (at === this.last) return;
+    this.last = at;
+    if (this.dragging) this.nvim.inputMouse("left", "drag", this.mods(e.modifiers), grid, row, col);
+    else this.nvim.inputMouse("move", "", this.mods(e.modifiers), grid, row, col);
   }
 
   mouseUp(e) {
     if (!this.dragging || !this.nvim) return;
     this.dragging = false;
-    const { row, col } = this.cell(e);
-    this.nvim.inputMouse("left", "release", this.mods(e.modifiers), 0, row, col);
+    const { grid, row, col } = this.cell(e);
+    this.nvim.inputMouse("left", "release", this.mods(e.modifiers), grid, row, col);
   }
 
   // Trackpads report pixels: one wheel step per line height, in either direction.
   scroll(e) {
     if (!this.nvim || !this.grid.mouse) return;
     const { lh, cw } = this.metrics();
-    const { row, col } = this.cell(e);
+    const { grid, row, col } = this.cell(e);
     this.wheel.y += e.delta.y;
     this.wheel.x += e.delta.x;
     while (Math.abs(this.wheel.y) >= lh) {
       const up = this.wheel.y > 0;
-      this.nvim.inputMouse("wheel", up ? "up" : "down", this.mods(e.modifiers), 0, row, col);
+      this.nvim.inputMouse("wheel", up ? "up" : "down", this.mods(e.modifiers), grid, row, col);
       this.wheel.y += up ? -lh : lh;
     }
     while (Math.abs(this.wheel.x) >= cw * 4) {
       const left = this.wheel.x > 0;
-      this.nvim.inputMouse("wheel", left ? "left" : "right", this.mods(e.modifiers), 0, row, col);
+      this.nvim.inputMouse("wheel", left ? "left" : "right", this.mods(e.modifiers), grid, row, col);
       this.wheel.x += left ? -cw * 4 : cw * 4;
     }
     if (e.touch_phase === "ended") this.wheel = { x: 0, y: 0 };
   }
 
   // One element per run of a highlight, at its cell; a run's width is its cells' so
-  // columns stay exact whatever the glyphs measure.
-  row(r, m, t) {
+  // columns stay exact whatever the glyphs measure. `base` is the surface under the grid:
+  // runs of that color draw no background of their own.
+  row(id, r, x, y, base, m, t) {
     const g = this.grid;
-    const base = g.defaults.bg;
-    const runs = g.runs(r).map((run) => {
+    const runs = g.runs(id, r).map((run) => {
       const s = g.style(run.hl);
       const blank = !run.text.trim();
       return div().absolute().left(run.col * m.cw).top(0).w(run.cells * m.cw).h(m.lh).flex_none().overflow_hidden()
@@ -215,44 +229,85 @@ export default class Editor extends View {
           .text_color(s.sp ?? t.blocked).underline().when(s.undercurl, (e) => e.text_decoration_wavy()).whitespace_nowrap()
           .child(" ".repeat(run.cells))));
     });
-    return div().absolute().left(PAD.x).top(PAD.y + r * m.lh).w(g.cols * m.cw).h(m.lh).children(runs);
+    return div().absolute().left(x).top(y).w(g.grids.get(id).cols * m.cw).h(m.lh).children(runs);
+  }
+
+  // A window grid where nvim put it on the screen.
+  windowRows(w, m, t) {
+    const base = this.grid.defaults.bg;
+    return Array.from({ length: w.rows }, (_, r) => this.row(w.id, r, PAD.x + w.col * m.cw, PAD.y + (w.row + r) * m.lh, base, m, t));
+  }
+
+  // Where a float is drawn: in a padded frame 4px under the line it's about (the line above
+  // where nvim would put it, or below when nvim put it above), flipped when it doesn't fit
+  // or would cover the cursor's line.
+  placeFloat(f, m) {
+    const g = this.grid, viewH = (this.px?.height ?? 600), viewW = this.px?.width ?? 800;
+    const w = f.cols * m.cw + FLOAT.x * 2, h = f.rows * m.lh + FLOAT.y * 2;
+    const below = !/^S/.test(f.float.anchor);
+    const line = below ? f.row - 1 : f.row + f.rows; // the screen row it's about
+    const under = PAD.y + (line + 1) * m.lh + FLOAT.gap, over = PAD.y + line * m.lh - FLOAT.gap - h;
+    const cg = g.grids.get(g.cursor.grid);
+    const cursorRow = (cg?.row ?? 0) + g.cursor.row;
+    const covers = (y) => cursorRow * m.lh + PAD.y < y + h && (cursorRow + 1) * m.lh + PAD.y > y;
+    let y = below ? under : over;
+    if (y + h > viewH || y < 0 || covers(y)) {
+      const other = below ? over : under;
+      if (other >= 0 && other + h <= viewH && !covers(other)) y = other;
+    }
+    const x = Math.max(0, Math.min(PAD.x + f.col * m.cw - FLOAT.x, viewW - w - 4));
+    return { x, y: Math.max(0, y), w, h };
+  }
+
+  // Hover and diagnostic floats in the completion popup's frame; nvim draws their text.
+  floatFrame(f, m, t) {
+    const r = this.placeFloat(f, m);
+    return div().absolute().left(r.x).top(r.y).w(r.w).h(r.h).rounded(6).bg(t.popover).border_1().border_color(t.border)
+      .shadow_md().overflow_hidden()
+      .children(Array.from({ length: f.rows }, (_, row) => this.row(f.id, row, FLOAT.x - 1, FLOAT.y - 1 + row * m.lh, t.popover?.toLowerCase(), m, t)));
   }
 
   caret(m, t) {
-    const g = this.grid, { row, col } = g.cursor;
-    if (row >= g.rows || col >= g.cols) return null;
+    const g = this.grid, { grid, row, col } = g.cursor;
+    const cg = g.grids.get(grid);
+    if (!cg || row >= cg.rows || col >= cg.cols || cg.hidden) return null;
+    let x, y;
+    if (cg.float) { const r = this.placeFloat(cg, m); x = r.x + FLOAT.x + col * m.cw; y = r.y + FLOAT.y + row * m.lh; }
+    else { x = PAD.x + (cg.col + col) * m.cw; y = PAD.y + (cg.row + row) * m.lh; }
     const { shape, percentage } = g.cursorShape();
-    const x = PAD.x + col * m.cw, y = PAD.y + row * m.lh;
     if (shape === "vertical") return div().absolute().left(x).top(y).w(2).h(m.lh).bg(t.accent);
     if (shape === "horizontal") {
       const h = Math.max(2, Math.round((m.lh * (percentage || 20)) / 100));
       return div().absolute().left(x).top(y + m.lh - h).w(m.cw).h(h).bg(t.accent);
     }
     // A block shows the character under it in the background's color.
-    const [text] = g.lines[row]?.[col] ?? [" "];
+    const [text] = cg.lines[row]?.[col] ?? [" "];
     return div().absolute().left(x).top(y).w(m.cw).h(m.lh).bg(t.accent).text_color(g.defaults.bg ?? t.background)
       .line_height(`${m.lh}px`).whitespace_nowrap().overflow_hidden().child(text || " ");
   }
 
-  // Neovim's completion menu, drawn by us under the word it completes.
+  // Neovim's completion menu, drawn by us under the word it completes: at most 8 rows
+  // around the selection, as wide as its content within [200, 360].
   popup(m, t) {
     const p = this.grid.popup;
     if (!p || !p.items.length) return null;
-    const visible = 10, rowH = 22;
+    const visible = 8, rowH = 26, wordW = 12.5 * 0.6, kindW = 11 * 0.58;
     const first = Math.max(0, Math.min(p.items.length - visible, (p.selected ?? 0) - Math.floor(visible / 2)));
     const items = p.items.slice(first, first + visible);
-    const width = Math.min(520, Math.max(200, ...items.map(([word, kind, menu]) => (word.length + (kind?.length ?? 0) + (menu?.length ?? 0) + 6) * m.cw)));
-    const below = PAD.y + (p.row + 1) * m.lh;
+    const content = Math.max(...items.map(([word, kind]) => word.length * wordW + (kind ? kind.length * kindW + 8 : 0))) + 16 + 8;
+    const width = Math.min(360, Math.max(200, content));
+    const pg = this.grid.grids.get(p.grid) ?? { row: 0, col: 0 };
+    const row = pg.row + p.row, col = pg.col + p.col;
     const height = items.length * rowH + 8;
-    const top = below + height > this.px?.height - STATUS && p.row * m.lh > height ? PAD.y + p.row * m.lh - height : below;
-    const left = Math.max(0, Math.min(PAD.x + p.col * m.cw - 6, (this.px?.width ?? 800) - width - 8));
-    return v_flex().absolute().left(left).top(top).w(width).p(4).gap(0).rounded(6).bg(t.popover).border_1().border_color(t.border)
-      .text_size(12.5).children(items.map(([word, kind, menu], i) => {
+    const below = PAD.y + (row + 1) * m.lh + FLOAT.gap;
+    const top = below + height > (this.px?.height ?? 600) && row * m.lh > height ? PAD.y + row * m.lh - height - FLOAT.gap : below;
+    const left = Math.max(0, Math.min(PAD.x + col * m.cw - 12, (this.px?.width ?? 800) - width - 8));
+    return v_flex().absolute().left(left).top(top).w(width).p(4).rounded(6).bg(t.popover).border_1().border_color(t.border).shadow_md()
+      .children(items.map(([word, kind], i) => {
         const on = first + i === p.selected;
         return h_flex().h(rowH).px(8).gap(8).items_center().rounded(4).when(on, (e) => e.bg(t.selected))
-          .child(div().flex_1().min_w(0).truncate().font_family(m.mono).text_color(on ? t.foreground : t.muted).child(word))
-          .when(Boolean(kind), (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(kind)))
-          .when(Boolean(menu), (e) => e.child(div().flex_none().max_w(160).truncate().text_size(11).text_color(t.dim).child(menu)));
+          .child(div().flex_1().min_w(0).truncate().font_family(m.mono).text_size(12.5).text_color(on ? t.foreground : t.muted).child(word))
+          .when(Boolean(kind), (e) => e.child(div().flex_none().font_family("Inter").text_size(11).text_color(t.dim).child(kind)));
       }));
   }
 
@@ -282,22 +337,25 @@ export default class Editor extends View {
       .text_size(11).text_color(t.muted)
       .when(Boolean(msg), (e) => e.child(div().flex_1().min_w(0).truncate().whitespace_nowrap().text_color(msg.error ? t.blocked : t.muted).child(msg.text.replace(/\s+/g, " "))))
       .when(!msg, (e) => e.child(div().flex_1().min_w(0).text_ellipsis_start().whitespace_nowrap().text_color(t.dim).child(rel)))
-      .when(Boolean(s.modified), (e) => e.child(div().flex_none().child("• modified")))
+      .when(Boolean(s.modified), (e) => e.child(count("modified", t.dim)))
       .when(s.errors > 0, (e) => e.child(count(s.errors, t.blocked)))
       .when(s.warnings > 0, (e) => e.child(count(s.warnings, t.ansi3)))
-      .child(div().flex_none().text_color(state === "ready" ? t.muted : t.dim).child(`${name} ${state}`));
+      .child(div().flex_none().text_color(state === "ready" ? t.dim : t.muted).child(`${name} ${state}`));
   }
 
-  // Neovim's background follows Herdr's appearance, so its colors match the theme.
-  followAppearance() {
-    const want = appearance(theme().background);
-    if (!this.nvim || want === this.appearance) return;
-    this.appearance = want;
-    this.nvim.notify("nvim_set_option_value", "background", want, {});
-    // On the theme's own surfaces, as the terminal is; the rest of the scheme stays nvim's.
-    const t = theme(), int = (hex) => parseInt(hex.slice(1, 7), 16);
-    this.nvim.notify("nvim_set_hl", 0, "Normal", { bg: int(t.background), fg: int(t.foreground) });
-    this.nvim.notify("nvim_set_hl", 0, "NormalFloat", { bg: int(t.popover ?? t.background), fg: int(t.foreground) });
+  // Herdr's theme, handed to init.lua (herdr_theme): nvim's background follows the
+  // appearance, and the surfaces and the groups the design sets take the theme's colors.
+  followTheme() {
+    if (!this.nvim) return;
+    const t = theme();
+    const key = JSON.stringify([t.background, t.foreground, t.popover, t.accent, t.selection, t.blocked]);
+    if (key === this.themeKey) return;
+    this.themeKey = key;
+    const int = (hex) => (hex ? parseInt(hex.slice(1, 7), 16) : null);
+    const colors = { appearance: appearance(t.background) };
+    for (const name of ["background", "foreground", "popover", "border", "selection", "accent", "accent_foreground", "raised", "blocked", "ansi3", "ansi4", "dim"])
+      colors[name] = int(t[name]);
+    this.nvim.notify("nvim_exec_lua", "_G.herdr_theme(...)", [colors]);
   }
 
   followGoto() {
@@ -311,8 +369,7 @@ export default class Editor extends View {
   render(cx) {
     const t = theme(), m = this.metrics(), g = this.grid;
     this.followGoto();
-    this.followAppearance();
-    g.takeDirty();
+    this.followTheme();
     const body = div().id("editor-grid").flex_1().min_h(0).relative().overflow_hidden()
       .bg(g.defaults.bg ?? t.background).font_family(m.mono).text_size(m.size).line_height(`${m.lh}px`)
       .on_size_change((px, cx) => { this.px = px; this.resized(px); })
@@ -322,7 +379,8 @@ export default class Editor extends View {
       .on_scroll_wheel((e) => this.scroll(e))
       .when(Boolean(this.error), (e) => e.child(div().p(16).text_size(12).text_color(t.blocked).child(this.error)))
       .when(!this.error && !g.rows, (e) => e.child(div().p(16).text_size(12).text_color(t.dim).child("Starting Neovim…")))
-      .children(Array.from({ length: g.rows }, (_, r) => this.row(r, m, t)))
+      .children(g.windows().flatMap((w) => this.windowRows(w, m, t)))
+      .children(g.floats().map((f) => this.floatFrame(f, m, t)))
       .when(g.rows > 0 && Boolean(this.caret(m, t)), (e) => e.child(this.caret(m, t)))
       .when(Boolean(this.popup(m, t)), (e) => e.child(this.popup(m, t)))
       .when(Boolean(g.cmdline), (e) => e.child(this.cmdline(m, t)));
