@@ -217,8 +217,7 @@ export default class Sidebar extends View {
   // Status at the end of a row.
   status(t, status) {
     if (status === "working") return svg(ICON("spinner")).size(12).flex_none().text_color(t.working).spin(900);
-    if (status === "blocked") return div().flex_none().size(16).rounded(5).bg(t.blocked + "2e").flex().items_center().justify_center().text_size(10.5).font_bold().text_color(t.blocked).child("!");
-    if (status === "done") return div().flex_none().size(7).mx(4).rounded(4).bg(t.done);
+    if (status === "blocked" || status === "done") return div().flex_none().size(7).mx(4).rounded(4).bg(t[status]);
     return null;
   }
 
@@ -257,17 +256,17 @@ export default class Sidebar extends View {
       const { lead, label } = tab ? this.tabInfo(tab, ps) : { lead: null, label: a.title };
       const g = space ? info(space) : null;
       const where = g ? [g.name, g.branch && g.branch !== g.name ? g.branch : null].filter(Boolean).join(" / ") : space?.name ?? "";
-      return h_flex().id(`need-${a.address}`).h(40).px(10).gap(9).items_center().rounded(7).cursor_pointer()
+      return h_flex().id(`need-${a.address}`).h(36).px(8).gap(8).items_center().rounded(6).cursor_pointer()
         .hover((s) => s.bg(t.hover))
         .on_click(() => run("agent.focus", { terminal: a.address }))
         .child(this.picture(lead ?? { program: a.program }, t, 15))
         .child(v_flex().flex_1().min_w(0)
-          .child(div().truncate().text_size(12.8).text_color(t.foreground).child(label))
-          .child(div().truncate().text_size(11.2).text_color(t.dim).child(where)))
+          .child(div().truncate().text_size(12).text_color(t.foreground).child(label))
+          .child(div().truncate().text_size(11).text_color(t.dim).child(where)))
         .child(this.status(t, a.status));
     };
-    return v_flex().flex_none().mx(8).mb(10).p(4).rounded(10).bg(tone + "14").border_1().border_color(tone + "33")
-      .child(h_flex().h(24).px(8).gap(6).items_center().text_size(11.5).font_semibold().text_color(tone)
+    return v_flex().flex_none().mx(8).mb(10).p(4).rounded(8).bg(tone + "0f").border_1().border_color(tone + "26")
+      .child(h_flex().h(24).px(8).gap(6).items_center().text_size(11).font_semibold().text_color(tone)
         .child(blocked ? "Needs you" : "Done").child(div().text_color(tone + "aa").font_normal().child(String(list.length))))
       .children(list.slice(0, 5).map(row));
   }
@@ -277,11 +276,11 @@ export default class Sidebar extends View {
     for (const a of agents()) if (a.tab === tab.id) order.push(a.address);
     const id = `tab-${tab.id}`, on = s.active && tab.active;
     const time = tab.status === "working" ? tab.working_since : tab.changed_at;
-    return this.hoverable(id, h_flex().h(26).pl(40).pr(8).gap(8).items_center().rounded(7).cursor_pointer()
+    return this.hoverable(id, h_flex().h(28).pl(40).pr(8).gap(8).items_center().rounded(6).cursor_pointer()
       .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)))
       .on_click(() => { run("space.select", { id: s.id }); run("tab.select", { id: tab.id }); })
       .child(this.picture(lead, t, 13))
-      .child(div().flex_1().min_w(0).truncate().text_size(12.6).text_color(on ? t.foreground : t.muted).child(label))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(on ? t.foreground : t.muted).child(label))
       .when(this.hovered === id, (e) => e.child(this.small(`close-${tab.id}`, "x", "Close", () => run("tab.close", { id: tab.id }), t)))
       .when(this.hovered !== id && Boolean(time) && tab.status !== "idle", (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(ago(time))))
       .when(Boolean(this.status(t, tab.status)), (e) => e.child(this.status(t, tab.status))));
@@ -291,7 +290,7 @@ export default class Sidebar extends View {
     const id = `space-${s.id}`, folded = this.folded.has(s.id);
     const title = g ? (g.branch ?? "detached") : s.name;
     const tabs = (s.tabs ?? []).filter((x) => !x.settled);
-    const rows = [this.hoverable(id, h_flex().h(28).pl(22).pr(8).gap(7).items_center().rounded(7).cursor_pointer()
+    const rows = [this.hoverable(id, h_flex().h(28).pl(22).pr(8).gap(7).items_center().rounded(6).cursor_pointer()
       .when(s.active, (e) => e.bg(t.selected)).when(!s.active, (e) => e.hover((x) => x.bg(t.hover)))
       .on_click(() => run("space.select", { id: s.id }))
       .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 260, props: { tab: "space", target: { id: s.id } } }))
@@ -299,9 +298,9 @@ export default class Sidebar extends View {
         .on_click((_e, cx) => { cx.stop_propagation(); this.toggle(this.folded, "folded", s.id, cx); })
         .child(svg(ICON(folded ? "chevron-right" : "chevron-down")).size(10)))
       .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(s.active ? t.foreground : t.muted).when(s.active, (e) => e.font_medium()).child(title))
-      .when(Boolean(g?.dirty), (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi3).tooltip(`${g.dirty} changed files`).child(`±${g.dirty}`)))
-      .when(g?.behind > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi1).child(`↓${g.behind}`)))
-      .when(g?.ahead > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi2).child(`↑${g.ahead}`)))
+      .when(Boolean(g?.dirty), (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).tooltip(`${g.dirty} changed files`).child(`±${g.dirty}`)))
+      .when(g?.behind > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`↓${g.behind}`)))
+      .when(g?.ahead > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`↑${g.ahead}`)))
       .when(this.hovered === id, (e) => e.child(this.small(`add-${s.id}`, "plus", "Start Pi or a terminal here",
         () => openOverlay({ mod: "nix-new-menu", kind: "popup", width: 240, height: 140, props: { space: s.id } }), t)))
       .when(folded && this.hovered !== id, (e) => e.when(Boolean(this.status(t, s.status)), (e) => e.child(this.status(t, s.status)))))];
@@ -313,14 +312,14 @@ export default class Sidebar extends View {
     if (!r.idle.length) return [];
     const open = this.idleOpen.has(r.key) || Boolean(this.filter);
     const shown = r.idle.filter((c) => this.matches(c.branch ?? c.path) || this.matches(r.name));
-    const rows = [h_flex().id(`idle-${r.key}`).h(24).pl(22).pr(8).gap(7).items_center().rounded(7).cursor_pointer()
-      .text_size(11.8).text_color(t.dim).hover((x) => x.bg(t.hover).text_color(t.muted))
+    const rows = [h_flex().id(`idle-${r.key}`).h(26).pl(22).pr(8).gap(7).items_center().rounded(6).cursor_pointer()
+      .text_size(12).text_color(t.dim).hover((x) => x.bg(t.hover).text_color(t.muted))
       .on_click((_e, cx) => this.toggle(this.idleOpen, "idleOpen", r.key, cx))
       .child(div().size(14).flex_none().flex().items_center().justify_center().child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(10)))
       .child(r.items.length ? `${r.idle.length} more ${r.idle.length === 1 ? "worktree" : "worktrees"}` : `${r.idle.length} ${r.idle.length === 1 ? "worktree" : "worktrees"}`)];
     if (open) for (const c of shown) {
-      rows.push(h_flex().id(`checkout-${c.path}`).h(24).pl(40).pr(8).gap(8).items_center().rounded(7).cursor_pointer()
-        .text_size(12.4).text_color(t.dim).hover((x) => x.bg(t.hover).text_color(t.foreground)).tooltip(c.path)
+      rows.push(h_flex().id(`checkout-${c.path}`).h(26).pl(40).pr(8).gap(8).items_center().rounded(6).cursor_pointer()
+        .text_size(12).text_color(t.dim).hover((x) => x.bg(t.hover).text_color(t.foreground)).tooltip(c.path)
         .on_click(() => run("space.new", { folder: c.path, machine: r.on }))
         .child(svg(ICON("branch")).size(12).flex_none())
         .child(div().flex_1().min_w(0).truncate().child(c.branch ?? base(c.path)))
@@ -338,11 +337,11 @@ export default class Sidebar extends View {
     if (this.filter && !items.length && !this.matches(r.name) && !idleMatch) return [];
     const machine = r.on ? h_flex().flex_none().gap(4).items_center().text_size(11).text_color(t.dim).child(svg(ICON("server")).size(11)).child(r.on) : null;
     const count = r.items.length + r.idle.length;
-    const head = this.hoverable(id, h_flex().h(30).px(8).gap(8).items_center().rounded(7).cursor_pointer()
+    const head = this.hoverable(id, h_flex().h(28).px(8).gap(8).items_center().rounded(6).cursor_pointer()
       .hover((x) => x.bg(t.hover))
       .on_click((_e, cx) => r.closed ? this.toggle(this.folded, "folded", `open:${r.key}`, cx) : this.toggle(this.folded, "folded", r.key, cx))
       .child(div().size(18).flex_none().rounded(5).bg(MARKS[hash(r.key) % MARKS.length]).flex().items_center().justify_center()
-        .text_size(10.5).font_bold().text_color("#ffffff").child([...r.name][0]?.toUpperCase() ?? "?"))
+        .text_size(11).font_bold().text_color("#ffffff").child([...r.name][0]?.toUpperCase() ?? "?"))
       .child(div().flex_1().min_w(0).truncate().text_size(13).font_semibold().text_color(r.closed ? t.muted : t.foreground).child(r.name))
       .when(Boolean(machine), (e) => e.child(machine))
       .when(this.hovered === id, (e) => e
@@ -353,8 +352,8 @@ export default class Sidebar extends View {
         .when(r.closed, (e) => e.child(this.small(`forget-${r.key}`, "x", "Hide from the list", (cx) => this.forget(r.key, cx), t))))
       .when(this.hovered !== id && folded && count > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`${count}`)))
       .when(this.hovered !== id && !folded && !r.closed && (r.behind > 0 || r.ahead > 0), (e) => e
-        .when(r.behind > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi1).child(`↓${r.behind}`)))
-        .when(r.ahead > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi2).child(`↑${r.ahead}`)))));
+        .when(r.behind > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`↓${r.behind}`)))
+        .when(r.ahead > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`↑${r.ahead}`)))));
     if (folded && !this.filter) return [head];
     if (r.closed && !this.trees[r.key]) this.loadTrees(r.key, null);
     return [head, ...items.flatMap((it) => this.worktreeRow(it, ps, t, order)), ...this.idleRows(r, t)];
@@ -365,7 +364,7 @@ export default class Sidebar extends View {
     if (this.filter && !this.matches(name) && !(s.tabs ?? []).some((x) => this.matches(this.tabInfo(x, ps).label))) return [];
     const rows = this.worktreeRow({ s, g: null }, ps, t, order);
     // A folder has no repo row above it: its row carries the icon instead of the indent.
-    rows[0] = this.hoverable(`space-${s.id}`, h_flex().h(30).px(8).gap(8).items_center().rounded(7).cursor_pointer()
+    rows[0] = this.hoverable(`space-${s.id}`, h_flex().h(28).px(8).gap(8).items_center().rounded(6).cursor_pointer()
       .when(s.active, (e) => e.bg(t.selected)).when(!s.active, (e) => e.hover((x) => x.bg(t.hover)))
       .on_click(() => run("space.select", { id: s.id }))
       .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 260, props: { tab: "space", target: { id: s.id } } }))
@@ -403,13 +402,13 @@ export default class Sidebar extends View {
     setAgentOrder(order);
     const remote = machines().filter((m) => m.name && m.layout === "loading");
     return v_flex().size_full().min_h(0).bg(t.chrome).text_color(t.foreground)
-      .child(h_flex().flex_none().h(36).px(8).gap(6).items_center()
-        .child(h_flex().flex_1().h(30).px(9).gap(7).items_center().rounded(8).bg(t.background)
+      .child(h_flex().flex_none().h(40).px(8).gap(6).items_center()
+        .child(h_flex().flex_1().h(30).px(9).gap(7).items_center().rounded(6).bg(t.background)
           .border_1().border_color(this.typing ? t.accent : t.border)
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
           .child(svg(ICON("search")).size(13).flex_none().text_color(t.dim))
-          .child(Input.new(this.input).flex_1().h_full().text_size(12.5).text_color(t.foreground)))
-        .child(div().id("open-folder").size(30).flex_none().rounded(8).flex().items_center().justify_center().text_color(t.dim)
+          .child(Input.new(this.input).flex_1().h_full().text_size(13).text_color(t.foreground)))
+        .child(div().id("open-folder").size(30).flex_none().rounded(6).flex().items_center().justify_center().text_color(t.dim)
           .hover((x) => x.bg(t.hover).text_color(t.foreground)).tooltip("Open a folder or repo")
           .on_click((_e, cx) => cx.spawn(async () => {
             const folder = await pickFolder({ prompt: "Open" });
@@ -420,8 +419,8 @@ export default class Sidebar extends View {
         .when(Boolean(this.needsYou(t, ps, info)), (e) => e.child(this.needsYou(t, ps, info)))
         .child(v_flex().px(8).children(body))
         .when(rest.length > 0, (e) => e.child(v_flex().px(8).pt(6).mt(4).border_t(1).border_color(t.border).children(rest)))
-        .when(remote.length > 0, (e) => e.child(div().px(16).py(6).text_size(11.5).text_color(t.dim).child(`Loading ${remote.map((m) => m.name).join(", ")}…`)))
-        .when(!body.length && !rest.length, (e) => e.child(div().px(16).py(10).text_size(12.5).text_color(t.dim)
+        .when(remote.length > 0, (e) => e.child(div().px(16).py(6).text_size(11).text_color(t.dim).child(`Loading ${remote.map((m) => m.name).join(", ")}…`)))
+        .when(!body.length && !rest.length, (e) => e.child(div().px(16).py(10).text_size(12).text_color(t.dim)
           .child(this.filter ? "Nothing matches." : "Open a folder to start."))));
   }
 }

@@ -85,7 +85,7 @@ export default class NewWorktree extends View {
   }
 
   option(id, on, icon, label, onClick, t) {
-    return h_flex().id(id).h(24).px(7).gap(5).items_center().rounded(6).cursor_pointer()
+    return h_flex().id(id).h(28).px(8).gap(6).items_center().rounded(6).cursor_pointer()
       .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((s) => s.bg(t.hover)))
       .on_click((_e, cx) => { onClick(); cx.notify(); })
       .child(icon).child(div().text_size(12).text_color(on ? t.foreground : t.muted).child(label));
@@ -100,8 +100,8 @@ export default class NewWorktree extends View {
       : r === null ? `${tilde(this.folder) ?? "This folder"} isn't in a git repository.`
       : fit(`${tilde(r.root)}/${name ? slug(name) : "…"}`, 50);
     return v_flex().id("new-worktree").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
-      .size_full().p(8).gap(6).bg(t.popover).text_size(13).text_color(t.foreground)
-      .child(h_flex().h(30).px(8).gap(7).items_center().rounded(7).border_1().border_color(t.accent).bg(t.background)
+      .size_full().p(8).gap(8).bg(t.popover).text_size(13).text_color(t.foreground)
+      .child(h_flex().h(30).px(8).gap(7).items_center().rounded(6).border_1().border_color(t.accent).bg(t.background)
         .child(svg("mods/workspace-chrome/git-branch.svg").size(13).flex_none().text_color(t.muted))
         .child(Input.new(this.branch).flex_1().h_full().text_size(13)))
       .child(div().px(2).text_size(11).text_color(r === null || this.error ? t.blocked : t.dim).truncate()

@@ -349,14 +349,14 @@ export default class Changes extends View {
     const state = files.every((f) => f.staged === "all") ? "all" : files.some((f) => f.staged !== "none") ? "some" : "none";
     const toggle = (cx) => this.act(state === "all" ? ["reset", "-q", "--", ...files.map((f) => f.path)] : ["add", "--", ...files.map((f) => f.path)], cx);
     return [
-      h_flex().h(26).flex_none().px(8).mt(4).gap(8).items_center().text_size(11.5).text_color(t.dim)
+      h_flex().h(26).flex_none().px(8).mt(4).gap(8).items_center().text_size(11).text_color(t.dim)
         .child(this.checkbox(state, t, toggle, `stage-section-${label}`)).child(label),
       ...files.map((f) => this.fileRow(f, t)),
     ];
   }
 
   commitRow(c, t) {
-    return h_flex().id(`commit-${c.sha}`).h(28).flex_none().px(8).gap(8).items_center().rounded(6).cursor_pointer()
+    return h_flex().id(`commit-${c.sha}`).h(26).flex_none().px(8).gap(8).items_center().rounded(6).cursor_pointer()
       .hover((s) => s.bg(t.hover))
       .on_click((_e, cx) => this.openDiff(c.sha, c.subject.length > 32 ? `${c.subject.slice(0, 31)}…` : c.subject, cx))
       .child(div().size(7).flex_none().rounded(4).bg(c.session ? t.accent : t.border))
@@ -378,14 +378,14 @@ export default class Changes extends View {
         if (e.key === "escape" && this.typing) { this.typing = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); }
       })
       // Header: "12 Changes", the whole diff, Stage All.
-      .child(h_flex().h(40).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border)
+      .child(h_flex().h(36).flex_none().px(10).gap(8).items_center().border_b(1).border_color(t.border)
         .child(div().font_semibold().child(this.files.length ? `${this.files.length} ${this.files.length === 1 ? "Change" : "Changes"}` : "No Changes"))
         .child(div().flex_1())
         .when(this.files.length > 0, (e) => e
-          .child(div().id("open-diff").px(7).py(3).rounded(6).text_size(12).text_color(t.muted).cursor_pointer()
+          .child(div().id("open-diff").h(24).px(8).flex().items_center().rounded(6).text_size(12).text_color(t.muted).cursor_pointer()
             .hover((s) => s.bg(t.hover).text_color(t.foreground))
             .on_click((_e, cx) => this.openDiff(null, "Uncommitted Changes", cx)).child("View Diff"))
-          .child(div().id("stage-all").px(7).py(3).rounded(6).text_size(12).text_color(t.muted).cursor_pointer()
+          .child(div().id("stage-all").h(24).px(8).flex().items_center().rounded(6).text_size(12).text_color(t.muted).cursor_pointer()
             .hover((s) => s.bg(t.hover).text_color(t.foreground))
             .on_click((_e, cx) => this.stageAll(cx)).child(allStaged ? "Unstage All" : "Stage All"))))
       // The files.
@@ -393,7 +393,7 @@ export default class Changes extends View {
         .children([...this.section("Tracked", tracked, t), ...this.section("Untracked", untracked, t)])
         .when(!this.files.length, (e) => e.child(div().p(10).text_color(t.dim)
           .child(this.error || (this.loading ? "Loading changes…" : this.root ? "Nothing to commit" : "No folder")))))
-      .when(Boolean(this.note), (e) => e.child(div().px(12).py(6).text_size(11.5).text_color(t.ansi1).child(this.note)))
+      .when(Boolean(this.note), (e) => e.child(div().px(12).py(6).text_size(12).text_color(t.ansi1).child(this.note)))
       // The branch's PR, then the branch and the commit box.
       .when(Boolean(this.prSection(t)), (e) => e.child(this.prSection(t)))
       .child(v_flex().flex_none().border_t(1).border_color(t.border)
@@ -404,18 +404,18 @@ export default class Changes extends View {
           .when(b.behind > 0, (e) => e.child(div().text_color(t.ansi1).child(`↓${b.behind}`)))
           .when(b.ahead > 0, (e) => e.child(div().text_color(t.ansi2).child(`↑${b.ahead}`)))))
         .child(v_flex().px(10).pb(10).gap(8)
-          .child(div().id("commit-message").h(34).px(10).flex().items_center().rounded(8).border_1().border_color(this.typing ? t.accent : t.border).cursor_text()
-            .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(12.5).text_color(t.foreground)))
+          .child(div().id("commit-message").h(30).px(10).flex().items_center().rounded(6).border_1().border_color(this.typing ? t.accent : t.border).cursor_text()
+            .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(13).text_color(t.foreground)))
           .child(h_flex().gap(8).items_center()
-            .child(div().flex_1().text_size(11.5).text_color(t.dim)
+            .child(div().flex_1().text_size(11).text_color(t.dim)
               .child(this.files.some((f) => f.staged !== "none") ? "Commits the staged changes" : this.files.length ? "Commits every change" : ""))
-            .child(div().id("commit").h(28).px(14).flex().items_center().rounded(7).bg(enabled ? t.solid : t.raised)
+            .child(div().id("commit").h(28).px(12).flex().items_center().rounded(6).bg(enabled ? t.solid : t.raised)
               .text_color(enabled ? t.solid_foreground : t.dim).text_size(12).when(enabled, (e) => e.cursor_pointer())
               .on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit")))))
       // History: the session's commits marked.
       .when(this.commits.length > 0, (e) => e.child(v_flex().flex_none().h(Math.min(260, 40 + this.commits.length * 28)).border_t(1).border_color(t.border)
         .child(h_flex().h(32).flex_none().px(12).gap(8).items_center()
-          .child(div().text_size(11.5).text_color(t.dim).child("History"))
+          .child(div().text_size(11).text_color(t.dim).child("History"))
           .when(mine > 0, (e) => e.child(div().px(6).py(1).rounded(4).bg(t.accent + "26").text_size(11).text_color(t.accent)
             .child(`${mine} this session`))))
         .child(v_flex().id("changes-commits").flex_1().min_h(0).overflow_y_scrollbar().px(6).pb(6)

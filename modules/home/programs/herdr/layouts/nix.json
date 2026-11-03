@@ -31,7 +31,7 @@
           "id": "brand",
           "type": "block",
           "size": {
-            "px": 46
+            "px": 44
           },
           "window_drag": true,
           "content": {
@@ -73,7 +73,7 @@
           "id": "tabs",
           "type": "block",
           "size": {
-            "px": 42
+            "px": 44
           },
           "window_drag": true,
           "content": {
@@ -102,7 +102,7 @@
                   },
                   "focus": {
                     "width": 1,
-                    "color": "accent"
+                    "color": "muted"
                   },
                   "header": {
                     "content": {

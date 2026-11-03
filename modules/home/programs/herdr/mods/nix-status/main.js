@@ -91,15 +91,15 @@ export default class Status extends View {
     const done = list.filter((a) => a.status === "done").length;
     const working = list.filter((a) => a.status === "working").length;
     const label = (icon, text) => h_flex().gap(6).items_center().child(svg(`mods/workspace-chrome/${icon}.svg`).size(13)).child(text);
-    return h_flex().size_full().px(14).gap(16).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(11.8).text_color(t.muted)
+    return h_flex().size_full().px(8).gap(14).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(12).text_color(t.muted)
       .child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer"))
       .when(Boolean(space?.branch), (el) => el.child(label("branch", space.branch)))
       .child(h_flex().id("agents-count").gap(6).items_center().cursor_pointer().on_click(() => this.command("jump"))
         .child(div().size(6).rounded(3).bg(needs ? t.blocked : working ? t.working : t.dim))
         .child(`${list.length} agents`)
-        .when(working > 0, (el) => el.child(div().text_color(t.working).child(`· ${working} working`)))
-        .when(needs > 0, (el) => el.child(div().text_color(t.blocked).child(`· ${needs} needs you`)))
-        .when(done > 0, (el) => el.child(div().text_color(t.done).child(`· ${done} done`))))
+        .when(working > 0, (el) => el.child(div().child(`· ${working} working`)))
+        .when(needs > 0, (el) => el.child(div().child(`· ${needs} needs you`)))
+        .when(done > 0, (el) => el.child(div().child(`· ${done} done`))))
       .child(div().flex_1())
       .child(div().id("palette").text_color(t.dim).cursor_pointer().on_click(() => run("app.palette")).child(this.hint()));
   }
