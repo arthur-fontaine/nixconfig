@@ -1,9 +1,11 @@
 // Calls that never reach the classifier (SPEC.md §1): the safe allowlist, tools that ask the
 // user themselves, and what Claude Code's acceptEdits mode or its Bash read-only check
-// would allow.
+// (readonly.ts) would allow.
 import { realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+import { readOnlyRefusal } from "./readonly.ts";
 
 export type FastPath = { kind: "allow"; why: "allowlist" | "acceptEdits" | "readOnly" } | { kind: "interactive" };
 
@@ -152,9 +154,6 @@ export function split(command: string): Simple[] | null {
 	return commands;
 }
 
-const harmlessRedirect = (r: { op: string; target: string }) =>
-	(/&$/.test(r.op) && /^(\d|-)$/.test(r.target)) || (/>/.test(r.op) && r.target === "/dev/null");
-
 // Claude Code's acceptEdits Bash commands, each target inside the working directory.
 const FILE_COMMANDS = new Set(["mkdir", "touch", "rm", "rmdir", "mv", "cp", "sed"]);
 // A plain s/// script: no w, e or r commands that could reach other files or run commands.
@@ -177,54 +176,10 @@ function fileCommandAllowed(cmd: Simple, cwd: string): boolean {
 	return operands.every((p) => editable(cwd, p));
 }
 
-const READ_ONLY = new Set(
-	"cd ls pwd cat head tail wc file stat which type whereis echo printf true false date whoami id uname hostname basename dirname realpath readlink du df tree sort uniq cut tr diff cmp comm nl column grep egrep fgrep rg jq ps".split(" "),
-);
-const FIND_WRITES = /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/;
-const GIT_READ = new Set(
-	"status log diff show rev-parse ls-files ls-tree blame describe shortlog cat-file grep merge-base name-rev count-objects for-each-ref rev-list".split(" "),
-);
-
-function gitReadOnly(args: string[]): boolean {
-	let i = 0;
-	while (i < args.length && args[i]!.startsWith("-")) {
-		const flag = args[i]!;
-		if (flag === "-C") i += 2;
-		else if (flag === "--no-pager" || flag === "--no-optional-locks") i++;
-		else return false;
-	}
-	const [sub, ...rest] = args.slice(i);
-	if (!sub) return false;
-	if (rest.some((a) => /^--(output|ext-diff|exec)/.test(a))) return false;
-	if (GIT_READ.has(sub)) return true;
-	if (sub === "branch") return rest.every((a) => /^(-a|-r|-v|-vv|--list|--all|--remotes|--show-current)$/.test(a));
-	if (sub === "remote") return rest.length === 0 || rest.every((a) => a === "-v") || rest[0] === "get-url" || (rest[0] === "show" && rest.length <= 2);
-	if (sub === "tag") return rest.every((a) => a === "-l" || a === "--list");
-	if (sub === "config") return rest.some((a) => /^(--get|--get-all|--get-regexp|--list|-l)$/.test(a));
-	if (sub === "stash" || sub === "worktree") return rest[0] === "list";
-	return false;
-}
-
-function readOnlyAllowed(cmd: Simple): boolean {
-	const [name, ...args] = cmd.argv;
-	if (!name) return false;
-	if (!cmd.redirects.every(harmlessRedirect)) return false;
-	if (name === "git") return gitReadOnly(args);
-	if (name === "find") return !args.some((a) => FIND_WRITES.test(a));
-	if (!READ_ONLY.has(name)) return false;
-	if (name === "sort") return !args.some((a) => a === "-o" || a.startsWith("--output"));
-	if (name === "uniq") return args.filter((a) => !a.startsWith("-")).length <= 1;
-	if (name === "rg") return !args.some((a) => a.startsWith("--pre"));
-	if (name === "tree") return !args.some((a) => a === "-o");
-	if (name === "date") return !args.some((a) => a.startsWith("-s") || a.startsWith("--set"));
-	if (name === "hostname") return args.every((a) => a.startsWith("-"));
-	return true;
-}
-
 export function bashFastPath(command: string, cwd: string): "acceptEdits" | "readOnly" | undefined {
+	if (readOnlyRefusal(command, cwd) === null) return "readOnly";
 	const commands = split(command);
 	if (!commands || commands.length === 0) return undefined;
-	if (commands.every(readOnlyAllowed)) return "readOnly";
 	if (commands.every((c) => fileCommandAllowed(c, cwd))) return "acceptEdits";
 	return undefined;
 }
