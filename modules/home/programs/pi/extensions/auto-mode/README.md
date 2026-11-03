@@ -79,7 +79,7 @@ every piece.
 | Checks run one at a time per agent | One queue per session | Read. |
 | Fast path: safe allowlist (Read, Grep, Glob, LSP, ToolSearch, MCP resource listing, Todo/Task/plan tools) | `read`, `grep`, `find`, `ls`, `tool_search` | Read. Pi extension tools that are only lookups (todo lists, goals) still go to the classifier: they are not known here. |
 | Fast path: acceptEdits simulation — edits inside the working directory except protected paths; Bash `mkdir touch rm rmdir mv cp sed` with targets inside it | `fastpath.ts`: same protected list plus `.pi`; symlinks resolved; the Bash lexer refuses expansions, substitutions, subshells, heredocs, globs on file commands and any redirect; `sed` only for plain `s///` scripts | Approximation: Claude Code uses a tree-sitter bash parser and its full path validator. Anything this lexer cannot see through goes to the classifier, never the other way. |
-| Bash's own read-only check (runs before auto mode: `ls`, `cat`, `git status`, …) | A short list of read-only commands and git subcommands, no output redirects except to `/dev/null` | Approximation of a much larger validator; again conservative (unknown → classifier). This is the biggest behavioural difference: some read-only commands Claude Code runs directly cost a classifier call here. |
+| Bash's own read-only check (runs before auto mode: `ls`, `cat`, `git status`, …): per-command and per-subcommand safe-flag tables (git, rg, grep, sed, sort, xargs, docker, …), read-only command lists and text patterns, paths checked against the working directory, `cd` rules (one directory change; a leading `cd DIR &&` moves where later paths resolve; `cd` before git only to the working directory itself), output redirects only to `/dev/null`, and no git where the repository could have been planted | `readonly.ts` with the tables in `readonly-tables.ts`, ported from the 2.1.317 bundle; `tests/replay.ts` replays a session's bash calls through it | Close port. Claude Code parses with tree-sitter; the parser here refuses `$`, substitutions, subshells, groups, heredocs, process substitution and background jobs, so a few commands Claude Code probably runs directly (a read-only `$(…)`, `${VAR:-x}` in an `echo`; inferred from its placeholders, not seen run) still cost a classifier call. Also stricter: `..` after a named path segment, `cd -`, `--flag=PATH` values, and relative paths after a `cd` that is not a leading `cd DIR &&` (checked against both directories). Git in a bare-repo worktree (`.git` file pointing at `.bare/…`, as in this repository) is refused, as Claude Code refuses it. |
 | `requiresUserInteraction` tools (AskUserQuestion) never classified | `ask_user_question` runs directly | Read. |
 | Calls made from a script (Workflow) | Pi `codemode` is classified on its input like any tool; each tool call its script makes is checked again (fast paths, then the classifier with the script call as the last history entry) | Not exact: Claude Code's script calls are handled by its server-side classifier path. Checking each nested call is the fail-safe choice and costs more calls. |
 | Permission rules (`allow`/`deny`/`ask`), plan mode, safety checks with `classifierApprovable: false`, sandbox, server-side classifier, Slack/email/projects, Chrome/computer use, sub-agent hand-back review, telemetry | Not ported | No Pi counterpart, or outside a local CLI session (SPEC.md §6). |
@@ -97,10 +97,15 @@ They cover prompt assembly (slots, `$defaults`, severity rewrite, artifact
 strip, rule names), transcript lines (escaping, projections, history cut at
 the call, nested calls, summaries, answers), the two-stage decision table with
 a scripted model (retries, refusals, timeouts, stage-2 failures, block
-format), the fast paths (allowlist, protected paths, symlinks, lexer, read-only
-and file commands), the denial counters, and the row note (details merge,
+format), the fast paths (allowlist, protected paths, symlinks, lexer, file commands)
+and Bash's read-only check (parser, safe-flag tables, write-capable flags,
+paths, `cd` rules, the planted-repository guard), the denial counters, and the row note (details merge,
 placement beside `Took`, below it when too narrow, last line otherwise, which
 definitions are left as they are).
+
+`node tests/replay.ts SESSION.jsonl CWD [OLD_FASTPATH.ts]` replays a Pi
+session's bash calls through the Bash fast path without calling any model and
+lists the ones still sent to the classifier, grouped by reason.
 
 Checked end to end in a scratch Pi 1.4.0 with pi-claude-code: an
 `echo > file` allowed by stage 1 (severity 2) and an upload of a missing file
