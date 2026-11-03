@@ -55,6 +55,7 @@ let
     nix-status = { };
     nix-dispatch = { shared = [ "repo.js" ]; };
     nix-pane = { };
+    nix-head = { };
   };
   modFiles = lib.listToAttrs (lib.concatLists (lib.mapAttrsToList (mod: o: [
     { name = "herdr-app/mods/${mod}/main.js"; value.source = if o == { } then ./mods/${mod}/main.js else bundle mod o; }
@@ -127,5 +128,9 @@ in
 
   xdg.configFile = modFiles // {
     "herdr-app/layouts/nix.json".source = ./layouts/nix.json;
+    # The layout's light and dark themes, and the icons every nix-* mod draws from.
+    "herdr-app/themes/nix-light.json".source = ./themes/nix-light.json;
+    "herdr-app/themes/nix-dark.json".source = ./themes/nix-dark.json;
+    "herdr-app/mods/nix-head/icons" = { source = ./mods/nix-head/icons; recursive = true; };
   };
 }

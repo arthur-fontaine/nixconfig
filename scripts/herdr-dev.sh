@@ -33,6 +33,8 @@ link() {
     for f in "$src"*; do ln -sfn "$(readlink "$f" || echo "$f")" "$HOME_DIR/mods/$name/$(basename "$f")"; done
   done
   for f in "$files"/.config/herdr-app/layouts/*; do ln -sfn "$(readlink "$f" || echo "$f")" "$HOME_DIR/layouts/$(basename "$f")"; done
+  mkdir -p "$HOME_DIR/themes"
+  for f in "$files"/.config/herdr-app/themes/*; do ln -sfn "$(readlink "$f" || echo "$f")" "$HOME_DIR/themes/$(basename "$f")"; done
 }
 
 case "${1:-}" in
