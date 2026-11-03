@@ -265,7 +265,7 @@ export default class Sidebar extends View {
           .child(div().truncate().text_size(11).text_color(t.dim).child(where)))
         .child(this.status(t, a.status));
     };
-    return v_flex().flex_none().mx(8).mb(10).p(4).rounded(8).bg(tone + "0f").border_1().border_color(tone + "26")
+    return v_flex().flex_none().mx(8).mb(10).p(4).rounded(8).bg(tone + "0a").border_1().border_color(tone + "26")
       .child(h_flex().h(24).px(8).gap(6).items_center().text_size(11).font_semibold().text_color(tone)
         .child(blocked ? "Needs you" : "Done").child(div().text_color(tone + "aa").font_normal().child(String(list.length))))
       .children(list.slice(0, 5).map(row));
