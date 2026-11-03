@@ -105,7 +105,7 @@ export default class Menu extends View {
     const it = items(props(), this.git)[i];
     if (!it) return;
     closeOverlay(props()?.overlay);
-    if (it[1] === "worktree" && it[2].action === "new") openOverlay({ mod: "nix-dispatch", kind: "dialog", width: 460, height: 230, props: { space: it[2].space } });
+    if (it[1] === "worktree" && it[2].action === "new") openOverlay({ mod: "nix-dispatch", kind: "popup", width: 280, height: 104, props: { space: it[2].space } });
     else if (it[1] === "worktree") openOverlay({ mod: "nix-worktree", kind: "dialog", ...(it[2].action === "open" ? { width: 560, height: 480 } : { width: 480, height: 300 }), props: it[2] });
     else run(it[1], it[2]);
   }

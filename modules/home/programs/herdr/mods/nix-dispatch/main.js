@@ -1,4 +1,4 @@
-// New worktree: a branch name, then what to start in it (Pi, or a terminal to
+// New worktree, a small popover: a branch name, then what to start in it (Pi, or a terminal to
 // start anything by hand). The worktree goes where the repo's others are
 // (../_lib/repo.js): a branch on origin is tracked, a new one starts from
 // origin's default branch. What to do is typed into the agent itself.
@@ -69,10 +69,10 @@ export default class NewWorktree extends View {
   }
 
   option(id, on, icon, label, onClick, t) {
-    return h_flex().id(id).flex_1().h(34).px(10).gap(8).items_center().rounded(8).border_1().cursor_pointer()
-      .border_color(on ? t.accent : t.border).when(on, (e) => e.bg(t.accent + "14")).when(!on, (e) => e.hover((s) => s.bg(t.hover)))
+    return h_flex().id(id).h(24).px(7).gap(5).items_center().rounded(6).cursor_pointer()
+      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((s) => s.bg(t.hover)))
       .on_click((_e, cx) => { onClick(); cx.notify(); })
-      .child(icon).child(div().text_color(on ? t.foreground : t.muted).child(label));
+      .child(icon).child(div().text_size(12).text_color(on ? t.foreground : t.muted).child(label));
   }
 
   render() {
@@ -82,22 +82,19 @@ export default class NewWorktree extends View {
     const a = this.agent;
     const where = r === undefined ? "…"
       : r === null ? `${tilde(this.folder) ?? "This folder"} isn't in a git repository.`
-      : `${tilde(r.root)}/${name ? slug(name) : "…"}`;
+      : `${r.name}/${name ? slug(name) : "…"}`;
     return v_flex().id("new-worktree").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
-      .size_full().p(16).gap(12).bg(t.popover).text_size(13).text_color(t.foreground)
-      .child(h_flex().gap(8).items_center()
-        .child(svg("mods/workspace-chrome/git-branch.svg").size(14).text_color(t.muted))
-        .child(div().font_semibold().child("New worktree"))
-        .when(Boolean(r), (e) => e.child(div().text_color(t.dim).child(r.name))))
-      .child(Input.new(this.branch).h(34).px(10).items_center().rounded(8).border_1().border_color(t.accent).bg(t.background).text_size(13.5))
-      .child(div().text_size(11.5).text_color(r === null ? t.blocked : t.dim).truncate().child(where))
-      .child(h_flex().gap(8)
+      .size_full().p(8).gap(6).bg(t.popover).text_size(13).text_color(t.foreground)
+      .child(h_flex().h(30).px(8).gap(7).items_center().rounded(7).border_1().border_color(t.accent).bg(t.background)
+        .child(svg("mods/workspace-chrome/git-branch.svg").size(13).flex_none().text_color(t.muted))
+        .child(Input.new(this.branch).flex_1().h_full().text_size(13)))
+      .child(div().px(2).text_size(11).text_color(r === null || this.error ? t.blocked : t.dim).truncate()
+        .child(this.error || (this.busy ? "Creating…" : where)))
+      .child(h_flex().gap(2).items_center()
         .when(Boolean(a), (e) => e.child(this.option("start-agent", this.start === "agent",
-          a?.tint ? svg(a.icon).size(14).text_color(t.foreground) : image(a?.icon ?? "icons/pi.svg").size(14), a?.name ?? "", () => { this.start = "agent"; }, t)))
-        .child(this.option("start-terminal", this.start === "terminal", svg("icons/shell.svg").size(14).text_color(t.foreground), "Terminal", () => { this.start = "terminal"; }, t)))
-      .when(Boolean(this.error), (e) => e.child(div().text_size(12).text_color(t.blocked).child(this.error)))
-      .child(div().flex_1())
-      .child(h_flex().items_center().text_size(11).text_color(t.dim)
-        .child(div().flex_1().child(this.busy ? "Creating…" : a ? "↵ create · ⇥ switch · esc cancel" : "↵ create · esc cancel")));
+          a?.tint ? svg(a.icon).size(12).text_color(t.foreground) : image(a?.icon ?? "icons/pi.svg").size(12), a?.name ?? "", () => { this.start = "agent"; }, t)))
+        .child(this.option("start-terminal", this.start === "terminal", svg("icons/shell.svg").size(12).text_color(t.foreground), "Terminal", () => { this.start = "terminal"; }, t))
+        .child(div().flex_1())
+        .child(div().pr(2).text_size(11).text_color(t.dim).child(a ? "⇥ ↵" : "↵")));
   }
 }
