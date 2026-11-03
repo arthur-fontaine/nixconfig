@@ -5,14 +5,14 @@ let
   # unrelated to the `herdr` TUI formula. The app finds it on the login
   # shell's PATH and leaves updating a package-managed core to us: bump the
   # version from https://releases.herdr.dev/core/latest.json.
-  version = "0.1.16";
+  version = "0.1.17";
 
   herdrCore = pkgs.stdenvNoCC.mkDerivation {
     pname = "herdr-core";
     inherit version;
     src = pkgs.fetchurl {
       url = "https://releases.herdr.dev/core/${version}/herdr-core-macos-aarch64.tar.gz";
-      hash = "sha256-aY2PDET05LFf7BdNUqOdV6AUz9ca3e1EtToHU7Rp0P0=";
+      hash = "sha256-ztvU1Nm6E4VYgZjdTTxn0mVEePM63VtkRdTQ652l/PM=";
     };
     sourceRoot = ".";
     # A signed release binary: leave it byte for byte.
