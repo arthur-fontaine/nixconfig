@@ -2,7 +2,8 @@
 // extensions chained onto it), fed with the live or final result instead of
 // the placeholder, plus one line saying it ran in the background.
 import type { ToolRendererResolver } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, Text } from "@earendil-works/pi-tui";
+import { type Component, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { withMarker } from "./marker.ts";
 import { type Ending, placeholderStart, type Result } from "./records.ts";
 
 export interface View {
@@ -30,12 +31,38 @@ function marker(toolCallId: string, view: View | undefined, theme: Theme): strin
 	}
 }
 
+// The row as drawn, then its marker.
+class Marked implements Component {
+	readonly inner: Component;
+	private readonly marker: string;
+
+	constructor(inner: Component, marker: string) {
+		this.inner = inner;
+		this.marker = marker;
+	}
+
+	render(width: number): string[] {
+		return withMarker(this.inner.render(width), this.marker, width, (text, w) => wrapTextWithAnsi(text, w));
+	}
+
+	invalidate(): void {
+		this.inner.invalidate();
+	}
+
+	handleMouse(event: Parameters<NonNullable<Component["handleMouse"]>>[0]) {
+		return this.inner.handleMouse?.(event);
+	}
+
+	handleInput(data: string): void {
+		this.inner.handleInput?.(data);
+	}
+}
+
 export function detachedRenderer(
 	toolName: string,
 	lookup: (toolCallId: string) => View | undefined,
 	watch: (toolCallId: string, repaint: () => void) => void,
 ): ToolRendererResolver {
-	const inner = new WeakMap<Component, Component>();
 	return (name, next) => {
 		const base = next();
 		if (name !== toolName || !base?.renderResult) return base;
@@ -43,7 +70,7 @@ export function detachedRenderer(
 		return {
 			...base,
 			renderResult(result, options, theme, context) {
-				const lastComponent = context.lastComponent && (inner.get(context.lastComponent) ?? context.lastComponent);
+				const lastComponent = context.lastComponent instanceof Marked ? context.lastComponent.inner : context.lastComponent;
 				if (placeholderStart(result.details) === undefined) return renderResult(result, options, theme, { ...context, lastComponent });
 				const view = lookup(context.toolCallId);
 				const running = view?.running ?? false;
@@ -57,11 +84,7 @@ export function detachedRenderer(
 					// How long an interrupted call ran is unknown.
 					durationMs: running || !view || view.ending === "interrupted" ? undefined : view.elapsedMs,
 				});
-				const container = new Container();
-				container.addChild(component);
-				container.addChild(new Text(`\n${marker(context.toolCallId, view, theme)}`, 0, 0));
-				inner.set(container, component);
-				return container;
+				return new Marked(component, marker(context.toolCallId, view, theme));
 			},
 		};
 	};

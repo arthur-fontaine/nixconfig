@@ -68,6 +68,32 @@ export function sliceVisible(line: string, start: number, end: number): string {
 	return carried + out;
 }
 
+// `line` without its first `count` visible characters and the escapes among them.
+export function dropVisible(line: string, count: number): string {
+	let out = "";
+	let at = 0;
+	for (const piece of pieces(line)) {
+		if ("escape" in piece) {
+			if (at >= count) out += piece.escape;
+			continue;
+		}
+		if (at + piece.text.length > count) out += piece.text.slice(Math.max(0, count - at));
+		at += piece.text.length;
+	}
+	return out;
+}
+
+// compact-tools' Claude-style rows start their result with a rail, "   ⎿  ", and indent
+// the lines under it as far: the columns before a row's own text.
+const RAIL = /^( *⎿ +)/;
+export function railOf(lines: readonly string[]): number {
+	for (const line of lines) {
+		const text = stripAnsi(line);
+		if (text.trim()) return RAIL.exec(text)?.[1]!.length ?? 0;
+	}
+	return 0;
+}
+
 // Replaces the visible range [start, end) of `line` with `replacement`, then
 // restores the styles `line` had at `end` so the rest of it looks unchanged.
 export function spliceVisible(line: string, start: number, end: number, replacement: string): string {

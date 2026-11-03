@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { escapes, sliceVisible, spliceVisible } from "../ansi.ts";
+import { dropVisible, escapes, railOf, sliceVisible, spliceVisible } from "../ansi.ts";
 import { overlay } from "../overlay.ts";
 import { fakePaint, markup, stripAnsi } from "./paint.ts";
 
@@ -81,4 +81,39 @@ test("drawn text that isn't in the document is left alone", () => {
 	const drawn = [title("$ something else")];
 	assert.deepEqual(overlay(drawn, doc, { match: "run" }), drawn);
 	assert.deepEqual(overlay([out("xyz")], doc, { match: "line" }), [out("xyz")]);
+});
+
+// compact-tools' Claude style: `⦁ Bash(cmd)`, then the output under a "⎿" rail.
+const chrome = (text: string) => paint.fg("dim", text);
+
+test("a Claude-style row's rail is the columns before its result's first text", () => {
+	assert.equal(railOf(["", `${chrome("   ⎿  ")}${out("greet.ts")}`, `      ${out("notes.txt")}`]), 6);
+	assert.equal(railOf([out("greet.ts")]), 0);
+	assert.equal(railOf([paint.fg("muted", "Took 0.5s")]), 0);
+	assert.equal(dropVisible(`${chrome("   ⎿  ")}${out("ab")}`, 6), `\x1b[39m${out("ab")}`);
+});
+
+test("output under a rail is recolored after it, the rail left as drawn", () => {
+	const doc = {
+		plain: ["{", '  "a": 1', "}"],
+		styled: [paint.fg("syntaxPunctuation", "{"), `  ${paint.fg("syntaxString", '"a"')}: ${paint.fg("syntaxNumber", "1")}`, paint.fg("syntaxPunctuation", "}")],
+	};
+	const accept = (line: string) => escapes(line).every((code) => code === paint.open("toolOutput") || code === "\x1b[39m");
+	const drawn = [`${chrome("   ⎿  ")}${out("{")}`, `      ${out('  "a": 1')}`, `      ${out("}")}`, `      ${paint.fg("muted", "Took 0.5s")}`];
+	const lines = overlay(drawn, doc, { match: "line", accept, rail: railOf(drawn) });
+	assert.deepEqual(lines.map(stripAnsi), drawn.map(stripAnsi));
+	assert.deepEqual(lines.map(markup), [
+		"[dim:   ⎿  ][punctuation:{]",
+		'        [string:"a"]: [number:1]',
+		"      [punctuation:}]",
+		"      [muted:Took 0.5s]",
+	]);
+});
+
+test("a command is recolored inside compact-tools' Bash(…) title", () => {
+	const doc = { plain: ["git status --short"], styled: [`${paint.fg("syntaxFunction", "git")}${paint.fg("toolTitle", " status ")}${paint.fg("syntaxType", "--short")}`] };
+	const drawn = [` ${chrome("⦁")} ${title("Bash")}${out("(git status --short)")}`];
+	const [line] = overlay(drawn, doc, { match: "run", lead: { text: "$ ", styled: "$ " } });
+	assert.equal(stripAnsi(line!), stripAnsi(drawn[0]!));
+	assert.equal(markup(line!), " [dim:⦁] [title:Bash][output:(][function:git][title: status ][type:--short][output:)]");
 });

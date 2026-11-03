@@ -153,7 +153,21 @@ export function changeRows(changes: FileChanges, expanded: boolean, view: ViewSe
 	return rows;
 }
 
-// The bash result as the inner renderer draws it, followed by the changes.
+const ESCAPES = /\x1b\[[0-9;:]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+const RAIL = /^( *⎿ +)/;
+
+// compact-tools' Claude-style rows open their result with a rail, "   ⎿  ", and indent
+// what follows as far: the changes go in that body column too. 0 for any other row.
+export function railOf(lines: readonly string[]): number {
+	for (const line of lines) {
+		const text = line.replace(ESCAPES, "");
+		if (text.trim()) return RAIL.exec(text)?.[1]!.length ?? 0;
+	}
+	return 0;
+}
+
+// The bash result as the inner renderer draws it, followed by the changes: after a blank
+// line, or in a Claude-style row's body column, as the row's next lines.
 export class ChangesView implements Component {
 	base: Component | undefined;
 	#changes: FileChanges;
@@ -161,7 +175,7 @@ export class ChangesView implements Component {
 	#view: ViewSettings;
 	#theme: Paint;
 	#deps: RenderDeps;
-	#cache: { width: number; lines: string[] } | undefined;
+	#cache: { width: number; rail: number; lines: string[] } | undefined;
 
 	constructor(base: Component | undefined, changes: FileChanges, expanded: boolean, view: ViewSettings, theme: Paint, deps: RenderDeps) {
 		this.base = base;
@@ -182,11 +196,15 @@ export class ChangesView implements Component {
 	}
 
 	render(width: number): string[] {
-		if (this.#cache?.width !== width) {
+		const base = this.base?.render(width) ?? [];
+		const rail = railOf(base);
+		if (this.#cache?.width !== width || this.#cache.rail !== rail) {
 			const rows = changeRows(this.#changes, this.#expanded, this.#view, this.#theme, this.#deps);
-			this.#cache = { width, lines: ["", ...rows.flatMap((row) => this.#deps.wrap(row, Math.max(1, width)))] };
+			const indent = " ".repeat(rail);
+			const wrapped = rows.flatMap((row) => this.#deps.wrap(row, Math.max(1, width - rail)).map((line) => indent + line));
+			this.#cache = { width, rail, lines: rail ? wrapped : ["", ...wrapped] };
 		}
-		return [...(this.base?.render(width) ?? []), ...this.#cache.lines];
+		return [...base, ...this.#cache.lines];
 	}
 
 	invalidate() {

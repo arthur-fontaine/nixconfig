@@ -4,7 +4,7 @@ import type { ToolRenderResultOptions, ToolRenderers } from "@earendil-works/pi-
 import type { Component } from "@earendil-works/pi-tui";
 import { type ChangesSource, withChanges } from "../extension.ts";
 import { headerPath } from "../patch.ts";
-import { ChangesView, changeRows, DEFAULT_VIEW, type Paint, type RenderDeps } from "../render.ts";
+import { ChangesView, changeRows, DEFAULT_VIEW, type Paint, railOf, type RenderDeps } from "../render.ts";
 import type { FileChanges } from "../snapshot.ts";
 
 // Colors show as <token>…</token>; highlighted code as «…».
@@ -176,4 +176,19 @@ test("a detached call's changes come from the saved entries, and its row is repa
 	assert.deepEqual(repaints, ["bg"]);
 	saved.set("bg", changes);
 	assert.equal(render().render(80)[2], "✎ notes.md, a.ts  +4 −1");
+});
+
+test("under a Claude-style row, the changes sit in its body column with no blank line", () => {
+	assert.equal(railOf(["", "\x1b[38;2;1;2;3m   ⎿  \x1b[39mhi"]), 6);
+	assert.equal(railOf(["hi", "   ⎿  no"]), 0);
+	const renderers = withChanges({ renderResult: () => lines("   ⎿  (No output)") }, source, deps);
+	const result = { content: [], details: { fileChanges: changes } };
+	const view = renderers.renderResult!(result, options(true), paint as never, context(undefined));
+	const rendered = view.render(30);
+	assert.equal(rendered[0], "   ⎿  (No output)");
+	assert.equal(rendered[1], "      ✎ notes.md, a.ts  +4 −1");
+	for (const line of rendered.slice(1)) {
+		assert.ok(line.startsWith("      "), line);
+		assert.ok(line.length <= 30, line);
+	}
 });

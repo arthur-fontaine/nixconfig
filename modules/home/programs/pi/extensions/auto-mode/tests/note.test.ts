@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { allowedIn, isTimer, NOTE, placeNote, plain, withVerdict } from "../note.ts";
+import { allowedIn, isTimer, NOTE, placeNote, plain, railOf, withVerdict } from "../note.ts";
 
 const MUTED = "\x1b[38;5;244m";
 const muted = (s: string) => `${MUTED}${s}\x1b[39m`;
@@ -49,4 +49,20 @@ test("without a timer the note is the result's last line, after a blank one", ()
 	assert.deepEqual(place([padded(out("Successfully wrote 3 bytes"), 40)], 40), ["Successfully wrote 3 bytes", "", NOTE]);
 	assert.deepEqual(place([], 40), ["", NOTE]);
 	assert.deepEqual(place([], 8), ["", "Allowed"]);
+});
+
+// compact-tools' Claude style: the output under a "⎿" rail, the lines below in its column.
+const rail = (s: string) => `\x1b[38;2;90;90;90m   ⎿  \x1b[39m${s}`;
+
+test("a Claude-style row's note sits in its body column, beside Took or as its last line", () => {
+	assert.equal(railOf(["", rail(out("a.txt"))]), 6);
+	assert.equal(railOf([out("a.txt"), rail("x")]), 0);
+	assert.deepEqual(place([rail(out("a.txt")), `      ${muted("Took 0.5s")}`, "      ✎ a.txt  +1"], 60), [
+		"   ⎿  a.txt",
+		`      Took 0.5s  ${NOTE}`,
+		"      ✎ a.txt  +1",
+	]);
+	assert.deepEqual(place([rail(out("(No output)")), "      ✎ a.txt  +1", "       1 a"], 60), ["   ⎿  (No output)", "      ✎ a.txt  +1", "       1 a", `      ${NOTE}`]);
+	assert.deepEqual(place([rail(out("a")), `      ${muted("Took 0.5s")}`], 26), ["   ⎿  a", "      Took 0.5s", `      ${NOTE}`]);
+	assert.deepEqual(place([rail(out("a"))], 12), ["   ⎿  a", "      Allowe"]);
 });

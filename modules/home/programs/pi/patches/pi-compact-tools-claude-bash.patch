@@ -1,0 +1,58 @@
+Claude-style bash rows, with syntax-highlighting recoloring them from outside:
+- A multi-line command reaches the title already folded by syntax-highlighting
+  (one line, its preview once opened, all of it with ctrl+shift+o), so it is
+  not cut a second time; a single long line still is, past 160 characters.
+- An opened command ends with Pi's own "Took 4.2s" in the body column, where
+  auto-mode puts "Allowed by auto mode" beside it.
+
+diff -ru a/extensions/compact-tools-claude.ts b/extensions/compact-tools-claude.ts
+--- a/extensions/compact-tools-claude.ts
++++ b/extensions/compact-tools-claude.ts
+@@ -77,9 +77,10 @@
+ export function claudeCommand(command: string, expanded: boolean): string {
+ 	const text = normalizeLineEndings(stripTerminalSequences(command)).trim();
+ 	if (expanded) return text;
+-	const lines = text.split("\n");
+-	let shown = lines.length > CLAUDE_COMMAND_LINES ? lines.slice(0, CLAUDE_COMMAND_LINES).join("\n") : text;
+-	if (shown.length > CLAUDE_COMMAND_CHARS) shown = shown.slice(0, CLAUDE_COMMAND_CHARS);
++	// Several lines come folded by syntax-highlighting already, or whole when its
++	// ctrl+shift+o asks for them: they are not cut a second time.
++	if (text.includes("\n")) return text;
++	const shown = text.length > CLAUDE_COMMAND_CHARS ? text.slice(0, CLAUDE_COMMAND_CHARS) : text;
+ 	return shown === text ? text : `${shown.trim()}…`;
+ }
+ 
+diff -ru a/extensions/compact-tools.ts b/extensions/compact-tools.ts
+--- a/extensions/compact-tools.ts
++++ b/extensions/compact-tools.ts
+@@ -308,6 +308,20 @@
+ 	return renderOutput(output, theme, isError, rail);
+ }
+ 
++/**
++ * An opened command's last body line: Pi's own `Took 4.2s` (formatToolDuration), so
++ * what other extensions place beside Pi's timer, auto-mode's note, finds it.
++ */
++function claudeTook(state: RowState, theme: Theme): Component | undefined {
++	const ms = state.durationMs ?? (state.startedAt === undefined ? undefined : (state.endedAt ?? Date.now()) - state.startedAt);
++	if (ms === undefined) return undefined;
++	const seconds = ms / 1000;
++	const minutes = Math.floor(seconds / 60);
++	const rest = Math.floor(seconds) % 60;
++	const text = seconds < 60 ? `${seconds.toFixed(1)}s` : minutes < 60 ? `${minutes}m ${rest}s` : `${Math.floor(minutes / 60)}h ${minutes % 60}m ${rest}s`;
++	return prefixedText(theme.fg("muted", `Took ${text}`), CLAUDE_INDENT);
++}
++
+ function claudeMoreLines(theme: Theme, hidden: number): string {
+ 	return chromePainter(theme)(`… +${hidden} ${hidden === 1 ? "line" : "lines"} (ctrl+o to expand)`);
+ }
+@@ -443,7 +457,8 @@
+ 		});
+ 	} else if (isClaude()) {
+ 		const container = new CachedContainer();
+-		const completion = nestedSummary ? renderControls(theme, state, false, ctx.isError, undefined, undefined, nestedSummary, CLAUDE_INDENT, CLAUDE_INDENT) : undefined;
++		const completion = nestedSummary ? renderControls(theme, state, false, ctx.isError, undefined, undefined, nestedSummary, CLAUDE_INDENT, CLAUDE_INDENT)
++			: kind === "shell" && state.expanded && !options.isPartial ? claudeTook(state, theme) : undefined;
+ 		container.addChild(renderClaudeResult(name, ctx.args, result, options, theme, ctx.isError, state.expanded === true, output, author, completion));
+ 		component = new WithinWidth(container);
+ 	} else {

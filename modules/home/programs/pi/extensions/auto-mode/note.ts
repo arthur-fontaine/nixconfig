@@ -25,12 +25,28 @@ export const isTimer = (line: string, mutedAnsi: string) => TIMER.test(plain(lin
 
 const pad = (line: string, width: number) => line + " ".repeat(Math.max(0, width - [...plain(line)].length));
 
+const RAIL = /^( *⎿ +)/;
+
+// compact-tools' Claude-style rows open their result with a rail, "   ⎿  ", and indent the
+// lines under it as far: the note goes in that body column too. 0 for any other row.
+export function railOf(lines: readonly string[]): number {
+	for (const line of lines) {
+		const text = plain(line);
+		if (text.trim()) return RAIL.exec(text)?.[1]!.length ?? 0;
+	}
+	return 0;
+}
+
 // The note goes after the last `Took Xs` line, two spaces from it, when it fits on that line;
 // below it when it doesn't; otherwise as the result's last line, after a blank one as Pi
-// separates its own timer. Lines added below the timer by other renderers (file changes, a
-// background marker) stay where they are.
+// separates its own timer (a Claude-style row has no blank lines: right under it, in its body
+// column). Lines added below the timer by other renderers (file changes, a background
+// marker) stay where they are.
 export function placeNote(lines: readonly string[], width: number, note: string, noteWidth: number, isTimerLine: (line: string) => boolean): string[] {
-	const fitted = noteWidth > width ? plain(note).slice(0, Math.max(1, width)) : note;
+	const rail = railOf(lines);
+	const indent = " ".repeat(rail);
+	const room = Math.max(1, width - rail);
+	const fitted = indent + (noteWidth > room ? plain(note).slice(0, room) : note);
 	const out = [...lines];
 	for (let i = out.length - 1; i >= 0; i--) {
 		if (!isTimerLine(out[i])) continue;
@@ -39,5 +55,5 @@ export function placeNote(lines: readonly string[], width: number, note: string,
 		else out.splice(i + 1, 0, pad(fitted, width));
 		return out;
 	}
-	return [...out, pad("", width), pad(fitted, width)];
+	return rail ? [...out, pad(fitted, width)] : [...out, pad("", width), pad(fitted, width)];
 }

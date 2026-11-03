@@ -2,7 +2,7 @@
 // is matched, in order, against the logical lines of a source document, and
 // the matched run takes the document's colors. Everything the renderer added
 // around it (prompts, hints, timers, other extensions' lines) stays as drawn.
-import { FG_RESET, sliceVisible, spliceVisible, stripAnsi } from "./ansi.ts";
+import { dropVisible, FG_RESET, sliceVisible, spliceVisible, stripAnsi } from "./ansi.ts";
 
 export interface Document {
 	/** Logical lines, as the renderer was given them (tabs already expanded). */
@@ -21,6 +21,8 @@ export interface OverlayOptions {
 	accept?: (line: string) => boolean;
 	/** Restyles the text right before the first run, e.g. a `$ ` prompt. */
 	lead?: { text: string; styled: string };
+	/** Columns every drawn line starts with before its text (a row's rail), left as drawn. */
+	rail?: number;
 }
 
 interface Cursor {
@@ -81,21 +83,24 @@ function matchRun(drawn: string, plain: string[], cursor: Cursor): Match | undef
 export function overlay(lines: readonly string[], doc: Document, options: OverlayOptions): string[] {
 	const cursor: Cursor = { line: 0, column: 0 };
 	let led = false;
+	const rail = options.rail ?? 0;
 	return lines.map((line) => {
-		if (cursor.line >= doc.plain.length || (options.accept && !options.accept(line))) return line;
-		const drawn = stripAnsi(line);
+		if (cursor.line >= doc.plain.length) return line;
+		const body = rail ? dropVisible(line, rail) : line;
+		if (options.accept && !options.accept(body)) return line;
+		const drawn = stripAnsi(body);
 		const match = options.match === "line" ? matchLine(drawn, doc.plain, cursor) : matchRun(drawn, doc.plain, cursor);
 		if (!match) return line;
 		cursor.line = match.line;
 		cursor.column = match.from + match.length;
-		let start = match.at;
+		let start = match.at + rail;
 		let replacement = sliceVisible(doc.styled[match.line]!, match.from, match.from + match.length);
 		const lead = options.lead;
-		if (lead && !led && start >= lead.text.length && drawn.slice(start - lead.text.length, start) === lead.text) {
+		if (lead && !led && match.at >= lead.text.length && drawn.slice(match.at - lead.text.length, match.at) === lead.text) {
 			start -= lead.text.length;
 			replacement = lead.styled + FG_RESET + replacement;
 		}
 		led = true;
-		return spliceVisible(line, start, match.at + match.length, replacement);
+		return spliceVisible(line, start, rail + match.at + match.length, replacement);
 	});
 }

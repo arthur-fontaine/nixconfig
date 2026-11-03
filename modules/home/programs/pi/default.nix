@@ -90,8 +90,9 @@ let
     chmod -R u+w $out
     patch -d $out -p1 < ${./patches/pi-claude-code-caller-cache.patch}
   '';
-  # nedleeds/pi-compact-tools 0.16.7 with patches/pi-compact-tools-claude-author.patch: an
-  # opened bash row keeps syntax-highlighting's output instead of printing it twice. Loaded
+  # nedleeds/pi-compact-tools 0.16.7 with patches/pi-compact-tools-claude-bash.patch: bash
+  # titles leave the folding of long commands to syntax-highlighting, and an opened command
+  # ends with Pi's "Took 4.2s", which auto-mode's note goes beside. Loaded
   # from the extensions folder, not as a package, for its place among them (see
   # extensionsManifest). Its imports are Pi's own packages; its theme isn't loaded.
   piCompactTools = pkgs.runCommand "pi-compact-tools-0.16.7-patched" { } ''
@@ -102,7 +103,7 @@ let
         hash = "sha256-uK62LedKA/IQNn96HVngeoXhNn4c8sdPJ2jpNx1NTYE=";
       }
     } -C $out --strip-components=1
-    patch -d $out -p1 < ${./patches/pi-compact-tools-claude-author.patch}
+    patch -d $out -p1 < ${./patches/pi-compact-tools-claude-bash.patch}
   '';
   # Tool rows as Claude Code draws them. compact-tools rewrites the file (/compact-tools),
   # so it is merged, not replaced.
@@ -227,17 +228,25 @@ let
     web = ./extensions/web;
   };
   # Pi loads the folder's extensions in directory order, unsorted, and each tool renderer
-  # wraps those of the extensions loaded after it. A manifest fixes the order: the
-  # attribute names' (alphabetical), which puts compact-tools inside auto-mode's note,
-  # background-tools' detached rows and bash-changes' diff, and around image-view and
-  # syntax-highlighting, whose views it shows once a row is opened. An extension that must
-  # load elsewhere needs a name that sorts there.
+  # wraps those of the extensions loaded after it. A manifest fixes the order: these first,
+  # so that what they add to a row (auto-mode's note, background-tools' detached rows,
+  # bash-changes' diff, syntax-highlighting's colors, image-view's images) goes on
+  # compact-tools' Claude-style rows, then the rest by name. One loaded after compact-tools
+  # would hand it its own view of the row, which compact-tools shows once opened.
+  wrappersOfCompactTools = [
+    "auto-mode"
+    "background-tools"
+    "bash-changes"
+    "syntax-highlighting"
+    "image-view"
+    "compact-tools"
+  ];
   extensionsManifest = (pkgs.formats.json { }).generate "pi-extensions-package.json" {
     name = "pi-extensions";
     private = true;
-    pi.extensions = lib.mapAttrsToList (
-      name: _: if name == "compact-tools" then "./${name}/extensions/compact-tools.ts" else "./${name}/index.ts"
-    ) extensions;
+    pi.extensions = map (
+      name: if name == "compact-tools" then "./${name}/extensions/compact-tools.ts" else "./${name}/index.ts"
+    ) (wrappersOfCompactTools ++ lib.subtractLists wrappersOfCompactTools (lib.attrNames extensions));
   };
   skills = pluginSkills // {
     context7-mcp = ../claude/skills/context7-mcp;

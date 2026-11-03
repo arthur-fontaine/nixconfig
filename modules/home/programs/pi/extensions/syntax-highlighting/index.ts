@@ -4,7 +4,7 @@
 // additions to the row stay as they are, and every color is a theme token.
 import { type ExtensionAPI, getLanguageFromPath, highlightCode, type Theme, type ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
-import { escapes, FG_RESET, stripAnsi } from "./ansi.ts";
+import { escapes, FG_RESET, railOf, stripAnsi } from "./ansi.ts";
 import { displayedCommand, fold, normalizeCommand, type Preview, readPreview } from "./command.ts";
 import { highlightShell, type Paint } from "./highlight.ts";
 import { type Document, overlay } from "./overlay.ts";
@@ -16,6 +16,9 @@ type RenderContext = Parameters<RenderCall>[2];
 type ToolResult = Parameters<RenderResult>[0];
 
 const SHORTCUT = "ctrl+shift+o";
+// compact-tools' Claude-style call line, and the column its rows' text starts at.
+const CLAUDE_TITLE = /^ *\S+ Bash\(/;
+const CLAUDE_BODY = "      ";
 // Rows the shortcut redraws; older ones redraw on their next render.
 const MAX_ROWS = 200;
 
@@ -164,7 +167,9 @@ export default function (pi: ExtensionAPI) {
 				const out = overlay(drawn, doc(themeKey(theme)), { match: "run", lead });
 				if (hidden > 0) {
 					const hint = `… ${hidden} more command line${hidden === 1 ? "" : "s"} · ${SHORTCUT} shows all`;
-					out.push(truncateToWidth(theme.fg("dim", hint), width));
+					// Under compact-tools' `⦁ Bash(…)` title, in its rows' body column.
+					const indent = CLAUDE_TITLE.test(stripAnsi(drawn[0] ?? "")) ? CLAUDE_BODY : "";
+					out.push(truncateToWidth(indent + theme.fg("dim", hint), width));
 				}
 				return out;
 			});
@@ -187,7 +192,9 @@ export default function (pi: ExtensionAPI) {
 				const codes = escapes(line);
 				return codes.includes(theme.getFgAnsi("toolOutput")) && codes.every((code) => own.has(code));
 			};
-			return new Recolored(component, theme, (drawn) => (text ? overlay(drawn, doc(themeKey(theme)), { match: "line", accept: plainOutput }) : drawn));
+			return new Recolored(component, theme, (drawn) =>
+				text ? overlay(drawn, doc(themeKey(theme)), { match: "line", accept: plainOutput, rail: railOf(drawn) }) : drawn,
+			);
 		};
 
 	pi.registerToolRenderer((toolName, next) => {
