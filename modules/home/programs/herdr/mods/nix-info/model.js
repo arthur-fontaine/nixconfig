@@ -202,18 +202,96 @@ function apply(state, entry) {
     }
     for (const b of Array.isArray(m.content) ? m.content : []) {
       if (b?.type !== "toolCall" || !b.id || state.tools.has(b.id)) continue;
-      state.tools.set(b.id, { ...infoTool(b, state.cwd), started: ms(m.timestamp) ?? t, duration: null, error: null, call: b });
+      state.tools.set(b.id, { ...infoTool(b, state.cwd), started: ms(m.timestamp) ?? t, duration: null, error: null, call: b,
+        args: infoCapValue(b.arguments ?? {}), result: null, resultCut: false, finished: null });
       state.order.push(b.id);
     }
   } else if (m.role === "toolResult") {
     const call = state.tools.get(m.toolCallId);
     if (!call) return;
     call.error = m.isError === true;
-    call.duration = typeof m.durationMs === "number" ? m.durationMs : (ms(m.timestamp) ?? t) - (call.started ?? t);
+    call.finished = ms(m.timestamp) ?? t;
+    call.duration = typeof m.durationMs === "number" ? m.durationMs : call.finished - (call.started ?? t);
+    const text = resultText(m.content);
+    call.result = text.length > RESULT_CAP ? text.slice(0, RESULT_CAP) : text;
+    call.resultCut = text.length > RESULT_CAP;
     // Lines count once the edit or write went through.
     if (!call.error) countLines(state, call.call);
     delete call.call;
   }
+}
+
+// ---- What the inspector keeps per call: capped, so hundreds of calls stay small ---------
+
+// The stored text of one call's result (and of each long argument string) stops here.
+export const RESULT_CAP = 64 * 1024;
+const ARG_STRING_CAP = 16 * 1024;
+
+function resultText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((b) => (b?.type === "text" ? b.text ?? "" : b?.type === "image" ? "[image]" : "")).join("\n");
+}
+
+// Arguments as given, long strings cut (a write's content, an edit's text).
+export function infoCapValue(value) {
+  if (typeof value === "string") return value.length > ARG_STRING_CAP ? `${value.slice(0, ARG_STRING_CAP)}…` : value;
+  if (Array.isArray(value)) return value.map(infoCapValue);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, infoCapValue(v)]));
+  return value;
+}
+
+// Pretty JSON as lines of colored parts: { indent, parts: [{ text, kind }] }, kind one of
+// key, string, number, literal (true/false/null), punct.
+export function infoJsonLines(value) {
+  const lines = [];
+  const walk = (v, indent, lead, tail) => {
+    const head = lead ? [...lead] : [];
+    if (v && typeof v === "object") {
+      const array = Array.isArray(v);
+      const entries = array ? v.map((x) => [null, x]) : Object.entries(v);
+      const [open, close] = array ? ["[", "]"] : ["{", "}"];
+      if (!entries.length) { lines.push({ indent, parts: [...head, { text: open + close + tail, kind: "punct" }] }); return; }
+      lines.push({ indent, parts: [...head, { text: open, kind: "punct" }] });
+      entries.forEach(([k, x], i) => {
+        const key = k === null ? null : [{ text: JSON.stringify(k), kind: "key" }, { text: ": ", kind: "punct" }];
+        walk(x, indent + 1, key, i < entries.length - 1 ? "," : "");
+      });
+      lines.push({ indent, parts: [{ text: close + tail, kind: "punct" }] });
+      return;
+    }
+    const kind = typeof v === "string" ? "string" : typeof v === "number" ? "number" : "literal";
+    const parts = [...head, { text: v === undefined ? "null" : JSON.stringify(v), kind }];
+    if (tail) parts.push({ text: tail, kind: "punct" });
+    lines.push({ indent, parts });
+  };
+  walk(value, 0, null, "");
+  return lines;
+}
+
+// An edit call's change as diff lines: { sign: "-" | "+", text }, edit by edit.
+export function infoEditDiff(args) {
+  const edits = Array.isArray(args?.edits) ? args.edits : args?.oldText !== undefined ? [args] : [];
+  const out = [];
+  edits.forEach((e, i) => {
+    if (i) out.push({ sign: " ", text: "⋯" });
+    for (const l of String(e.oldText ?? "").split("\n")) out.push({ sign: "-", text: l });
+    for (const l of String(e.newText ?? "").split("\n")) out.push({ sign: "+", text: l });
+  });
+  return out;
+}
+
+// The first `max` lines of a result, and how many more there are.
+export function infoResultLines(text, max = 200) {
+  const lines = String(text ?? "").replace(/\n$/, "").split("\n");
+  return { lines: lines.slice(0, max), more: Math.max(0, lines.length - max) };
+}
+
+// "16:48:27.954", local time.
+export function infoClock(msec) {
+  if (!msec) return "—";
+  const d = new Date(msec), p = (n, w = 2) => String(n).padStart(w, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
 }
 
 // Feeds a chunk read from the file (`bytes` of it); returns whether anything new was applied.
@@ -257,7 +335,8 @@ export function infoCache(state) {
 export function infoTools(state) {
   return state.order.slice().reverse().map((id) => {
     const c = state.tools.get(id);
-    return { id: c.id, kind: c.kind, name: c.name, arg: c.arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null };
+    return { id: c.id, kind: c.kind, name: c.name, arg: c.arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null,
+      args: c.args, result: c.result, resultCut: c.resultCut, finished: c.finished };
   });
 }
 

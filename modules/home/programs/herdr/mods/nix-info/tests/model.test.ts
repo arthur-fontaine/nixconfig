@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   infoCache, infoCategory, infoCommand, infoFiles, infoLastCall, infoContext, infoDuration, infoFeed, infoLineDiff, infoLines, infoNewSession, infoParseTitle,
   infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length,
+  infoCapValue, infoClock, infoEditDiff, infoJsonLines, infoResultLines, RESULT_CAP,
 } from "../model.js";
 
 const line = (o) => JSON.stringify(o) + "\n";
@@ -117,4 +118,39 @@ test("bash commands lose their set-up in front", () => {
   assert.equal(infoCommand("export A=1 B=2 && pnpm test"), "pnpm test");
   assert.equal(infoCommand("cd /tmp"), "cd /tmp");
   assert.equal(infoCommand("git log -n 5"), "git log -n 5");
+});
+
+test("each call keeps its arguments, its result text and when it finished", () => {
+  const s = infoNewSession("f");
+  infoFeed(s, SESSION + result("2026-11-03T10:01:07.000Z", "d", { content: [{ type: "text", text: "line 1\nline 2" }] }));
+  const byId = Object.fromEntries(infoTools(s).map((c) => [c.id, c]));
+  assert.deepEqual(byId.b.args, { command: "pnpm test\nmore" });
+  assert.equal(byId.d.result, "line 1\nline 2");
+  assert.equal(byId.d.finished, Date.parse("2026-11-03T10:01:07.000Z"));
+  assert.equal(byId.c.result, "");
+  assert.equal(byId.d.running, false);
+  // A huge result is cut, and says so.
+  const big = infoNewSession("f");
+  infoFeed(big, assistant("2026-11-03T10:00:05.000Z", { input: 1, output: 1 }, [{ id: "x", name: "bash", arguments: { command: "cat big" } }])
+    + result("2026-11-03T10:00:06.000Z", "x", { content: [{ type: "text", text: "y".repeat(RESULT_CAP + 10) }] }));
+  const x = infoTools(big)[0];
+  assert.equal(x.result.length, RESULT_CAP);
+  assert.equal(x.resultCut, true);
+  assert.ok(infoCapValue({ content: "z".repeat(20000) }).content.length < 20000);
+});
+
+test("pretty JSON comes as lines of colored parts", () => {
+  const lines = infoJsonLines({ path: "a.ts", n: 2, ok: true, list: [1, null], empty: {} });
+  const text = lines.map((l) => "  ".repeat(l.indent) + l.parts.map((p) => p.text).join("")).join("\n");
+  assert.equal(text, JSON.stringify({ path: "a.ts", n: 2, ok: true, list: [1, null], empty: {} }, null, 2));
+  const kinds = new Set(lines.flatMap((l) => l.parts.map((p) => p.kind)));
+  assert.deepEqual([...kinds].sort(), ["key", "literal", "number", "punct", "string"]);
+});
+
+test("an edit reads as a diff, a result as its first lines", () => {
+  assert.deepEqual(infoEditDiff({ edits: [{ oldText: "a\nb", newText: "a\nc" }, { oldText: "x", newText: "y" }] }).map((l) => l.sign + l.text),
+    ["-a", "-b", "+a", "+c", " ⋯", "-x", "+y"]);
+  assert.deepEqual(infoEditDiff({ path: "p" }), []);
+  assert.deepEqual(infoResultLines("1\n2\n3\n", 2), { lines: ["1", "2"], more: 1 });
+  assert.match(infoClock(Date.UTC(2026, 10, 3, 10, 0, 0, 7)), /^\d\d:00:00\.007$/);
 });

@@ -2,12 +2,13 @@
 // JSONL as it grows: context, cache, tool calls, lines changed; and the account's
 // usage. The session file comes from the terminal's `pi.session` label (Pi's herdr-session
 // extension), else from its title. The figures live in model.js; this view only draws them.
-// Four key figures, each opening its detail in place, then the tool calls (spec-3b, "A").
+// Four key figures, each opening its detail in place, then the tool calls (spec-3b, "A");
+// a selected call opens below the list with its arguments, result and timing.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props } from "herdr";
 import { readFile } from "fs/promises";
-import { infoAge, infoCache, infoContext, infoDuration, infoFeed, infoFiles, infoLastCall, infoLines, infoNewSession, infoParseTitle, infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoLastCall, infoLines, infoNewSession, infoParseTitle, infoResultLines, infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length } from "./model.js";
 
 const TICK = 1000;
 const USAGE_EVERY = 5000;
@@ -76,6 +77,9 @@ export default class Info extends View {
     this.asked = undefined;
     this.all = false; // every tool call rendered, not just the latest 200
     this.kind = "all"; // the activity detail's filter
+    this.sel = null; // the tool call shown in the inspector
+    this.ids = []; // the listed calls' ids, in order, for ↑/↓
+    this.area = 0; // height of the list + inspector area
     this.handle = cx.focus_handle();
   }
 
@@ -86,8 +90,33 @@ export default class Info extends View {
   }
 
   back(cx) {
-    this.detail = null; this.all = false; this.kind = "all";
+    this.detail = null; this.all = false; this.kind = "all"; this.sel = null;
     cx.notify();
+  }
+
+  // From the overview, a call opens in the activity detail: the list and the inspector get
+  // the panel's height instead of what the tiles leave.
+  select(id, cx) {
+    if (!this.detail) { this.detail = "activity"; this.sel = id; this.handle.focus(); cx.notify(); return; }
+    this.sel = this.sel === id ? null : id;
+    this.handle.focus();
+    cx.notify();
+  }
+
+  // ↑/↓ through the listed calls; Esc closes the inspector, then the detail.
+  key(e, cx) {
+    if (e.key === "escape" && (this.sel || this.detail)) {
+      cx.stop_propagation();
+      if (this.sel) { this.sel = null; cx.notify(); } else this.back(cx);
+      return;
+    }
+    if ((e.key === "up" || e.key === "down") && this.ids.length) {
+      cx.stop_propagation();
+      const at = this.ids.indexOf(this.sel);
+      const next = at < 0 ? 0 : Math.max(0, Math.min(this.ids.length - 1, at + (e.key === "down" ? 1 : -1)));
+      this.sel = this.ids[next];
+      cx.notify();
+    }
   }
 
   // The session file of a Pi pane: its label, else the newest file in its cwd's session
@@ -214,14 +243,14 @@ export default class Info extends View {
     const icon = TOOL_ICON[c.kind] ?? "box";
     const prose = c.kind === "ask" || c.kind === "agent";
     const path = c.kind === "read" || c.kind === "edit" || c.kind === "write";
-    const opens = (c.kind === "edit" || c.kind === "write") && c.path;
+    const on = this.sel === c.id;
     const arg = div().flex_1().min_w(0).text_color(t.foreground)
       .when(prose, (e) => e.text_size(12.5)).when(!prose, (e) => e.font_family(MONO).text_size(12))
       .when(path, (e) => e.text_ellipsis_start()).when(!path, (e) => e.truncate()).child(c.arg || c.name);
     return h_flex().id(`call-${c.id}`).h(big ? 32 : 28).flex_none().px(big ? 6 : 16).when(big, (e) => e.mx(10).rounded(6)).gap(big ? 10 : 8).items_center()
-      .when(c.running, (e) => e.bg(t.hover)).when(!c.running, (e) => e.hover((x) => x.bg(t.hover)))
-      .when(Boolean(c.full || c.arg), (e) => e.tooltip(c.full || c.arg))
-      .when(Boolean(opens), (e) => e.cursor_pointer().on_click(() => run("tab.new", { mod: "nix-editor", name: c.path.split("/").pop(), props: { file: c.path } })))
+      .when(on, (e) => e.bg(t.selected)).when(!on && c.running, (e) => e.bg(t.hover)).when(!on && !c.running, (e) => e.hover((x) => x.bg(t.hover)))
+      .when(Boolean(c.full || c.arg) && !on, (e) => e.tooltip(c.full || c.arg))
+      .cursor_pointer().on_click((_e, cx) => this.select(c.id, cx))
       .child(svg(ICON(icon)).size(big ? 13 : 14).flex_none().text_color(t.dim))
       .child(div().w(40).flex_none().text_size(12.5).text_color(c.error ? t.blocked : t.muted).child(c.kind))
       .child(arg)
@@ -233,6 +262,7 @@ export default class Info extends View {
 
   toolList(t, running, history, now, big) {
     const shown = this.all ? history : history.slice(0, SHOWN);
+    this.ids = [...running, ...shown].map((c) => c.id);
     return [
       ...running.map((c) => this.toolRow(t, c, now, big)),
       ...shown.map((c) => this.toolRow(t, c, now, big)),
@@ -240,6 +270,81 @@ export default class Info extends View {
         .text_size(12).text_color(t.muted).hover((e) => e.text_color(t.foreground))
         .on_click((_e, cx) => { this.all = true; cx.notify(); }).child(`Show all ${history.length}`)] : []),
     ];
+  }
+
+  // ---- inspector: the selected call in full ----------------------------------------------
+
+  code(t, children) {
+    return v_flex().mx(16).px(10).py(8).rounded(6).bg(t.background).border_1().border_color(t.border)
+      .font_family(MONO).text_size(12).line_height("18px").children(children);
+  }
+
+  label(t, text, extra) {
+    return h_flex().h(28).flex_none().px(16).pt(4).gap(8).items_center()
+      .child(div().flex_1().text_size(11).font_medium().text_color(t.muted).child(text))
+      .when(Boolean(extra), (e) => e.child(div().text_size(11).text_color(t.dim).child(extra)));
+  }
+
+  jsonLines(t, value) {
+    const color = { key: t.ansi4, string: t.ansi2, number: t.ansi3, literal: t.ansi5, punct: t.dim };
+    return infoJsonLines(value).map((l) => h_flex().flex_wrap().pl(l.indent * 14)
+      .children(l.parts.map((p) => div().when(p.kind === "string", (e) => e.min_w(0)).text_color(color[p.kind] ?? t.foreground).child(p.text))));
+  }
+
+  inspector(t, c, now, area) {
+    const icon = TOOL_ICON[c.kind] ?? "box";
+    const opens = (c.kind === "edit" || c.kind === "write" || c.kind === "read") && c.path;
+    const took = infoDuration(c.duration) || "<0.1s";
+    const status = c.running
+      ? h_flex().gap(5).items_center().text_color(t.working).child(this.spinner(t)).child(`running ${infoDuration(now - (c.started ?? now))}`)
+      : div().text_color(c.error ? t.blocked : t.dim).child(c.error ? `failed · ${took}` : took);
+    const button = (id, child, tip, action) => div().id(id).h(24).px(8).flex_none().flex().items_center().gap(6).rounded(6).cursor_pointer()
+      .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground)).tooltip(tip).on_click(action).child(child);
+    const args = c.args ?? {};
+    const sections = [];
+    if (c.kind === "bash" && typeof args.command === "string") {
+      sections.push(this.label(t, "Command"), this.code(t, args.command.replace(/\n$/, "").split("\n").map((l) => div().w_full().text_color(t.foreground).child(l || " "))));
+    }
+    if (c.kind === "edit") {
+      const diff = infoEditDiff(args);
+      if (diff.length) sections.push(this.label(t, "Change"), this.code(t, diff.map((l) => h_flex().w_full().gap(8)
+        .when(l.sign === "-", (e) => e.bg(t.ansi1 + "1a")).when(l.sign === "+", (e) => e.bg(t.ansi2 + "1a"))
+        .child(div().w(10).flex_none().text_color(l.sign === "-" ? t.ansi1 : l.sign === "+" ? t.ansi2 : t.dim).child(l.sign))
+        .child(div().flex_1().min_w(0).text_color(l.sign === " " ? t.dim : t.foreground).child(l.text || " ")))));
+    }
+    // The command and the diff above say it all for those; the rest show their arguments.
+    const rest = Object.keys(args).filter((k) => !(c.kind === "bash" && k === "command") && !(c.kind === "edit" && (k === "edits" || k === "oldText" || k === "newText")));
+    if (rest.length) sections.push(this.label(t, "Arguments"), this.code(t, this.jsonLines(t, Object.fromEntries(rest.map((k) => [k, args[k]])))));
+    if (c.running) sections.push(this.label(t, "Result"), div().px(16).py(4).text_size(12).text_color(t.dim).child("Waiting for the result…"));
+    else {
+      const r = infoResultLines(c.result ?? "");
+      const extra = r.more ? `+${r.more} more lines` : c.resultCut ? "cut at 64 KB" : r.lines.length > 1 ? `${r.lines.length} lines` : "";
+      sections.push(this.label(t, c.error ? "Error" : "Result", extra),
+        (c.result ?? "") === "" ? div().px(16).py(4).text_size(12).text_color(t.dim).child("Nothing")
+          : this.code(t, r.lines.map((l) => div().w_full().text_color(c.error ? t.blocked : t.foreground).child(l || " "))));
+    }
+    const kv = (k, v) => h_flex().h(22).px(16).gap(10).items_center().text_size(12)
+      .child(div().w(70).flex_none().text_color(t.muted).child(k)).child(div().font_family(MONO).text_color(t.foreground).child(v));
+    sections.push(this.label(t, "Timing"), kv("Started", infoClock(c.started)), kv("Finished", c.running ? "—" : infoClock(c.finished)),
+      kv("Took", c.running ? infoDuration(now - (c.started ?? now)) : took));
+    // 55% of the area it shares with the list, so the list keeps the rest.
+    return v_flex().id("inspector").flex_none().h(Math.max(160, Math.round((area || 600) * 0.55))).border_t(1).border_color(t.border).bg(t.chrome)
+      .child(v_flex().flex_none().px(16).pt(10).pb(8).gap(4).border_b(1).border_color(t.border)
+        .child(h_flex().gap(8).items_center()
+          .child(svg(ICON(icon)).size(14).flex_none().text_color(c.error ? t.blocked : t.muted))
+          .child(div().flex_none().text_size(13).font_medium().text_color(c.error ? t.blocked : t.foreground).child(c.name))
+          .child(div().flex_1())
+          .when(Boolean(opens), (e) => e.child(button("inspector-open", "Open file", c.path, () => run("tab.new", { mod: "nix-editor", name: c.path.split("/").pop(), props: { file: c.path } }))))
+          .child(button("inspector-close", svg(ICON("x")).size(12), "Close (Esc)", (_e, cx) => { this.sel = null; cx.notify(); })))
+        .child(div().min_w(0).font_family(MONO).text_size(12).text_color(t.foreground)
+          .when(Boolean(c.path), (e) => e.text_ellipsis_start()).when(!c.path, (e) => e.truncate()).child(c.arg || c.name))
+        .child(h_flex().gap(6).text_size(11).text_color(t.dim).child(status).child(`· ${infoClock(c.started)}`)))
+      .child(v_flex().id("inspector-body").flex_1().min_h(0).overflow_y_scrollbar().pb(10).children(sections));
+  }
+
+  selected(f) {
+    if (!this.sel || !this.session) return null;
+    return [...(f.running ?? []), ...(f.history ?? [])].find((c) => c.id === this.sel) ?? null;
   }
 
   // ---- figures -------------------------------------------------------------------------
@@ -372,11 +477,14 @@ export default class Info extends View {
             .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted).when(!on, (e) => e.hover((x) => x.bg(t.hover)))
             .on_click((_e, cx) => { this.kind = k.key; this.all = false; cx.notify(); }).child(k.label);
         };
+        const list = history.length ? this.toolList(t, [], history, now, true) : [div().px(16).py(12).text_size(12).text_color(t.dim).child("None")];
+        // ↑/↓ go through the running calls too, listed above the history here.
+        this.ids = [...running.map((c) => c.id), ...(history.length ? this.ids : [])];
         return [
           h_flex().h(36).flex_none().px(14).gap(2).items_center().children(KINDS.map(chip)),
           ...(running.length ? [this.section(t, "Running", String(running.length)), ...running.map((c) => this.toolRow(t, c, now, true))] : []),
           this.section(t, "History", `${history.length} calls${f.errors && this.kind === "all" ? ` · ${f.errors} errors` : ""}`),
-          ...(history.length ? this.toolList(t, [], history, now, true) : [div().px(16).py(12).text_size(12).text_color(t.dim).child("None")]),
+          ...list,
         ];
       }
       case "lines": {
@@ -417,13 +525,20 @@ export default class Info extends View {
       .child(div().flex_none().text_size(13).font_medium().text_color(t.foreground).child(this.detail ? LABELS[this.detail] : "Info"))
       .when(Boolean(meta), (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(meta)));
     const root = v_flex().id("info").track_focus(this.handle).size_full().min_h(0).bg(t.chrome).text_color(t.foreground)
-      .on_key_down((e, cx) => { if (e.key === "escape" && this.detail) { cx.stop_propagation(); this.back(cx); } })
+      .on_key_down((e, cx) => this.key(e, cx))
       .child(header);
-    if (this.detail) return root.child(v_flex().id("info-detail").flex_1().min_h(0).overflow_y_scrollbar().pb(8).children(this.detailView(t, f, now)));
+    // The list above, the selected call below (only where calls are listed).
+    const sel = this.detail === null || this.detail === "activity" ? this.selected(f) : null;
+    const area = (id, list) => v_flex().id(id).flex_1().min_h(0)
+      .on_size_change((size, cx) => { if (size.height !== this.area) { this.area = size.height; cx.notify(); } })
+      .child(list).when(Boolean(sel), (e) => e.child(this.inspector(t, sel, now, this.area)));
+    if (this.detail) {
+      return root.child(area("info-detail-area", v_flex().id("info-detail").flex_1().min_h(0).overflow_y_scrollbar().pb(8).children(this.detailView(t, f, now))));
+    }
     const top = this.overview(t, f, now);
     if (!this.session || !f.started) return root.child(v_flex().flex_none().children(top));
     return root.child(v_flex().flex_none().children(top))
-      .child(v_flex().id("info-tools").flex_1().min_h(0).overflow_y_scrollbar().pb(8)
-        .children(f.total ? this.toolList(t, f.running, f.history, now, false) : [div().px(16).py(12).text_size(12).text_color(t.dim).child("No tool calls yet")]));
+      .child(area("info-tools-area", v_flex().id("info-tools").flex_1().min_h(0).overflow_y_scrollbar().pb(8)
+        .children(f.total ? this.toolList(t, f.running, f.history, now, false) : [div().px(16).py(12).text_size(12).text_color(t.dim).child("No tool calls yet")])));
   }
 }
