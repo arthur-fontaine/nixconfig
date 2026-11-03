@@ -233,6 +233,9 @@ in
       (builtins.readFile ../claude/rules/context7.md)
     ];
     ".pi/agent/extensions".source = pkgs.linkFarm "pi-extensions" extensions;
+    # Role prompts for the orchestrator chats Herdr's sidebar opens on a worktree or a
+    # project click (pi --append-system-prompt).
+    ".pi/agent/orchestrator".source = ./orchestrator;
     ".pi/agent/skills".source = pkgs.linkFarm "pi-skills" skills;
   };
 
