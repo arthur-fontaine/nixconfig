@@ -90,6 +90,23 @@ let
     chmod -R u+w $out
     patch -d $out -p1 < ${./patches/pi-claude-code-caller-cache.patch}
   '';
+  # nedleeds/pi-compact-tools 0.16.7 with patches/pi-compact-tools-claude-author.patch: an
+  # opened bash row keeps syntax-highlighting's output instead of printing it twice. Loaded
+  # from the extensions folder, not as a package, for its place among them (see
+  # extensionsManifest). Its imports are Pi's own packages; its theme isn't loaded.
+  piCompactTools = pkgs.runCommand "pi-compact-tools-0.16.7-patched" { } ''
+    mkdir -p $out
+    tar xzf ${
+      pkgs.fetchurl {
+        url = "https://registry.npmjs.org/pi-compact-tools/-/pi-compact-tools-0.16.7.tgz";
+        hash = "sha256-uK62LedKA/IQNn96HVngeoXhNn4c8sdPJ2jpNx1NTYE=";
+      }
+    } -C $out --strip-components=1
+    patch -d $out -p1 < ${./patches/pi-compact-tools-claude-author.patch}
+  '';
+  # Tool rows as Claude Code draws them. compact-tools rewrites the file (/compact-tools),
+  # so it is merged, not replaced.
+  compactToolsJson = (pkgs.formats.json { }).generate "pi-compact-tools.json" { style = "claude"; };
   settingsJson = (pkgs.formats.json { }).generate "pi-settings.json" settings;
   settingsPath = "${config.home.homeDirectory}/.pi/agent/settings.json";
 
@@ -196,6 +213,8 @@ let
     bash-changes = ./extensions/bash-changes;
     # Bash commands and their output in the theme's colours, embedded code included.
     syntax-highlighting = ./extensions/syntax-highlighting;
+    # Tool rows as Claude Code draws them: "⦁ Bash(ls)", then "⎿ " and the output.
+    compact-tools = piCompactTools;
     # Pi's startup header without its "Pi can explain its own features" line.
     startup-header = ./extensions/startup-header;
     # Claude Code's /rewind (Esc twice), and /restore to bring rewound prompts back.
@@ -206,6 +225,19 @@ let
     footer = ./extensions/footer;
     # web_search and web_fetch through TinyFish, and view_image to look at a URL's image.
     web = ./extensions/web;
+  };
+  # Pi loads the folder's extensions in directory order, unsorted, and each tool renderer
+  # wraps those of the extensions loaded after it. A manifest fixes the order: the
+  # attribute names' (alphabetical), which puts compact-tools inside auto-mode's note,
+  # background-tools' detached rows and bash-changes' diff, and around image-view and
+  # syntax-highlighting, whose views it shows once a row is opened. An extension that must
+  # load elsewhere needs a name that sorts there.
+  extensionsManifest = (pkgs.formats.json { }).generate "pi-extensions-package.json" {
+    name = "pi-extensions";
+    private = true;
+    pi.extensions = lib.mapAttrsToList (
+      name: _: if name == "compact-tools" then "./${name}/extensions/compact-tools.ts" else "./${name}/index.ts"
+    ) extensions;
   };
   skills = pluginSkills // {
     context7-mcp = ../claude/skills/context7-mcp;
@@ -236,7 +268,9 @@ in
       (builtins.readFile ../claude/CLAUDE.md)
       (builtins.readFile ../claude/rules/context7.md)
     ];
-    ".pi/agent/extensions".source = pkgs.linkFarm "pi-extensions" extensions;
+    ".pi/agent/extensions".source = pkgs.linkFarm "pi-extensions" (
+      extensions // { "package.json" = extensionsManifest; }
+    );
     # Role prompts for the orchestrator chats Herdr's sidebar opens on a worktree or a
     # project click (pi --append-system-prompt).
     ".pi/agent/orchestrator".source = ./orchestrator;
@@ -257,6 +291,7 @@ in
     ${merge autoCompactJson "${config.home.homeDirectory}/.pi/agent/auto-compact/config.json"}
     ${merge subagentsJson "${config.home.homeDirectory}/.pi/agent/subagents.json"}
     ${merge keybindingsJson "${config.home.homeDirectory}/.pi/agent/keybindings.json"}
+    ${merge compactToolsJson "${config.home.homeDirectory}/.pi/agent/compact-tools.json"}
   '';
 
   # Before home-manager links the two folders: a real folder in their place
