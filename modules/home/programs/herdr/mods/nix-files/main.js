@@ -2,28 +2,11 @@
 // the panel. Here a file opens in the editor (nix-editor), in a tab of its own.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, shared, setShared } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, shared, setShared, notify } from "herdr";
+import { openInEditor } from "../_lib/editor.js";
 
-// A file in the editor (nix-editor): the tab it already has in this space, else a new one
-// named after it. nix-files and nix-diff share the tab → file map, so either finds the
-// other's tab; a line moves that editor there through nix-editor.goto.
-function openInEditor(file, line) {
-  const space = spaces().find((s) => s.active);
-  if (!space) return;
-  const tabs = shared("nix.editorTabs") ?? {};
-  const known = space.tabs.find((t) => tabs[t.id] === file);
-  if (known) {
-    run("tab.select", { id: known.id });
-    if (line) setShared("nix-editor.goto", { file, line, n: Date.now() });
-    return;
-  }
-  const before = new Set(space.tabs.map((t) => t.id));
-  run("tab.new", { name: file.split("/").pop(), mod: "nix-editor", props: { file, ...(line ? { line } : {}) } });
-  const added = spaces().find((s) => s.id === space.id)?.tabs.find((t) => !before.has(t.id));
-  if (added) setShared("nix.editorTabs", { ...tabs, [added.id]: file });
-}
-
-
+// The editor (../_lib/editor.js) gets the herdr functions it uses.
+const HERDR = { spaces, panes, run, shared, setShared, notify };
 
 function location() {
   const space = spaces().find(s => s.active), f = focused();
@@ -164,8 +147,9 @@ export default class Files extends View {
     });
   }
 
-  edit(path) {
-    if (this.root) openInEditor(`${this.root}/${path}`);
+  // ⌥-click: beside the file the editor shows.
+  edit(path, side) {
+    if (this.root) openInEditor(HERDR, `${this.root}/${path}`, { side });
   }
 
   // A tree row: a 16px indent per level with its guide (rows touch, so guides join into lines),
@@ -177,7 +161,7 @@ export default class Files extends View {
     const color = { A: t.ansi2, D: t.ansi1, U: t.ansi5 }[mark] ?? t.ansi3;
     return h_flex().id(`file-${path}`).h(26).flex_none().pl(6).pr(8).items_center().rounded(6).cursor_pointer().text_size(12.5)
       .when(on, (s) => s.bg(t.selected)).when(!on, (s) => s.hover((s) => s.bg(t.hover)))
-      .on_click((_e, cx) => { if (!dir) this.opened = path; dir ? this.toggle(path, cx) : this.edit(path, cx); })
+      .on_click((e, cx) => { if (!dir) this.opened = path; dir ? this.toggle(path, cx) : this.edit(path, e.modifiers.alt); })
       .children(Array.from({ length: depth }, () => div().w(16).h_full().flex_none().child(div().ml(11).w(1).h_full().bg(t.border))))
       .child(div().w(10).mr(6).flex_none().flex().items_center().justify_center()
         .when(dir, (e) => e.child(svg(`mods/nix-head/icons/chevron-${open || this.changedOnly ? "down" : "right"}.svg`).size(10).text_color(t.dim))))

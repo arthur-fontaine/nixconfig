@@ -6,9 +6,13 @@
 // a selected call opens below the list with its arguments, result and timing.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props } from "herdr";
+import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify } from "herdr";
 import { readFile } from "fs/promises";
+import { openInEditor } from "../_lib/editor.js";
 import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoLastCall, infoLines, infoNewSession, infoParseTitle, infoResultLines, infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length } from "./model.js";
+
+// The editor (../_lib/editor.js) gets the herdr functions it uses.
+const HERDR = { spaces, panes, run, shared, setShared, notify };
 
 const TICK = 1000;
 const USAGE_EVERY = 5000;
@@ -352,7 +356,7 @@ export default class Info extends View {
           .child(svg(ICON(icon)).size(14).flex_none().text_color(c.error ? t.blocked : t.muted))
           .child(div().flex_none().text_size(13).font_medium().text_color(c.error ? t.blocked : t.foreground).child(c.name))
           .child(div().flex_1())
-          .when(Boolean(opens), (e) => e.child(button("inspector-open", "Open file", c.path, () => run("tab.new", { mod: "nix-editor", name: c.path.split("/").pop(), props: { file: c.path, ...(c.diff?.from && { line: c.diff.from }) } }))))
+          .when(Boolean(opens), (e) => e.child(button("inspector-open", "Open file", c.path, (e) => openInEditor(HERDR, c.path, { line: c.diff?.from ?? null, side: e.modifiers.alt }))))
           .child(button("inspector-close", svg(ICON("x")).size(12), "Close (Esc)", (_e, cx) => { this.sel = null; cx.notify(); })))
         .child(div().min_w(0).font_family(MONO).text_size(12).text_color(t.foreground)
           .when(Boolean(c.path), (e) => e.text_ellipsis_start()).when(!c.path, (e) => e.truncate()).child(range ? `${c.arg} · ${range}` : c.arg || c.name))
@@ -518,7 +522,7 @@ export default class Info extends View {
             .child(num(`+${r.added}`, t.ansi2, 52)).child(num(r.removed ? `−${r.removed}` : "", t.ansi1, 52))),
           this.section(t, "Files", String(files.length)),
           ...files.map((x) => h_flex().id(`file-${x.path}`).h(28).flex_none().px(16).gap(8).items_center().cursor_pointer().hover((e) => e.bg(t.hover))
-            .on_click(() => run("tab.new", { mod: "nix-editor", name: x.path.split("/").pop(), props: { file: x.path } }))
+            .on_click((e) => openInEditor(HERDR, x.path, { side: e.modifiers.alt }))
             .child(div().flex_1().min_w(0).text_ellipsis_start().font_family(MONO).text_size(12).text_color(t.foreground).child(x.rel))
             .child(num(`+${x.added}`, t.ansi2, 44)).child(num(x.removed ? `−${x.removed}` : "", t.ansi1, 44))),
         ];

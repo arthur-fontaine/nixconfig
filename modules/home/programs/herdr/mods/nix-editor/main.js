@@ -1,20 +1,24 @@
 // A code editor tab: a headless Neovim does the editing, highlighting, LSP and
 // completion (nvim.js, through the bridge); this view draws its UI grid in the
 // terminal's look and turns keys and the mouse into Neovim input, as Neovide does.
-// Opened with tab.new { mod: "nix-editor", props: { file, line? } }.
-import { View, div } from "gpui-kit";
+// Opened with tab.new { mod: "nix-editor", props: { file, line? } }. One editor at a time
+// (../_lib/editor.js): the panels open their files in it, each in a Neovim tab page that
+// this view draws as its tab strip, or beside the current file (a split).
+import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, settings, props, exec, home, shared } from "herdr";
+import { theme, settings, props, exec, home, shared, setShared, spaces, panes, focused, run } from "herdr";
 import { Grid, nvimKey } from "./grid.js";
 import { startNvim } from "./nvim.js";
 
 const STATUS = 24; // px, the strip under the grid
+const TABS = 32; // px, the tab strip over it, with two files or more
 const PAD = { x: 8, y: 8 }; // px around the grid
 const FLOAT = { x: 8, y: 6, gap: 4 }; // a float's padding, and its distance from the line it's about
 // Cmd chords the editor keeps; any other Cmd chord stays Herdr's (new tab, palette…).
-const OWN_CMD = new Set(["s", "z", "a", "c", "x", "v", "f", "/", "[", "]", "left", "right", "up", "down", "backspace", "d", "p"]);
+const OWN_CMD = new Set(["s", "z", "a", "c", "x", "v", "f", "/", "[", "]", "\\", "left", "right", "up", "down", "backspace", "d", "p"]);
 
 const dirname = (p) => p.replace(/\/[^/]*$/, "") || "/";
+const basename = (p) => p.split("/").pop();
 // Light or dark, from how bright the theme's background is.
 const appearance = (hex) => {
   const n = parseInt((hex ?? "#000000").slice(1, 7), 16);
@@ -38,6 +42,7 @@ export default class Editor extends View {
     // A line asked of this file's tab by nix-files or nix-diff (nix-editor.goto); one asked
     // before this tab existed was for another one.
     this.gotoSeen = shared("nix-editor.goto")?.n;
+    this.tab = this.findTab(basename(this.file ?? ""));
     this.handle = cx.focus_handle();
     this.cx = cx;
     cx.timer.after(50, () => this.handle.focus());
@@ -88,7 +93,7 @@ export default class Editor extends View {
           height: this.size.rows,
           onRedraw: (events) => { if (this.grid.apply(events)) cx.notify(); },
           onNotify: (name, args) => {
-            if (name === "herdr_status") { this.status = args?.[0] ?? null; cx.notify(); }
+            if (name === "herdr_status") { this.status = args?.[0] ?? null; this.followTabs(); cx.notify(); }
             if (name === "nvim_closed") { this.nvim = null; this.error = "Neovim exited"; cx.notify(); }
           },
         });
@@ -232,10 +237,12 @@ export default class Editor extends View {
     return div().absolute().left(x).top(y).w(g.grids.get(id).cols * m.cw).h(m.lh).children(runs);
   }
 
-  // A window grid where nvim put it on the screen.
+  // A window grid where nvim put it on the screen, opaque: grid 1 under it keeps what other
+  // tab pages drew there (a split's separator).
   windowRows(w, m, t) {
     const base = this.grid.defaults.bg;
-    return Array.from({ length: w.rows }, (_, r) => this.row(w.id, r, PAD.x + w.col * m.cw, PAD.y + (w.row + r) * m.lh, base, m, t));
+    return Array.from({ length: w.rows }, (_, r) => this.row(w.id, r, PAD.x + w.col * m.cw, PAD.y + (w.row + r) * m.lh, base, m, t)
+      .when(w.id !== 1 && Boolean(base), (e) => e.bg(base)));
   }
 
   // Where a float is drawn: in a padded frame 4px under the line it's about (the line above
@@ -330,7 +337,7 @@ export default class Editor extends View {
     const servers = Array.isArray(s.lsp) ? s.lsp : [];
     const state = !this.status ? "starting" : !servers.length ? "none" : servers.some((n) => n.endsWith("(starting)")) ? "starting" : "ready";
     const name = "TS";
-    const msg = this.grid.message;
+    const msg = this.flash ?? this.grid.message;
     const count = (n, color) => h_flex().flex_none().gap(5).items_center()
       .child(div().size(6).rounded(3).bg(color)).child(String(n));
     return h_flex().h(STATUS).flex_none().px(12).gap(14).items_center().bg(t.chrome).border_t(1).border_color(t.border)
@@ -358,16 +365,89 @@ export default class Editor extends View {
     this.nvim.notify("nvim_exec_lua", "_G.herdr_theme(...)", [colors]);
   }
 
+  // A file a panel asked for (nix-editor.goto, ../_lib/editor.js): its tab page, a new one,
+  // or a split beside the current file; then its line. Keys go to the editor after.
   followGoto() {
     const want = shared("nix-editor.goto");
-    if (!want || want.n === this.gotoSeen || want.file !== this.file || !this.nvim) return;
+    if (!want?.file || want.n === this.gotoSeen || !this.nvim) return;
+    this.tab ??= this.findTab(this.named ?? basename(this.file ?? ""));
+    if (want.tab && want.tab !== this.tab) return; // another editor's
     this.gotoSeen = want.n;
-    this.nvim.notify("nvim_win_set_cursor", 0, [want.line, 0]);
-    this.nvim.notify("nvim_exec_lua", "vim.cmd('normal! zz')", []);
+    this.nvim.notify("nvim_exec_lua", "_G.herdr_open(...)", [want.file, want.line ?? 0, Boolean(want.side)]);
+    this.handle.focus();
+  }
+
+  // The Herdr tab: in the panels' state (unsaved changes keep the editor where it is), and
+  // named after the file it shows.
+  followTabs() {
+    const tabs = this.status?.tabs ?? [];
+    const modified = tabs.some((x) => x.modified);
+    if (modified !== this.modified) {
+      this.modified = modified;
+      setShared("nix-editor.state", { modified });
+    }
+    const name = basename(this.status?.file || this.file || "");
+    if (name && name !== this.named) {
+      this.tab ??= this.findTab(this.named ?? basename(this.file ?? ""));
+      this.named = name;
+      if (this.tab) run("tab.rename", { id: this.tab, name });
+    }
+  }
+
+  // Its Herdr tab, which props don't name: the editor tab called `name` (the name it was
+  // given), the focused one if several are. Other spaces can hold editor tabs too.
+  findTab(name) {
+    const names = new Map(spaces().flatMap((s) => s.tabs.map((t) => [t.id, t.name])));
+    const tabs = panes().filter((x) => x.mod === "nix-editor" && names.get(x.tab) === name).map((x) => x.tab);
+    return tabs.length === 1 ? tabs[0] : tabs.find((t) => t === focused()?.tab) ?? null;
+  }
+
+  // Closing a file's tab page: unsaved changes keep it (⌥-click discards them); the last
+  // one closes the Herdr tab.
+  closeTab(n, force) {
+    this.cx.spawn(async () => {
+      const r = await this.nvim?.request("nvim_exec_lua", "return _G.herdr_close_tab(...)", [n, force]).catch(() => null);
+      if (r === "modified") {
+        this.flash = { text: "Unsaved changes: ⌘S saves them, ⌥-click × discards them", error: true };
+        this.flashTask?.cancel();
+        this.flashTask = this.cx.timer.after(4000, () => { this.flash = null; this.cx.notify(); });
+        this.cx.notify();
+      } else if (r === "last" && this.tab) {
+        run("tab.close", { id: this.tab, confirmed: true });
+      }
+    });
+  }
+
+  // The files open, as the terminal tabs above draw theirs: the current one on the editor's
+  // background; a dot for unsaved changes; a folder name when two share a file name.
+  tabStrip(t) {
+    const tabs = this.status?.tabs ?? [];
+    if (tabs.length < 2) return null;
+    const bg = this.grid.defaults.bg ?? t.background;
+    const names = tabs.map((x) => basename(x.file) || "[No Name]");
+    const twice = new Set(names.filter((n, i) => names.indexOf(n) !== i));
+    return h_flex().id("editor-tabs").h(TABS).flex_none().bg(t.chrome).border_b(1).border_color(t.border).overflow_x_scroll()
+      .children(tabs.map((x, i) => {
+        const on = x.current;
+        const dir = twice.has(names[i]) ? basename(dirname(x.file)) : null;
+        return h_flex().id(`editor-tab-${i}`).h_full().flex_none().pl(12).pr(6).gap(6).items_center().border_r(1).border_color(t.border)
+          .cursor_pointer().text_size(12).when(on, (e) => e.bg(bg)).when(!on, (e) => e.hover((e) => e.bg(t.hover)))
+          .on_click(() => { this.nvim?.notify("nvim_command", `tabnext ${i + 1}`); this.handle.focus(); })
+          .when(x.modified, (e) => e.child(div().size(6).rounded(3).flex_none().bg(t.dim)))
+          .child(div().flex_none().whitespace_nowrap().text_color(on ? t.foreground : t.muted).child(names[i]))
+          .when(Boolean(dir), (e) => e.child(div().flex_none().whitespace_nowrap().text_color(t.dim).child(dir)))
+          .when(x.splits > 1, (e) => e.child(svg("mods/nix-head/icons/split-right.svg").size(12).flex_none().text_color(t.dim)))
+          .child(div().id(`editor-tab-close-${i}`).size(18).flex_none().flex().items_center().justify_center().rounded(4)
+            .text_color(t.dim).hover((e) => e.bg(t.hover).text_color(t.foreground))
+            .tooltip(x.modified ? "Close (⌥-click: discard the changes)" : "Close")
+            .on_click((e, cx) => { cx.stop_propagation(); this.closeTab(i + 1, e.modifiers.alt); })
+            .child(svg("mods/nix-head/icons/x.svg").size(12)));
+      }));
   }
 
   render(cx) {
     const t = theme(), m = this.metrics(), g = this.grid;
+    const strip = this.tabStrip(t);
     this.followGoto();
     this.followTheme();
     const body = div().id("editor-grid").flex_1().min_h(0).relative().overflow_hidden()
@@ -386,6 +466,7 @@ export default class Editor extends View {
       .when(Boolean(g.cmdline), (e) => e.child(this.cmdline(m, t)));
     return v_flex().id("nix-editor").size_full().min_h(0).bg(g.defaults.bg ?? t.background).text_color(t.foreground)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
+      .when(Boolean(strip), (e) => e.child(strip))
       .child(body).child(this.statusBar(t));
   }
 }

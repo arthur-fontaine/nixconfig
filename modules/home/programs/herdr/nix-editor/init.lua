@@ -22,6 +22,8 @@ o.cursorlineopt = "number"
 -- Floats come without a border: the mod draws their frame.
 o.winborder = "none"
 o.laststatus = 0
+-- Several files are tab pages; the mod draws their strip, nvim none.
+o.showtabline = 0
 o.ruler = false
 o.showmode = false
 o.showcmd = false
@@ -133,7 +135,28 @@ vim.api.nvim_create_autocmd("LspAttach", {
   end,
 })
 
--- The status the mod draws: file, modified, diagnostics, servers, mode.
+-- The tab pages, for the mod's strip: the file each one shows, whether any of its
+-- files has unsaved changes, how many windows (splits) it has, and which is current.
+local function editable(win) return vim.api.nvim_win_get_config(win).relative == "" end
+local function tabs()
+  local out, current = {}, vim.api.nvim_get_current_tabpage()
+  for i, tab in ipairs(vim.api.nvim_list_tabpages()) do
+    local wins = vim.tbl_filter(editable, vim.api.nvim_tabpage_list_wins(tab))
+    local modified = false
+    for _, w in ipairs(wins) do modified = modified or vim.bo[vim.api.nvim_win_get_buf(w)].modified end
+    local win = vim.api.nvim_tabpage_get_win(tab)
+    if not editable(win) then win = wins[1] or win end
+    out[i] = {
+      file = vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)),
+      modified = modified,
+      splits = #wins,
+      current = tab == current,
+    }
+  end
+  return out
+end
+
+-- The status the mod draws: file, modified, diagnostics, servers, mode, tab pages.
 local function status()
   local buf = vim.api.nvim_get_current_buf()
   local count = function(s) return #vim.diagnostic.get(buf, { severity = s }) end
@@ -148,11 +171,46 @@ local function status()
     warnings = count(vim.diagnostic.severity.WARN),
     lsp = names,
     mode = vim.api.nvim_get_mode().mode,
+    tabs = tabs(),
   })
 end
-vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost", "BufModifiedSet", "DiagnosticChanged", "ModeChanged", "LspAttach", "LspDetach" }, {
+vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost", "BufModifiedSet", "DiagnosticChanged", "ModeChanged", "LspAttach", "LspDetach",
+  "TabEnter", "TabNew", "TabClosed", "WinNew", "WinClosed" }, {
   callback = function() vim.schedule(status) end,
 })
+
+-- A file from the panels (the mod calls these): in its tab, or a new one, or beside the
+-- current window with `side`; then at `line`.
+_G.herdr_open = function(file, line, side)
+  local name = vim.fn.fnameescape(file)
+  vim.cmd((side and "vsplit " or "tab drop ") .. name)
+  if line and line > 0 then
+    pcall(vim.api.nvim_win_set_cursor, 0, { line, 0 })
+    vim.cmd("normal! zz")
+  end
+end
+
+-- Closes tab page n, and its files no other tab shows. Unsaved changes keep it open
+-- ("modified") unless `force`; the last one stays ("last": the mod closes its Herdr tab).
+_G.herdr_close_tab = function(n, force)
+  local list = vim.api.nvim_list_tabpages()
+  local tab = list[n]
+  if not tab then return "gone" end
+  local bufs = {}
+  for _, w in ipairs(vim.tbl_filter(editable, vim.api.nvim_tabpage_list_wins(tab))) do bufs[vim.api.nvim_win_get_buf(w)] = true end
+  for _, other in ipairs(list) do
+    if other ~= tab then
+      for _, w in ipairs(vim.api.nvim_tabpage_list_wins(other)) do bufs[vim.api.nvim_win_get_buf(w)] = nil end
+    end
+  end
+  if not force then
+    for b in pairs(bufs) do if vim.bo[b].modified then return "modified" end end
+  end
+  if #list == 1 then return "last" end
+  vim.cmd("tabclose! " .. n)
+  for b in pairs(bufs) do pcall(vim.api.nvim_buf_delete, b, { force = true }) end
+  return "closed"
+end
 
 -- Keys ------------------------------------------------------------------------------
 local map = vim.keymap.set
@@ -184,6 +242,9 @@ for from, to in pairs({
   map({ "i", "s" }, from, to)
 end
 map("i", "<A-BS>", "<C-w>")
+-- Cmd+\ splits: the same file beside itself; Cmd+Shift+\ closes the split the cursor is in.
+map(all, "<D-\\>", "<Cmd>vsplit<CR>")
+map(all, "<D-S-\\>", function() if #vim.tbl_filter(editable, vim.api.nvim_tabpage_list_wins(0)) > 1 then vim.cmd.close() end end)
 map("i", "<D-BS>", "<C-u>")
 
 -- Code navigation: Cmd+click or F12 to the definition, Shift+F12 to references.
