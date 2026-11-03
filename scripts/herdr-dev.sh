@@ -41,6 +41,8 @@ case "${1:-}" in
     mkdir -p "$HOME_DIR"
     # Skip the welcome, start on the given layout.
     printf '{"frame.welcomed":"finished","layout":"%s","workspace.panels":["changes","files"]}\n' "${2:-nix}" > "$HOME_DIR/shared.json"
+    # and What's new, as the real window has already shown it.
+    cp "$HOME/.config/herdr-app/update-notes.json" "$HOME_DIR/" 2>/dev/null || true
     link
     HERDR_APP_HOME="$HOME_DIR" nohup /Applications/Herdr.app/Contents/MacOS/Herdr > "$HOME_DIR.log" 2>&1 &
     for _ in $(seq 1 30); do HERDR_APP_HOME="$HOME_DIR" herdr-app status >/dev/null 2>&1 && break; sleep 0.5; done
