@@ -1,13 +1,18 @@
-// The + popover: start Pi or a terminal in a worktree of the project, one already open, one git
-// knows but nothing has open, or a new one named here. Replaces the sidebar's idle-worktree rows.
-// Props: { repo?, name?, folder?, machine?, space?, worktrees? } (worktrees: the sidebar's
-// prefetched checkouts, so the list shows at once; without them they're read here).
+// The + popover, in two levels. Level 1 picks where: a worktree of the project already open, one
+// git knows but nothing has open, or a new one named here. Level 2 picks what, in that worktree: a
+// new Pi session, a terminal, or one of its past Pi sessions to resume (an open one is focused).
+// Typing on level 1 also searches the sessions of every worktree of the project.
+// Props: { repo?, name?, folder?, machine?, space?, level?, worktrees? } (level 2 opens on `space`;
+// worktrees: the sidebar's prefetched checkouts, so the list shows at once).
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { run, props, closeOverlay, theme, spaces, panes, exec, home, knownAgents, keys, window, shared } from "herdr";
 import { repoOf, createWorktree, defaultBranch, slug } from "../_lib/repo.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
+const ORCHESTRATOR = "Orchestrator";
+// Not the person's own chats: orchestrators, and pi-subagents' workers ("general-purpose#534df88b").
+const hidden = (name) => name === ORCHESTRATOR || /#[0-9a-f]{6,}$/.test(name ?? "");
 
 const git = (on) => async (cwd, args) => {
   const r = await exec("git", args, { cwd, on }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
@@ -26,6 +31,32 @@ function ago(ms) {
   const m = Math.floor((Date.now() - ms) / 60000);
   return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : m < 10080 ? `${Math.floor(m / 1440)}d` : `${Math.floor(m / 10080)}w`;
 }
+
+// Pi titles its terminal "π - <session name> - <folder>", or "π - <folder>" before it has one.
+function piSession(title) {
+  const parts = (title ?? "").split(" - ");
+  return parts[0] === "π" && parts.length > 2 ? parts.slice(1, -1).join(" - ") : "";
+}
+
+// Pi keeps a worktree's sessions in one folder named after its path.
+const sessionDir = (userHome, path) => `${userHome}/.pi/agent/sessions/--${path.replace(/^\/+/, "").replaceAll("/", "-")}--`;
+
+// One pass over a folder's session files (they reach 50 MB, so the mod never reads them): per file,
+// its message count, its last session_info name and its first real user message.
+const SESSION_AWK = String.raw`function out() { if (f != "") printf "%s\t%d\t%s\t%s\n", f, n, name, first }
+FNR == 1 { out(); f = FILENAME; n = 0; name = ""; first = "" }
+/"type":"message"/ { n++ }
+/"type":"session_info"/ { if (match($0, /"name":"[^"]*"/)) name = substr($0, RSTART + 8, RLENGTH - 9) }
+first == "" && /"role":"user","content":/ {
+  if (match($0, /"role":"user","content":(\[\{"type":"text","text":)?"[^"]*/)) {
+    s = substr($0, RSTART, RLENGTH); sub(/^.*"/, "", s)
+    if (s !~ /^<command-/ && s !~ /^<local-command/) first = substr(s, 1, 120)
+  }
+}
+END { out() }`;
+
+// A first message as one plain line: JSON escapes and runs of space collapsed.
+const oneLine = (text) => text.replace(/\\[nrt]/g, " ").replace(/\\(["\\/])/g, "$1").replace(/\s+/g, " ").trim();
 
 // The key bound to an action, as macOS writes it ("⌘⇧N").
 function shortcut(action) {
@@ -64,13 +95,26 @@ export default class New extends View {
     this.trees = p.worktrees ?? undefined;
     this.repo = undefined; this.from = null; this.userHome = null;
     this.query = ""; this.sel = null; this.busy = false; this.error = "";
-    this.start = localStorage.getItem("start") ?? "agent";
-    this.field = InputState.new({ placeholder: "Worktree, or a new branch name" });
-    this.field.on("change", (_e, cx) => { this.query = this.field.value().trim(); this.sel = null; this.error = ""; cx.notify(); });
-    this.field.on("submit", (_e, cx) => this.go(cx));
+    // Sessions by worktree path: undefined while read, then newest first.
+    this.sessions = new Map();
+    // Level 2's worktree: { space?, path, branch }.
+    this.here = p.level === 2 && this.space0 ? { space: this.space0.id, path: place(this.space0, ps), branch: this.space0.branch ?? this.space0.name } : null;
+    const field = (placeholder) => {
+      const f = InputState.new({ placeholder });
+      f.on("change", (_e, cx) => {
+        this.query = f.value().trim(); this.sel = null; this.error = "";
+        this.emptyAt = this.query ? null : Date.now();
+        cx.notify();
+      });
+      f.on("submit", (e, cx) => (e?.shift && this.here ? this.terminal() : this.go(cx)));
+      return f;
+    };
+    this.where = field("Worktree, or a new branch name");
+    this.what = field("Session, or what to start");
+    this.emptyAt = 0;
     this.handle = cx.focus_handle();
-    this.field.focus();
-    cx.timer.after(300, () => this.field.focus());
+    this.field().focus();
+    cx.timer.after(300, () => this.field().focus());
     // knownAgents asks a login shell, which takes a while: the last answer shows at once.
     const saved = `agent:${this.on ?? ""}`;
     try { this.agent = JSON.parse(localStorage.getItem(saved) ?? "null"); } catch { this.agent = null; }
@@ -80,10 +124,13 @@ export default class New extends View {
         this.repo = this.folder ? await repoOf(git(this.on), this.folder, this.userHome) : null;
       } catch { this.repo = null; }
       cx.notify();
+      if (this.here) this.loadSessions(this.here.path, cx);
       if (!this.repo) return;
       if (this.trees === undefined) { this.trees = await checkouts(this.repo.main, this.on); cx.notify(); }
       this.from = await defaultBranch(git(this.on), this.repo.main).catch(() => null);
       cx.notify();
+      // Level 1's search reaches every worktree's sessions: read them after the list shows.
+      for (const w of this.trees ?? []) await this.loadSessions(w.path, cx);
     });
     cx.spawn(async (cx) => {
       try {
@@ -93,15 +140,60 @@ export default class New extends View {
         this.agent = a && { key: a.key, name: a.name, icon: a.icon, tint: a.tint, run: a.run };
         localStorage.setItem(saved, JSON.stringify(this.agent));
       } catch {}
-      if (!this.agent) this.start = "terminal";
       cx.notify();
     });
   }
 
+  field() { return this.here ? this.what : this.where; }
+
   close() { if (props()?.overlay) closeOverlay(props().overlay); }
 
-  // [{ kind: "create" | "open" | "checkout", ... }] in display order, filtered by the field.
-  model() {
+  // A worktree's Pi sessions, newest first. Files are re-read only when their mtime changed;
+  // the rest comes from localStorage.
+  async loadSessions(path, cx) {
+    if (this.sessions.has(path) || !this.userHome) return;
+    this.sessions.set(path, undefined);
+    const dir = sessionDir(this.userHome, path);
+    const on = this.on;
+    const listing = await exec("sh", ["-c", 'cd "$1" 2>/dev/null || exit 0; stat -f "%m %N" -- *.jsonl 2>/dev/null || stat -c "%Y %n" -- *.jsonl 2>/dev/null', "sh", dir], { on }).catch(() => null);
+    const files = (listing?.stdout ?? "").split("\n").map((l) => l.match(/^(\d+) (.+\.jsonl)$/)).filter(Boolean).map((m) => ({ name: m[2], mtime: Number(m[1]) }));
+    const key = `sessions:${on ?? ""}:${dir}`;
+    let cache = {};
+    try { cache = JSON.parse(localStorage.getItem(key) ?? "{}"); } catch {}
+    const stale = files.filter((f) => cache[f.name]?.[0] !== f.mtime);
+    if (stale.length) {
+      const out = await exec("awk", [SESSION_AWK, ...stale.map((f) => `${dir}/${f.name}`)], { on }).catch(() => null);
+      const mtime = new Map(stale.map((f) => [f.name, f.mtime]));
+      for (const line of (out?.stdout ?? "").split("\n")) {
+        const [file, n, name, first] = line.split("\t");
+        if (!file) continue;
+        const b = base(file);
+        cache[b] = [mtime.get(b), Number(n) || 0, name ?? "", oneLine(first ?? "")];
+      }
+    }
+    const kept = {};
+    for (const f of files) if (cache[f.name]) kept[f.name] = cache[f.name];
+    try { localStorage.setItem(key, JSON.stringify(kept)); } catch {}
+    const list = files.filter((f) => kept[f.name] && !hidden(kept[f.name][2])).map((f) => {
+      const [mtime, count, name, first] = kept[f.name];
+      const when = f.name.split("_")[0];
+      return { file: `${dir}/${f.name}`, path, at: mtime * 1000, count, name, label: name || first || when, named: Boolean(name) };
+    }).sort((a, b) => b.at - a.at);
+    this.sessions.set(path, list);
+    cx.notify();
+  }
+
+  // The tab a session already runs in: a Pi pane in that worktree titled with its name.
+  openTab(s) {
+    if (!s.named) return null;
+    const p = panes().find((x) => x.app === "pi" && piSession(x.title) === s.name && x.cwd && inside(x.cwd, s.path));
+    if (!p) return null;
+    const space = spaces().find((x) => (x.tabs ?? []).some((t) => t.id === p.tab));
+    return space ? { space: space.id, tab: p.tab, status: p.status } : null;
+  }
+
+  // Level 1: [{ kind: "create" | "open" | "checkout" | "session", ... }] by group, filtered.
+  model1() {
     const ps = panes();
     const q = this.query.toLowerCase();
     const owned = new Set(Object.values(shared("nix.orchestrators") ?? {}));
@@ -117,48 +209,116 @@ export default class New extends View {
     const match = (r) => !q || r.branch.toLowerCase().includes(q);
     const exact = trees.some((w) => (w.branch ?? "") === this.query);
     const create = this.repo && this.query && slug(this.query) && !exact ? [{ kind: "create", name: this.query }] : [];
-    return { create, open: open.filter(match), idle: idle.filter(match) };
+    const sessions = [];
+    if (q) {
+      for (const w of trees) for (const s of this.sessions.get(w.path) ?? [])
+        if (s.label.toLowerCase().includes(q)) sessions.push({ kind: "session", ...s, branch: w.branch ?? base(w.path) });
+      sessions.sort((a, b) => b.at - a.at).splice(20);
+    }
+    return { create, open: open.filter(match), idle: idle.filter(match), sessions };
   }
 
-  items(m) { return [...m.create, ...m.open, ...m.idle]; }
+  // Level 2: the two actions, then the worktree's sessions (40, or every match while typing).
+  model2() {
+    const q = this.query.toLowerCase();
+    const all = this.sessions.get(this.here.path);
+    const sessions = all === undefined ? undefined
+      : (q ? all.filter((s) => s.label.toLowerCase().includes(q)) : all.slice(0, 40)).map((s) => ({ kind: "session", ...s }));
+    return { actions: [{ kind: "pi" }, { kind: "terminal" }], sessions, total: all?.length ?? 0 };
+  }
+
+  items() {
+    if (this.here) { const m = this.model2(); return [...m.actions, ...(m.sessions ?? [])]; }
+    const m = this.model1();
+    return [...m.create, ...m.open, ...m.idle, ...m.sessions];
+  }
 
   // The row ↵ acts on: the one moved to, else the space this was opened for, else the first.
   current(list) {
     if (this.sel !== null) return list[Math.min(this.sel, list.length - 1)] ?? null;
-    const at = this.space0 && !this.query ? list.findIndex((r) => r.space?.id === this.space0.id) : -1;
+    const at = !this.here && this.space0 && !this.query ? list.findIndex((r) => r.space?.id === this.space0.id) : -1;
     return list[at >= 0 ? at : 0] ?? null;
   }
 
   move(by, cx) {
-    const list = this.items(this.model());
+    const list = this.items();
     if (!list.length) return;
     const now = list.indexOf(this.current(list));
     this.sel = (now + by + list.length) % list.length;
     cx.notify();
   }
 
+  // Into level 2 for a worktree; `space` may come later for one just opened.
+  enter(here, cx) {
+    this.here = here;
+    this.query = ""; this.sel = null; this.error = ""; this.emptyAt = Date.now();
+    this.what.set_value("");
+    this.what.focus();
+    this.loadSessions(here.path, cx);
+    cx.notify();
+  }
+
+  up(cx) {
+    if (!this.repo) return;
+    this.here = null;
+    this.query = this.where.value().trim(); this.sel = null; this.emptyAt = this.query ? null : Date.now();
+    this.where.focus();
+    cx.notify();
+  }
+
+  // A space just made for a worktree: found by its folder once Herdr has it.
+  follow(path, cx) {
+    const before = new Set(spaces().map((s) => s.id));
+    const look = (tries) => {
+      const made = spaces().find((s) => !before.has(s.id) && s.folder && inside(s.folder, path));
+      if (made && this.here?.path === path) { this.here = { ...this.here, space: made.id }; cx.notify(); }
+      else if (!made && tries > 0) cx.timer.after(100, () => look(tries - 1));
+    };
+    cx.timer.after(100, () => look(40));
+  }
+
+  pi() { return this.agent?.key === "pi" ? this.agent.run : ["pi"]; }
+
+  // Starts something in level 2's worktree; without its space yet, a space with it.
+  start(tab) {
+    const h = this.here;
+    if (h.space) { run("space.select", { id: h.space }); run("tab.new", { space: h.space, folder: h.path, ...tab }); }
+    else run("space.new", { folder: h.path, machine: this.on, ...(tab.argv ? { tab: tab.name, argv: tab.argv } : {}) });
+    this.close();
+  }
+
+  terminal() { if (this.here) this.start({}); }
+
   go(cx, row) {
     if (this.busy) return;
-    const target = row ?? this.current(this.items(this.model()));
+    const target = row ?? this.current(this.items());
     if (!target) return;
-    localStorage.setItem("start", this.start);
-    const agent = this.start === "agent" ? this.agent : null;
-    const program = agent ? { argv: agent.run, name: agent.name } : {};
-    if (target.kind === "open") {
-      run("space.select", { id: target.space.id });
-      run("tab.new", { space: target.space.id, ...program });
-      return this.close();
+    if (target.kind === "pi") return this.start({ argv: this.pi(), name: this.agent?.name ?? "Pi" });
+    if (target.kind === "terminal") return this.start({});
+    if (target.kind === "session") {
+      const open = this.openTab(target);
+      if (open) { run("space.select", { id: open.space }); run("tab.select", { id: open.tab }); return this.close(); }
+      if (!this.here || this.here.path !== target.path) {
+        const s = this.model1().open.find((r) => r.path === target.path)?.space;
+        this.here = { space: s?.id ?? null, path: target.path, branch: target.branch };
+      }
+      return this.start({ argv: [...this.pi(), "--session", target.file], name: target.label.slice(0, 60) });
     }
+    if (target.kind === "open") return this.enter({ space: target.space.id, path: target.path, branch: target.branch }, cx);
     if (target.kind === "checkout") {
-      run("space.new", { folder: target.path, machine: this.on, ...(agent ? { tab: agent.name, argv: agent.run } : {}) });
-      return this.close();
+      run("space.new", { folder: target.path, machine: this.on });
+      this.enter({ space: null, path: target.path, branch: target.branch }, cx);
+      return this.follow(target.path, cx);
     }
     this.busy = true; this.error = ""; cx.notify();
     cx.spawn(async (cx) => {
       try {
         const { path } = await createWorktree(git(this.on), this.repo, target.name);
-        run("space.new", { folder: path, machine: this.on, ...(agent ? { tab: agent.name, argv: agent.run } : {}) });
-        this.close();
+        run("space.new", { folder: path, machine: this.on });
+        this.busy = false;
+        this.enter({ space: null, path, branch: target.name }, cx);
+        this.follow(path, cx);
+        return;
       } catch (e) { this.error = String(e.message ?? e); }
       this.busy = false; cx.notify();
     });
@@ -169,11 +329,11 @@ export default class New extends View {
     if (k === "escape") return this.close();
     if (k === "down" || (ctrl && k === "n")) { cx.stop_propagation(); return this.move(1, cx); }
     if (k === "up" || (ctrl && k === "p")) { cx.stop_propagation(); return this.move(-1, cx); }
-    // Tab switches what starts, without leaving the field.
-    if (k === "tab" && this.agent) { cx.stop_propagation(); this.start = this.start === "agent" ? "terminal" : "agent"; cx.notify(); }
+    // ⌫ on a field that was already empty (not the one that just emptied it) goes up.
+    if (k === "backspace" && this.here && !this.query && this.emptyAt !== null && Date.now() - this.emptyAt > 80) { cx.stop_propagation(); return this.up(cx); }
   }
 
-  pi(t, strong) {
+  tile(t, strong) {
     return div().size(14).flex_none().rounded(3).bg(t.raised).flex().items_center().justify_center()
       .font_family("JetBrains Mono").font_bold().text_size(10).text_color(strong ? t.foreground : t.muted).child("π");
   }
@@ -188,11 +348,19 @@ export default class New extends View {
     return div().h(22).px(8).flex().items_center().flex_none().text_size(11).text_color(t.muted).child(text);
   }
 
+  note(text, color, t) {
+    return div().h(30).px(8).flex().items_center().flex_none().text_size(12).text_color(color).truncate().child(text);
+  }
+
+  shell(id, on, t) {
+    return h_flex().id(id).flex_none().px(8).gap(8).items_center().rounded(6).cursor_pointer()
+      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((s) => s.bg(t.hover)));
+  }
+
   row(r, on, t) {
-    const id = r.kind === "create" ? "create" : `row-${r.path}`;
-    const el = h_flex().id(id).flex_none().px(8).gap(8).items_center().rounded(6).cursor_pointer()
-      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((s) => s.bg(t.hover)))
+    const el = this.shell(r.kind === "create" ? "create" : r.kind === "session" ? `s-${r.file}` : `row-${r.path ?? r.kind}`, on, t)
       .on_click((_e, cx) => this.go(cx, r));
+    const hint = (text) => div().flex_none().text_size(11).text_color(t.dim).child(text);
     if (r.kind === "create") {
       const root = this.repo?.root ?? "";
       const tilde = this.userHome && root.startsWith(this.userHome) ? `~${root.slice(this.userHome.length)}` : root;
@@ -200,63 +368,91 @@ export default class New extends View {
       return el.h(40)
         .child(svg(ICON("plus")).size(13).flex_none().text_color(t.muted))
         .child(v_flex().flex_1().min_w(0)
-          .child(h_flex().text_size(12.5).text_color(t.foreground).child("Create worktree ").child(div().font_medium().truncate().child(r.name)))
+          .child(h_flex().text_size(12.5).text_color(t.foreground).child("Create worktree ").child(div().font_medium().truncate().child(r.name)))
           .child(div().text_size(11).text_color(this.error ? t.blocked : t.dim).text_ellipsis_start().child(this.busy ? "Creating…" : sub)))
-        .child(div().flex_none().text_size(11).text_color(t.dim).child("↵"));
+        .child(hint("↵"));
     }
-    const right = r.kind === "open" ? this.status(t, r.space.status) : r.at ? div().flex_none().text_size(11).text_color(t.dim).child(ago(r.at)) : null;
+    if (r.kind === "pi")
+      return el.h(30).text_size(12.5).text_color(t.foreground).child(this.tile(t, true)).child(div().flex_1().child(`New ${this.agent?.name ?? "Pi"} session`)).child(hint("↵"));
+    if (r.kind === "terminal")
+      return el.h(30).text_size(12.5).text_color(t.foreground).child(svg(ICON("terminal")).size(13).flex_none().text_color(t.muted)).child(div().flex_1().child("Terminal")).child(hint("⇧↵"));
+    if (r.kind === "session") {
+      const open = this.openTab(r);
+      return el.h(30).text_size(12.5).tooltip(r.label)
+        .child(this.tile(t, Boolean(open)))
+        .child(h_flex().flex_1().min_w(0).items_baseline()
+          .child(div().min_w(0).truncate().text_color(r.named ? t.foreground : t.muted).child(r.label))
+          .when(!this.here, (e) => e.child(div().flex_none().ml(6).text_size(11).text_color(t.dim).child(r.branch))))
+        .child(div().w(32).flex_none().text_right().text_size(11).text_color(t.dim).child(String(r.count)))
+        .child(h_flex().w(24).flex_none().justify_end().text_size(11).text_color(t.dim)
+          .child(open ? (this.status(t, open.status) ?? div()) : div().child(ago(r.at))));
+    }
+    const right = r.kind === "open" ? this.status(t, r.space.status) : r.at ? hint(ago(r.at)) : null;
     return el.h(30).text_size(12.5).text_color(t.foreground).tooltip(r.path ?? "")
       .child(svg(ICON("git-branch")).size(13).flex_none().text_color(t.muted))
       .child(div().flex_1().min_w(0).truncate().child(r.branch))
       .when(Boolean(right), (e) => e.child(right));
   }
 
-  option(id, on, icon, label, pick, t) {
-    return h_flex().id(id).h(26).px(8).gap(6).items_center().rounded(6).cursor_pointer()
-      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((s) => s.bg(t.hover)))
-      .on_click((_e, cx) => { pick(); cx.notify(); })
-      .child(icon).child(div().text_size(12).text_color(on ? t.foreground : t.muted).child(label));
-  }
-
   hint(key, text, t) {
     return h_flex().gap(4).items_center().child(div().font_medium().text_color(t.muted).child(key)).child(text);
   }
 
-  render() {
-    const t = theme(), a = this.agent;
-    const m = this.model(), list = this.items(m), cur = this.current(list);
-    const name = this.name ?? this.repo?.name ?? (this.folder ? base(this.folder) : "");
+  rows(t) {
+    const list = this.items(), cur = this.current(list);
     const rows = [];
-    if (this.repo === undefined || (this.repo && this.trees === undefined)) rows.push(div().h(30).px(8).flex().items_center().text_size(12.5).text_color(t.dim).child("…"));
-    else {
-      for (const r of m.create) rows.push(this.row(r, r === cur, t));
-      if (m.open.length) rows.push(this.label(this.query ? "Matching" : "Open", t), ...m.open.map((r) => this.row(r, r === cur, t)));
-      if (m.idle.length) rows.push(this.label(this.query && !m.open.length ? "Matching" : "Worktrees", t), ...m.idle.map((r) => this.row(r, r === cur, t)));
-      if (this.repo === null) rows.push(div().h(30).px(8).flex().items_center().text_size(12).text_color(t.blocked).truncate().child(`${this.folder ?? "This folder"} isn't in a git repository`));
-      else if (!list.length) rows.push(div().h(30).px(8).flex().items_center().text_size(12).text_color(t.dim).truncate().child(`No worktree named ${this.query}`));
+    const add = (r) => rows.push(this.row(r, r === cur, t));
+    if (this.here) {
+      const m = this.model2();
+      m.actions.forEach(add);
+      if (m.sessions === undefined) rows.push(this.note("…", t.dim, t));
+      else if (m.total) {
+        rows.push(this.label(`Sessions · ${m.total}`, t));
+        m.sessions.forEach(add);
+        if (!m.sessions.length) rows.push(this.note(`No session named ${this.query}`, t.dim, t));
+      }
+      return rows;
     }
+    if (this.repo === undefined || (this.repo && this.trees === undefined)) return [this.note("…", t.dim, t)];
+    const m = this.model1();
+    m.create.forEach(add);
+    if (m.open.length) { rows.push(this.label(this.query ? "Matching" : "Open", t)); m.open.forEach(add); }
+    if (m.idle.length) { rows.push(this.label(this.query && !m.open.length ? "Matching" : "Worktrees", t)); m.idle.forEach(add); }
+    if (m.sessions.length) { rows.push(this.label("Sessions", t)); m.sessions.forEach(add); }
+    if (this.repo === null) rows.push(this.note(`${this.folder ?? "This folder"} isn't in a git repository`, t.blocked, t));
+    else if (!list.length) rows.push(this.note(`No worktree named ${this.query}`, t.dim, t));
+    return rows;
+  }
+
+  render() {
+    const t = theme();
+    const name = this.name ?? this.repo?.name ?? (this.folder ? base(this.folder) : "");
     const key = shortcut("nix-status.dispatch");
+    let head = h_flex().h(32).flex_none().px(12).gap(6).items_center().text_size(12.5).font_medium();
+    if (this.here) {
+      head = head.when(Boolean(this.repo), (e) => e.child(div().id("up").ml(-6).size(24).flex_none().flex().items_center().justify_center().rounded(6)
+          .text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground)).cursor_pointer().tooltip("Worktrees")
+          .on_click((_e, cx) => this.up(cx)).child(svg(ICON("chevron-left")).size(13))))
+        .child(svg(ICON("git-branch")).size(13).flex_none().text_color(t.muted))
+        .child(div().min_w(0).truncate().child(this.here.branch ?? base(this.here.path)))
+        .child(div().flex_none().text_size(11).font_normal().text_color(t.dim).child(name));
+    } else {
+      head = head.child(svg(ICON("folder")).size(13).flex_none().text_color(t.muted)).child(div().min_w(0).truncate().child(name));
+    }
+    head = head.when(Boolean(this.on), (e) => e.child(h_flex().flex_none().gap(4).items_center().text_size(11).font_normal().text_color(t.dim)
+        .child(svg(ICON("server")).size(11)).child(this.on)))
+      .child(div().flex_1())
+      .when(Boolean(key), (e) => e.child(div().flex_none().text_size(11).font_normal().text_color(t.dim).child(key)));
     return v_flex().id("nix-new").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .size_full().bg(t.popover).text_color(t.foreground)
-      .child(h_flex().h(32).flex_none().px(12).gap(6).items_center()
-        .child(svg(ICON("folder")).size(13).flex_none().text_color(t.muted))
-        .child(div().min_w(0).truncate().text_size(12.5).font_medium().child(name))
-        .when(Boolean(this.on), (e) => e.child(h_flex().flex_none().gap(4).items_center().text_size(11).text_color(t.dim)
-          .child(svg(ICON("server")).size(11)).child(this.on)))
-        .child(div().flex_1())
-        .when(Boolean(key), (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(key))))
+      .child(head)
       .child(h_flex().flex_none().mx(8).mb(6).h(30).px(9).gap(7).items_center().rounded(6).border_1().border_color(t.ring ?? t.accent).bg(t.background)
         .child(svg(ICON("search")).size(13).flex_none().text_color(t.dim))
-        .child(Input.new(this.field).flex_1().h_full().text_size(12.5)))
-      .child(v_flex().id("nix-new-list").flex_1().min_h(0).px(8).overflow_y_scrollbar().children(rows))
-      .child(h_flex().h(40).flex_none().px(8).gap(2).items_center().border_t(1).border_color(t.border)
-        .when(Boolean(a), (e) => e.child(this.option("start-agent", this.start === "agent",
-          a?.key === "pi" ? this.pi(t, this.start === "agent") : svg(a?.icon ?? ICON("terminal")).size(12).text_color(t.foreground),
-          a?.name ?? "", () => { this.start = "agent"; }, t)))
-        .child(this.option("start-terminal", this.start === "terminal", svg(ICON("terminal")).size(12).text_color(t.muted), "Terminal", () => { this.start = "terminal"; }, t))
-        .child(div().flex_1())
-        .child(h_flex().flex_none().gap(10).items_center().text_size(11).text_color(t.dim)
-          .when(Boolean(a), (e) => e.child(this.hint("⇥", `${a?.name ?? "Pi"} / Terminal`, t)))
-          .child(this.hint("↵", "Start", t))));
+        .child(Input.new(this.field()).flex_1().h_full().text_size(12.5)))
+      .child(v_flex().id("nix-new-list").flex_1().min_h(0).px(8).overflow_y_scrollbar().children(this.rows(t)))
+      .child(h_flex().h(40).flex_none().px(8).gap(10).items_center().border_t(1).border_color(t.border).text_size(11).text_color(t.dim)
+        .child(this.hint("↵", this.here ? "Open" : "Choose", t))
+        .when(Boolean(this.here && this.repo), (e) => e.child(this.hint("⌫", "Worktrees", t)))
+        .child(this.hint("esc", "Close", t)));
   }
 }

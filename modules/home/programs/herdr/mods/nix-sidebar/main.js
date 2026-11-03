@@ -330,11 +330,9 @@ export default class Sidebar extends View {
     });
   }
 
-  // The + popover (nix-new), sized to its list and kept inside the window: popups aren't clamped.
-  // rows/groups: what its list will show, or null when it has to read the worktrees itself.
-  openNew(cx, props, rows, groups) {
-    const list = rows === null ? 290 : Math.max(90, Math.min(290, 22 * groups + 30 * rows));
-    const height = 32 + 36 + list + 40;
+  // The + popover (nix-new), a fixed-height palette kept inside the window: popups aren't clamped.
+  openNew(cx, props) {
+    const height = 404;
     let at = "pointer";
     try {
       const m = cx.mouse_position(), v = cx.viewport_size();
@@ -343,13 +341,11 @@ export default class Sidebar extends View {
     openOverlay({ mod: "nix-new", kind: "popup", width: 360, height, at, props });
   }
 
-  // A repo's + (or a worktree's, preselecting it): its open and idle worktrees, or a new one.
+  // A repo's + picks where (level 1); a worktree's + opens on what to start there (level 2).
   openNewFor(r, s, ps, cx) {
     const trees = this.trees[r.key];
     const first = r.items[0];
-    const open = r.items.length, idle = r.idle?.length ?? 0;
-    this.openNew(cx, { repo: r.key, name: r.name, folder: first ? place(first.s, ps) : JSON.parse(r.key)[1], machine: r.on, ...(s && { space: s.id }), ...(trees && { worktrees: trees }) },
-      trees ? open + idle : null, (open > 0 ? 1 : 0) + (idle > 0 ? 1 : 0));
+    this.openNew(cx, { repo: r.key, name: r.name, folder: first ? place(first.s, ps) : JSON.parse(r.key)[1], machine: r.on, ...(s && { space: s.id, level: 2 }), ...(trees && { worktrees: trees }) });
   }
 
   // A worktree's click: its orchestrator tab, started the first time.
@@ -419,7 +415,7 @@ export default class Sidebar extends View {
         .when(g?.behind > 0, (e) => e.child(div().child(`↓${g.behind}`)))
         .when(g?.ahead > 0, (e) => e.child(div().child(`↑${g.ahead}`)))))
       .when(this.hovered === id, (e) => e.child(this.small(`add-${s.id}`, "plus", "Start Pi or a terminal",
-        (cx) => { const r = g && this.repoByKey?.get(g.repo); r ? this.openNewFor(r, s, ps, cx) : this.openNew(cx, { space: s.id }, 2, 1); }, t)))
+        (cx) => { const r = g && this.repoByKey?.get(g.repo); r ? this.openNewFor(r, s, ps, cx) : this.openNew(cx, { space: s.id, level: 2 }); }, t)))
       .when(this.hovered !== id, (e) => e.when(Boolean(this.status(t, status)), (e) => e.child(this.status(t, status)))))];
     if (!folded) {
       if (orchestrator) rows.push(...this.workerRows(orchestrator, 40, t));
@@ -475,7 +471,7 @@ export default class Sidebar extends View {
       .child(svg(ICON("folder")).size(14).flex_none().text_color(t.muted))
       .child(div().flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(s.active ? t.foreground : t.muted).child(name))
       .when(this.hovered === `space-${s.id}`, (e) => e.child(this.small(`add-${s.id}`, "plus", "Start Pi or a terminal",
-        (cx) => this.openNew(cx, { space: s.id }, 2, 1), t))));
+        (cx) => this.openNew(cx, { space: s.id, level: 2 }), t))));
     return rows.map((r, i) => (i === 0 ? r : r.pl(24)));
   }
 

@@ -39,7 +39,7 @@ export default class Tabs extends View {
       const m = cx.mouse_position(), v = cx.viewport_size();
       at = { x: Math.max(8, Math.min(m.x - 8, v.width - 360 - 12)), y: Math.max(8, Math.min(m.y + 12, v.height - height - 8)) };
     } catch {}
-    openOverlay({ mod: "nix-new", kind: "popup", width: 360, height, at, props: { space: spaces().find((s) => s.active)?.id } });
+    openOverlay({ mod: "nix-new", kind: "popup", width: 360, height, at, props: { space: spaces().find((s) => s.active)?.id, level: 2 } });
   }
 
   // The side panel is remembered per space: switching shows that space's choice
