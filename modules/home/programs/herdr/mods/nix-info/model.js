@@ -73,6 +73,8 @@ const NOISE = [
   new RegExp(`^set(?:\\s+[^;&\\n]+)?${SEP}`),
   new RegExp(`^[A-Za-z_]\\w*=${WORD}?(?:${SEP}|\\s+)`),
 ];
+const infoProgram = (p) => p.split("/").pop();
+
 export function infoCommand(command) {
   let rest = String(command ?? "").replace(/^\s+/, "");
   for (let changed = true; changed && rest;) {
@@ -82,7 +84,20 @@ export function infoCommand(command) {
       if (m && m[0].length < rest.length) { rest = rest.slice(m[0].length).replace(/^\s+/, ""); changed = true; }
     }
   }
-  return firstLine(rest || command).trim();
+  const shown = rest || String(command ?? "");
+  // A heredoc or an inline script says what it does in its body, not in its marker:
+  // "python3 · import json, re", "bash · git fetch origin".
+  const heredoc = /^(\S+)[^\n]*<<-?\s*['"]?(\w+)['"]?[^\n]*\n([\s\S]*)$/.exec(shown);
+  if (heredoc) {
+    const body = heredoc[3].split("\n").map((l) => l.trim()).find((l) => l && l !== heredoc[2]);
+    if (body) return `${infoProgram(heredoc[1])} · ${body}`;
+  }
+  const inline = /^(\S+)\s+(?:-\w*c\w*|-e)\s+(['"])([\s\S]*?)\2/.exec(shown);
+  if (inline) {
+    const body = inline[3].split("\n").map((l) => l.trim()).find(Boolean);
+    if (body) return `${infoProgram(inline[1])} · ${body}`;
+  }
+  return firstLine(shown).trim();
 }
 
 // A tool call as listed: `kind` is the short word, `arg` the one thing that tells calls apart.

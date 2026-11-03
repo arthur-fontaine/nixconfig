@@ -108,6 +108,9 @@ test("last call, last compaction, touched files", () => {
 test("bash commands lose their set-up in front", () => {
   assert.equal(infoCommand("cd ~/Developer/code/x && git status --porcelain"), "git status --porcelain");
   assert.equal(infoCommand('cd "/a b"; export HERDR_APP_HOME=/tmp/h; herdr-app check x'), "herdr-app check x");
+  assert.equal(infoCommand("cd /x && python3 - <<'EOF'\nimport json, re\nprint(1)\nEOF"), "python3 · import json, re");
+  assert.equal(infoCommand("bash -lc 'git fetch origin\ngit status'"), "bash · git fetch origin");
+  assert.equal(infoCommand("cat > /tmp/a <<EOF\n\nhello\nEOF"), "cat · hello");
   assert.equal(infoCommand("H=~/.config/herdr-app; sed -n 1,5p $H/AGENTS.md"), "sed -n 1,5p $H/AGENTS.md");
   assert.equal(infoCommand("set -euo pipefail; FOO=1 BAR=$(date) node --test x"), "node --test x");
   assert.equal(infoCommand("cd modules/home\ngrep -n x y"), "grep -n x y");
