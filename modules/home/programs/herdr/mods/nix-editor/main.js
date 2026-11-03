@@ -12,7 +12,6 @@ import { startNvim } from "./nvim.js";
 
 const STATUS = 24; // px, the strip under the grid
 const TABS = 32; // px, the tab strip over it, with two files or more
-const SETTLE_S = 5; // Herdr's age, in seconds, before an editor starts (see start())
 const PAD = { x: 8, y: 8 }; // px around the grid
 const FLOAT = { x: 8, y: 6, gap: 4 }; // a float's padding, and its distance from the line it's about
 // Cmd chords the editor keeps; any other Cmd chord stays Herdr's (new tab, palette…).
@@ -46,7 +45,7 @@ export default class Editor extends View {
     this.tab = this.findTab(basename(this.file ?? ""));
     this.handle = cx.focus_handle();
     this.cx = cx;
-    cx.timer.after(50, () => this.handle.focus());
+    cx.timer.after(50, () => this.handle.focus(), { owner: this });
   }
 
   close() {
@@ -68,49 +67,36 @@ export default class Editor extends View {
     if (this.size?.cols === cols && this.size?.rows === rows) return;
     this.size = { cols, rows };
     if (!this.nvim && !this.starting) return this.start();
-    // A window drag reports many sizes: nvim hears the last one.
-    this.resizeTask?.cancel();
-    this.resizeTask = this.cx.timer.after(80, () => this.nvim?.resize(cols, rows));
+    // A window drag reports many sizes: nvim hears the last one. (No Task.cancel(): it
+    // crashes Herdr's script runtime under load; a later size just makes this one stale.)
+    const n = (this.resizes = (this.resizes ?? 0) + 1);
+    this.cx.timer.after(80, () => { if (n === this.resizes) this.nvim?.resize(cols, rows); }, { owner: this });
   }
 
   start() {
     if (!this.file) { this.error = "No file to open"; return this.cx.notify(); }
     if (typeof startNvim !== "function") { this.error = "The editor backend (nvim.js) isn't installed"; return this.cx.notify(); }
     this.starting = true;
-    const cx = this.cx;
-    // Every await goes through cx.spawn, so Herdr cancels it with the view: a bare promise
-    // that resumes after the view is gone crashes Herdr's script runtime. Nothing async
-    // starts in init: `herdr-app check` makes a copy and drops it straight away.
-    this.cx.spawn(async () => {
-      // An editor started while Herdr itself starts (its tab restored) crashes Herdr's script
-      // runtime within seconds, every time; a few seconds in, it doesn't. So it waits for that.
-      const up = await exec("sh", ["-c", "ps -o etime= -p $PPID"]).catch(() => null);
-      const secs = (up?.stdout ?? "").trim().split(/[-:]/).reduce((a, n) => a * 60 + Number(n), 0);
-      if (up?.code === 0 && secs < SETTLE_S) await cx.sleep((SETTLE_S - secs) * 1000);
-      const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: dirname(this.file) }).catch(() => null);
-      if (top?.code === 0) this.root = top.stdout.trim();
-      try {
-        this.nvim = await startNvim({
-          home: home(),
-          spawn: (body) => cx.spawn(() => body()),
-          file: this.file,
-          cwd: dirname(this.file),
-          width: this.size.cols,
-          height: this.size.rows,
-          onRedraw: (events) => { if (this.grid.apply(events)) cx.notify(); },
-          onNotify: (name, args) => {
-            if (name === "herdr_status") { this.status = args?.[0] ?? null; this.followTabs(); cx.notify(); }
-            if (name === "nvim_closed") { this.nvim = null; this.error = "Neovim exited"; cx.notify(); }
-          },
-        });
-        if (!this.nvim) this.error = "Couldn't start Neovim";
-        else if (this.line) await this.nvim.request("nvim_win_set_cursor", 0, [this.line, 0]);
-      } catch (e) {
-        this.error = `Couldn't start Neovim: ${e?.message ?? e}`;
-      }
-      this.starting = false;
-      cx.notify();
-    });
+    // No async function and no task here: Herdr's script runtime frees the closures an
+    // async function makes once it returns, and the connection's live as long as the view
+    // (nvim.js). Plain promise chains, with `this.cx` (init's, which outlives an await).
+    const notify = () => this.cx.notify();
+    const onRedraw = (events) => { if (this.grid.apply(events)) notify(); };
+    const onNotify = (name, args) => {
+      if (name === "herdr_status") { this.status = args?.[0] ?? null; this.followTabs(); notify(); }
+      if (name === "nvim_closed") { this.nvim = null; this.error = "Neovim exited"; notify(); }
+    };
+    exec("git", ["rev-parse", "--show-toplevel"], { cwd: dirname(this.file) }).catch(() => null)
+      .then((top) => {
+        if (top?.code === 0) this.root = top.stdout.trim();
+        return startNvim({ home: home(), file: this.file, cwd: dirname(this.file), width: this.size.cols, height: this.size.rows, onRedraw, onNotify });
+      })
+      .then((nvim) => {
+        this.nvim = nvim;
+        if (!nvim) this.error = "Couldn't start Neovim";
+        else if (this.line) nvim.notify("nvim_win_set_cursor", 0, [this.line, 0]);
+      }, (e) => { this.error = `Couldn't start Neovim: ${e?.message ?? e}`; })
+      .then(() => { this.starting = false; notify(); });
   }
 
   // Keys, as Neovim notation. Clipboard chords go through the system clipboard here,
@@ -122,7 +108,7 @@ export default class Editor extends View {
     cx.stop_propagation();
     if (m.platform && !m.shift && !m.control && !m.alt && e.key === "v") {
       const text = cx.read_from_clipboard();
-      if (text) cx.spawn(async () => { await this.nvim?.request("nvim_paste", text, true, -1).catch(() => {}); });
+      if (text) this.nvim.notify("nvim_paste", text, true, -1);
       return;
     }
     const keys = nvimKey(e);
@@ -130,11 +116,11 @@ export default class Editor extends View {
     this.nvim.input(keys);
     if (m.platform && !m.shift && (e.key === "c" || e.key === "x")) {
       // After the mapping has yanked into "+.
-      cx.spawn(async (cx) => {
-        await cx.sleep(30);
-        const text = await this.nvim?.request("nvim_call_function", "getreg", ["+"]).catch(() => null);
-        if (typeof text === "string" && text) cx.write_to_clipboard(text);
-      });
+      this.cx.timer.after(30, (cx) => {
+        this.nvim?.request("nvim_call_function", "getreg", ["+"]).then((text) => {
+          if (typeof text === "string" && text) cx.write_to_clipboard(text);
+        }, () => {});
+      }, { owner: this });
     }
   }
 
@@ -173,7 +159,7 @@ export default class Editor extends View {
       this.nvim.inputMouse("left", "press", "", grid, row, col);
       this.nvim.inputMouse("left", "release", "", grid, row, col);
       this.dragging = false;
-      cx.spawn(async () => { await this.nvim?.request("nvim_exec_lua", "vim.lsp.buf.definition()", []).catch(() => {}); });
+      this.nvim.notify("nvim_exec_lua", "vim.lsp.buf.definition()", []);
       return;
     }
     this.nvim.inputMouse("left", "press", this.mods(e.modifiers), grid, row, col);
@@ -411,18 +397,18 @@ export default class Editor extends View {
   // Closing a file's tab page: unsaved changes keep it (⌥-click discards them); the last
   // one closes the Herdr tab.
   closeTab(n, force) {
-    this.cx.spawn(async () => {
-      const r = await this.nvim?.request("nvim_exec_lua", "return _G.herdr_close_tab(...)", [n, force]).catch(() => null);
+    this.nvim?.request("nvim_exec_lua", "return _G.herdr_close_tab(...)", [n, force]).catch(() => null).then((r) => {
       if (r === "modified") {
         this.flash = { text: "Unsaved changes: ⌘S saves them, ⌥-click × discards them", error: true };
-        this.flashTask?.cancel();
-        this.flashTask = this.cx.timer.after(4000, () => { this.flash = null; this.cx.notify(); });
+        const n = (this.flashes = (this.flashes ?? 0) + 1);
+        this.cx.timer.after(4000, () => { if (n === this.flashes) { this.flash = null; this.cx.notify(); } }, { owner: this });
         this.cx.notify();
       } else if (r === "last" && this.tab) {
         run("tab.close", { id: this.tab, confirmed: true });
       }
     });
   }
+
 
   // The files open, as the terminal tabs above draw theirs: the current one on the editor's
   // background; a dot for unsaved changes; a folder name when two share a file name.

@@ -1,9 +1,8 @@
 // The editor's backend: `nvim --embed` reached through the local bridge (lsp-bridge/
 // bridge.js), spoken to in msgpack-RPC as GUI frontends do. Joined into main.js by the
 // nix bundle, so nothing here imports local files; names are prefixed to stay apart from
-// main.js's. Runtime modules only: "net" (Herdr's: write(string), read() → bytes) and
-// "fs/promises".
-import * as nvimNet from "net";
+// main.js's. Runtime: "fs/promises" and the global fetch. Not "net": Herdr's script
+// runtime crashes with a socket read pending under load, fetch holds up.
 import * as nvimFs from "fs/promises";
 
 // --- UTF-8 and base64 (the runtime has no TextEncoder, TextDecoder or btoa) -----------
@@ -48,6 +47,22 @@ export function nvimBase64(bytes) {
       + (i + 1 < bytes.length ? NVIM_B64[(n >> 6) & 63] : "=") + (i + 2 < bytes.length ? NVIM_B64[n & 63] : "=");
   }
   return s;
+}
+
+const NVIM_B64_INDEX = new Uint8Array(128);
+for (let i = 0; i < 64; i++) NVIM_B64_INDEX[NVIM_B64.charCodeAt(i)] = i;
+export function nvimBase64Decode(text) {
+  const clean = text.replace(/[^A-Za-z0-9+/]/g, "");
+  const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
+  let o = 0;
+  for (let i = 0; i < clean.length; i += 4) {
+    const n = (NVIM_B64_INDEX[clean.charCodeAt(i)] << 18) | (NVIM_B64_INDEX[clean.charCodeAt(i + 1)] << 12)
+      | (NVIM_B64_INDEX[clean.charCodeAt(i + 2)] << 6) | NVIM_B64_INDEX[clean.charCodeAt(i + 3)];
+    out[o++] = n >> 16;
+    if (i + 2 < clean.length) out[o++] = (n >> 8) & 255;
+    if (i + 3 < clean.length) out[o++] = n & 255;
+  }
+  return out;
 }
 
 // --- msgpack ---------------------------------------------------------------------------
@@ -217,111 +232,106 @@ export class NvimDecoder {
 
 // --- RPC over the bridge -----------------------------------------------------------------
 
-// The bridge's token and port, written by the bridge at its start.
-async function nvimBridgeConfig(home, readFile) {
-  try { return JSON.parse(await readFile(`${home}/.config/herdr-app/lsp-bridge.json`, "utf8")); } catch { return null; }
+// No `async` from here on: Herdr's script runtime frees closures made inside an async
+// function once it returns (they crash Herdr when called later), and a connection's
+// closures live as long as the editor. So these are promise chains, and a connection's
+// state lives on its object.
+
+// The bridge's token and ports, written by the bridge at its start.
+function nvimBridgeConfig(home, readFile) {
+  return readFile(`${home}/.config/herdr-app/lsp-bridge.json`, "utf8").then((text) => JSON.parse(text)).catch(() => null);
 }
 
-// Reads the bridge's one-line answer, then hands back what followed it.
-async function nvimHandshake(socket) {
-  let got = new Uint8Array(0);
-  for (;;) {
-    const nl = got.indexOf(10);
-    if (nl >= 0) return { answer: JSON.parse(nvimUtf8Decode(got, 0, nl)), rest: got.subarray(nl + 1) };
-    const chunk = await socket.read(65536);
-    if (!chunk) throw new Error("bridge closed the connection");
-    const joined = new Uint8Array(got.length + chunk.length);
-    joined.set(got); joined.set(chunk, got.length);
-    got = joined;
-  }
+// A POST to the bridge's HTTP side: the token and `body` as JSON.
+function nvimPost(config, route, body, post) {
+  return post(`http://127.0.0.1:${config.http}/${route}`, { method: "POST", body: JSON.stringify({ token: config.token, ...body }) })
+    .then((r) => r.text().then((text) => ({ status: r.status, text })));
+}
+
+// The RPC session with the nvim the bridge runs as `id`. `onRedraw(batches)` gets each
+// "redraw" notification's arguments; `onNotify(method, args)` the others (rpcnotify(0, …)
+// from init.lua, and "nvim_closed" when the process ends).
+export function nvimConnection({ config, id, post, onRedraw, onNotify }) {
+  const c = { closed: false, nextId: 1, pending: new Map(), queued: [], sending: false, decoder: new NvimDecoder() };
+  // Messages go out in order; those queued while a request is out go together in the next.
+  c.flush = () => {
+    if (c.sending || c.closed || !c.queued.length) return;
+    const data = nvimBase64(c.queued);
+    c.queued = [];
+    c.sending = true;
+    nvimPost(config, "send", { id, data }, post).catch(() => null).then(() => { c.sending = false; c.flush(); });
+  };
+  c.send = (message) => {
+    for (const b of nvimEncode(message)) c.queued.push(b);
+    c.flush();
+  };
+  c.request = (method, ...args) => {
+    if (c.closed) return Promise.reject(new Error("nvim is closed"));
+    const n = c.nextId++;
+    return new Promise((resolve, reject) => { c.pending.set(n, { resolve, reject }); c.send([0, n, method, args]); });
+  };
+  c.notify = (method, ...args) => { if (!c.closed) c.send([2, method, args]); };
+  c.handle = (message) => {
+    const kind = message[0];
+    if (kind === 1) {
+      const p = c.pending.get(message[1]);
+      if (!p) return;
+      c.pending.delete(message[1]);
+      const error = message[2];
+      if (error) p.reject(new Error(Array.isArray(error) ? String(error[1]) : String(error)));
+      else p.resolve(message[3]);
+    } else if (kind === 2) {
+      if (message[1] === "redraw") onRedraw?.(message[2]);
+      else onNotify?.(message[1], message[2]);
+    } else if (kind === 0) {
+      // Neovim asking us something (rpcrequest): nothing is served here.
+      c.send([1, message[1], [0, `herdr: ${message[2]} is not supported`], null]);
+    }
+  };
+  c.finish = () => {
+    if (c.ended) return;
+    c.ended = c.closed = true;
+    for (const p of c.pending.values()) p.reject(new Error("nvim is closed"));
+    c.pending.clear();
+    onNotify?.("nvim_closed", []);
+  };
+  // One /recv out at a time; each answer is handled, then the next asked for.
+  c.pump = () => {
+    if (c.closed) return c.finish();
+    nvimPost(config, "recv", { id }, post).then((r) => {
+      if (r.status === 410) return c.finish();
+      if (r.status !== 200) throw new Error(`the bridge answered ${r.status}`);
+      if (r.text) for (const m of c.decoder.feed(nvimBase64Decode(r.text))) c.handle(m);
+      c.pump();
+    }).catch((e) => { onNotify?.("nvim_error", [String(e?.message ?? e)]); c.finish(); });
+  };
+  c.input = (keys) => c.notify("nvim_input", keys);
+  c.inputMouse = (button, action, modifier, grid, row, col) => c.notify("nvim_input_mouse", button, action, modifier, grid, row, col);
+  c.resize = (w, h) => c.notify("nvim_ui_try_resize", w, h);
+  c.close = () => { c.closed = true; nvimPost(config, "close", { id }, post).catch(() => null); };
+  return c;
 }
 
 // Starts `nvim --embed` for `file` in `cwd`, attaches a `width`×`height` UI and opens the
-// file. Null when the bridge or nvim isn't there. `onRedraw(batches)` gets each "redraw"
-// notification's arguments as Neovim sends them; `onNotify(method, args)` the others
-// (rpcnotify(0, …) from init.lua, and "nvim_closed" when the process ends).
-// `home` is Herdr's home() (where the bridge's config and init.lua live); `connect` and
-// `readFile` are for tests.
-export async function startNvim({ file, cwd, width, height, onRedraw, onNotify, home, spawn = (body) => body(),
-  connect = (host, port) => nvimNet.connect(host, port), readFile = nvimFs.readFile }) {
-  const config = await nvimBridgeConfig(home, readFile);
-  if (!config?.token) return null;
-  let socket;
-  try { socket = await connect("127.0.0.1", config.port); } catch { return null; }
+// file: the connection, or null when the bridge or nvim isn't there. `home` is Herdr's
+// home() (where the bridge's config and init.lua live); `post` (fetch) and `readFile` are
+// for tests.
+export function startNvim({ file, cwd, width, height, onRedraw, onNotify, home,
+  post = (url, options) => fetch(url, options), readFile = nvimFs.readFile }) {
   const init = `${home}/.config/herdr-app/nix-editor/init.lua`;
-  await socket.write(JSON.stringify({ token: config.token, op: "run", input: "base64", cwd,
-    cmd: ["nvim", "--embed", "-n", "-i", "NONE", "-u", init] }) + "\n");
-  let answer, rest;
-  try { ({ answer, rest } = await nvimHandshake(socket)); } catch { socket.close(); return null; }
-  if (!answer.ok) { socket.close(); return null; }
-
-  let nextId = 1, closed = false, writing = Promise.resolve();
-  const pending = new Map();
-  // Writes go one after another; each frame is a base64 line the bridge decodes.
-  const send = (message) => {
-    const line = nvimBase64(nvimEncode(message)) + "\n";
-    writing = writing.then(() => (closed ? undefined : socket.write(line))).catch(() => {});
-    return writing;
-  };
-  const request = (method, ...args) => {
-    if (closed) return Promise.reject(new Error("nvim is closed"));
-    const id = nextId++;
-    return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); send([0, id, method, args]); });
-  };
-  const notify = (method, ...args) => { if (!closed) send([2, method, args]); };
-
-  const decoder = new NvimDecoder();
-  const handle = (message) => {
-    const [kind] = message;
-    if (kind === 1) {
-      const [, id, error, result] = message;
-      const p = pending.get(id);
-      if (!p) return;
-      pending.delete(id);
-      if (error) p.reject(new Error(Array.isArray(error) ? String(error[1]) : String(error)));
-      else p.resolve(result);
-    } else if (kind === 2) {
-      const [, method, params] = message;
-      if (method === "redraw") onRedraw?.(params);
-      else onNotify?.(method, params);
-    } else if (kind === 0) {
-      // Neovim asking us something (rpcrequest): nothing is served here.
-      send([1, message[1], [0, `herdr: ${message[2]} is not supported`], null]);
-    }
-  };
-  const finish = () => {
-    if (closed) return;
-    closed = true;
-    for (const p of pending.values()) p.reject(new Error("nvim is closed"));
-    pending.clear();
-    onNotify?.("nvim_closed", []);
-  };
-  // The read loop runs as the view's task (`spawn` = cx.spawn): Herdr cancels it when the
-  // view goes away. A bare async loop would resume into a freed view and crash Herdr.
-  spawn(async () => {
-    try {
-      for (const m of decoder.feed(rest)) handle(m);
-      for (;;) {
-        const chunk = await socket.read(65536);
-        if (!chunk) break;
-        for (const m of decoder.feed(chunk)) handle(m);
-      }
-    } catch (e) { onNotify?.("nvim_error", [String(e?.message ?? e)]); }
-    finish();
-  });
-
-  // ext_messages and ext_cmdline: no message area and so no hit-enter prompt; the view
-  // shows messages in its status strip and the cmdline as its own line. ext_multigrid:
-  // each window is its own grid, so the view draws floats (hover, diagnostics) itself.
-  await request("nvim_ui_attach", width, height, { ext_linegrid: true, ext_multigrid: true, ext_popupmenu: true, ext_messages: true, ext_cmdline: true, ext_hlstate: false, rgb: true });
-  if (file) await request("nvim_cmd", { cmd: "edit", args: [file] }, {});
-  return {
-    request,
-    notify,
-    input: (keys) => notify("nvim_input", keys),
-    inputMouse: (button, action, modifier, grid, row, col) => notify("nvim_input_mouse", button, action, modifier, grid, row, col),
-    resize: (w, h) => notify("nvim_ui_try_resize", w, h),
-    // Closing the socket ends nvim: the bridge kills the process.
-    close: () => { closed = true; socket.close(); },
-  };
+  return nvimBridgeConfig(home, readFile).then((config) => {
+    if (!config?.token || !config.http) return null;
+    return nvimPost(config, "run", { cwd, cmd: ["nvim", "--embed", "-n", "-i", "NONE", "-u", init] }, post).then((r) => {
+      const answer = JSON.parse(r.text);
+      if (!answer.ok) return null;
+      const c = nvimConnection({ config, id: answer.id, post, onRedraw, onNotify });
+      c.pump();
+      // ext_messages and ext_cmdline: no message area and so no hit-enter prompt; the view
+      // shows messages in its status strip and the cmdline as its own line. ext_multigrid:
+      // each window is its own grid, so the view draws floats (hover, diagnostics) itself.
+      return c.request("nvim_ui_attach", width, height, { ext_linegrid: true, ext_multigrid: true, ext_popupmenu: true, ext_messages: true, ext_cmdline: true, ext_hlstate: false, rgb: true })
+        .then(() => (file ? c.request("nvim_cmd", { cmd: "edit", args: [file] }, {}) : null))
+        .then(() => c, (e) => { c.close(); throw e; });
+    });
+  }).catch(() => null);
 }

@@ -15,6 +15,7 @@
 // The token lives in ~/.config/herdr-app/lsp-bridge.json (mode 0600).
 "use strict";
 const net = require("node:net");
+const http = require("node:http");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -23,6 +24,7 @@ const { spawn, execFileSync } = require("node:child_process");
 const { Transform } = require("node:stream");
 
 const PORT = Number(process.env.HERDR_LSP_BRIDGE_PORT || 7741);
+const HTTP_PORT = Number(process.env.HERDR_LSP_BRIDGE_HTTP_PORT || PORT + 2);
 const HOME = os.homedir();
 const CONFIG = process.env.HERDR_LSP_BRIDGE_CONFIG || path.join(HOME, ".config/herdr-app/lsp-bridge.json");
 const LOG = process.env.HERDR_LSP_BRIDGE_LOG || path.join(HOME, "Library/Logs/herdr-lsp-bridge.log");
@@ -50,11 +52,11 @@ const log = (...parts) => logStream.write(`${new Date().toISOString()} ${parts.j
 function token() {
   try {
     const saved = JSON.parse(fs.readFileSync(CONFIG, "utf8"));
-    if (saved.token && saved.port === PORT) return saved.token;
+    if (saved.token && saved.port === PORT && saved.http === HTTP_PORT) return saved.token;
   } catch {}
   const fresh = crypto.randomBytes(24).toString("hex");
   fs.mkdirSync(path.dirname(CONFIG), { recursive: true });
-  fs.writeFileSync(CONFIG, JSON.stringify({ port: PORT, token: fresh }) + "\n", { mode: 0o600 });
+  fs.writeFileSync(CONFIG, JSON.stringify({ port: PORT, http: HTTP_PORT, token: fresh }) + "\n", { mode: 0o600 });
   fs.chmodSync(CONFIG, 0o600);
   return fresh;
 }
@@ -173,4 +175,108 @@ const server = net.createServer((socket) => {
 
 server.on("error", (e) => { log("listen error", e.message); process.exit(1); });
 server.listen(PORT, "127.0.0.1", () => log("listening on", PORT, "PATH", PATH));
-for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, () => { server.close(); process.exit(0); });
+
+// --- HTTP: the same programs, reached with fetch -----------------------------------------
+// Herdr's script runtime crashes with a TCP socket read pending under load (its `net`
+// module), while fetch holds up, so the editor uses this. Every request is a POST of JSON
+// with the token:
+//   /run   {cmd, cwd}  → {ok, id}         starts the program
+//   /send  {id, data}  → {ok}             base64 bytes to its stdin
+//   /recv  {id}        → base64 text      its stdout since the last /recv; waits up to
+//                                         RECV_WAIT_MS for some ("" if none); 410 once it ended
+//   /close {id}        → {ok}             stops it
+// A program nobody has asked for output for in IDLE_MS is stopped: its client is gone.
+const RECV_WAIT_MS = 15000;
+const IDLE_MS = 45000;
+const sessions = new Map();
+
+function tokenOk(t) {
+  return typeof t === "string" && t.length === TOKEN.length && crypto.timingSafeEqual(Buffer.from(t), Buffer.from(TOKEN));
+}
+
+function flush(s) {
+  if (!s.waiter) return;
+  const res = s.waiter;
+  if (s.out.length) {
+    const data = Buffer.concat(s.out).toString("base64");
+    s.out = [];
+    s.waiter = null;
+    clearTimeout(s.waitTimer);
+    res.end(data);
+  } else if (s.ended) {
+    s.waiter = null;
+    clearTimeout(s.waitTimer);
+    res.statusCode = 410;
+    res.end("");
+    sessions.delete(s.id);
+  }
+}
+
+function stopSession(s) {
+  if (s.child.exitCode === null && s.child.signalCode === null) s.child.kill("SIGTERM");
+}
+
+function httpRun(body) {
+  const exe = resolve(body.cmd?.[0]);
+  const args = Array.isArray(body.cmd) ? body.cmd.slice(1) : [];
+  const ok = exe && args.every((a) => typeof a === "string") && (body.cmd[0] !== "nvim" || nvimArgsOk(args));
+  if (!ok) return { ok: false, error: `not an allowed program: ${JSON.stringify(body.cmd ?? null)}` };
+  const cwd = typeof body.cwd === "string" && fs.existsSync(body.cwd) ? body.cwd : HOME;
+  const child = spawn(exe, args, { cwd, env: { ...process.env, PATH }, stdio: ["pipe", "pipe", "pipe"] });
+  const s = { id: crypto.randomBytes(12).toString("hex"), child, out: [], waiter: null, waitTimer: null, ended: false, seen: Date.now() };
+  sessions.set(s.id, s);
+  log("start", child.pid, exe, args.join(" "), "in", cwd, "(http)");
+  child.stderr.on("data", (d) => logStream.write(d));
+  child.stdout.on("data", (d) => { s.out.push(d); flush(s); });
+  child.on("error", (e) => { log("spawn error", exe, e.message); s.ended = true; flush(s); });
+  child.on("exit", (code, signal) => { log("exit", child.pid, code ?? signal); s.ended = true; flush(s); });
+  child.stdin.on("error", () => {});
+  return { ok: true, id: s.id };
+}
+
+const httpServer = http.createServer((req, res) => {
+  let size = 0;
+  const parts = [];
+  req.on("data", (d) => { size += d.length; if (size > HELLO_MAX) req.destroy(); else parts.push(d); });
+  req.on("end", () => {
+    let body;
+    try { body = JSON.parse(Buffer.concat(parts).toString("utf8")); } catch { body = null; }
+    const json = (code, value) => { res.statusCode = code; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(value)); };
+    if (req.method !== "POST" || !body || !tokenOk(body.token)) return json(403, { ok: false, error: "bad token" });
+    const route = req.url;
+    if (route === "/run") return json(200, httpRun(body));
+    const s = sessions.get(body.id);
+    if (!s) return route === "/recv" ? (res.statusCode = 410, res.end("")) : json(404, { ok: false, error: "no such program" });
+    s.seen = Date.now();
+    if (route === "/send") {
+      if (typeof body.data === "string" && body.data) s.child.stdin.write(Buffer.from(body.data, "base64"));
+      return json(200, { ok: true });
+    }
+    if (route === "/close") { stopSession(s); return json(200, { ok: true }); }
+    if (route === "/recv") {
+      if (s.waiter) { s.waiter.end(""); clearTimeout(s.waitTimer); }
+      s.waiter = res;
+      res.on("close", () => { if (s.waiter === res) s.waiter = null; });
+      s.waitTimer = setTimeout(() => { if (s.waiter === res) { s.waiter = null; res.end(""); } }, RECV_WAIT_MS);
+      return flush(s);
+    }
+    json(404, { ok: false, error: `unknown route ${route}` });
+  });
+});
+
+setInterval(() => {
+  for (const s of sessions.values()) {
+    if (s.waiter || Date.now() - s.seen <= IDLE_MS) continue;
+    if (s.ended) sessions.delete(s.id);
+    else { log("idle, stopping", s.child.pid); stopSession(s); s.seen = Date.now(); }
+  }
+}, 5000).unref();
+
+httpServer.on("error", (e) => { log("http listen error", e.message); process.exit(1); });
+httpServer.listen(HTTP_PORT, "127.0.0.1", () => log("http on", HTTP_PORT));
+for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, () => {
+  for (const s of sessions.values()) stopSession(s);
+  server.close();
+  httpServer.close();
+  process.exit(0);
+});

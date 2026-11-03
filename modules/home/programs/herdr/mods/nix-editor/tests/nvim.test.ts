@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { NvimDecoder, NvimHandle, nvimBase64, nvimDecode, nvimEncode, nvimUtf8Decode, nvimUtf8Encode } from "../nvim.js";
+import { NvimDecoder, NvimHandle, nvimBase64, nvimBase64Decode, nvimConnection, nvimDecode, nvimEncode, nvimUtf8Decode, nvimUtf8Encode } from "../nvim.js";
 
 const roundTrip = (v: unknown) => nvimDecode(Uint8Array.from(nvimEncode(v)));
 
@@ -51,4 +51,70 @@ test("base64 matches Node's", () => {
     const b = Array.from({ length: n }, (_, i) => (i * 37) & 255);
     assert.equal(nvimBase64(b), Buffer.from(b).toString("base64"));
   }
+});
+
+test("base64 decodes what it encodes, at every padding", () => {
+  const bytes = Uint8Array.from({ length: 300 }, (_, i) => (i * 37) % 256);
+  for (const n of [0, 1, 2, 3, 4, 299, 300]) {
+    assert.deepEqual([...nvimBase64Decode(nvimBase64(bytes.subarray(0, n)))], [...bytes.subarray(0, n)]);
+  }
+});
+
+// A bridge in memory: /send's bytes come back from /recv as nvim's answers.
+function fakeBridge(answer: (message: unknown[]) => unknown[] | null) {
+  const out: number[] = [];
+  const sent: string[] = [];
+  let wake: (() => void) | null = null;
+  const reply = (status: number, text: string) => Promise.resolve({ status, text: () => Promise.resolve(text) });
+  const post = (url: string, options: { body: string }) => {
+    const route = url.split("/").pop();
+    const body = JSON.parse(options.body);
+    sent.push(route!);
+    if (route === "send") {
+      const decoder = new NvimDecoder();
+      for (const m of decoder.feed(nvimBase64Decode(body.data))) {
+        const r = answer(m as unknown[]);
+        if (r) out.push(...nvimEncode(r));
+      }
+      wake?.();
+      return reply(200, "{\"ok\":true}");
+    }
+    if (route === "recv") {
+      if (out.length) return reply(200, nvimBase64(out.splice(0)));
+      return new Promise((resolve) => { wake = () => { wake = null; resolve(reply(200, nvimBase64(out.splice(0)))); }; });
+    }
+    if (route === "close") { wake = null; return reply(200, "{\"ok\":true}"); }
+    return reply(404, "");
+  };
+  return { post, sent };
+}
+
+test("a connection answers requests through /send and /recv, in order", async () => {
+  const bridge = fakeBridge((m) => (m[0] === 0 ? [1, m[1], null, `${m[2]}:${(m[3] as unknown[]).join(",")}`] : null));
+  const c = nvimConnection({ config: { http: 1, token: "t" }, id: "x", post: bridge.post, onRedraw: () => {}, onNotify: () => {} });
+  c.pump();
+  const [a, b] = await Promise.all([c.request("one", 1), c.request("two", 2)]);
+  assert.equal(a, "one:1");
+  assert.equal(b, "two:2");
+  c.close();
+});
+
+test("a connection hands redraws and notifications on, and ends on 410", async () => {
+  const seen: string[] = [];
+  let ended!: () => void;
+  const done = new Promise<void>((r) => { ended = r; });
+  const queue = [nvimBase64(nvimEncode([2, "redraw", [["flush"]]])), nvimBase64(nvimEncode([2, "herdr_status", [{ file: "a" }]]))];
+  const post = (url: string) => {
+    const route = url.split("/").pop();
+    if (route !== "recv") return Promise.resolve({ status: 200, text: () => Promise.resolve("{}") });
+    const next = queue.shift();
+    return Promise.resolve(next ? { status: 200, text: () => Promise.resolve(next) } : { status: 410, text: () => Promise.resolve("") });
+  };
+  const c = nvimConnection({ config: { http: 1, token: "t" }, id: "x", post,
+    onRedraw: (e: unknown[]) => seen.push(`redraw ${JSON.stringify(e)}`),
+    onNotify: (name: string) => { seen.push(name); if (name === "nvim_closed") ended(); } });
+  c.pump();
+  await done;
+  assert.deepEqual(seen, ['redraw [["flush"]]', "herdr_status", "nvim_closed"]);
+  await assert.rejects(c.request("late"), /closed/);
 });
