@@ -12,6 +12,7 @@ import { startNvim } from "./nvim.js";
 
 const STATUS = 24; // px, the strip under the grid
 const TABS = 32; // px, the tab strip over it, with two files or more
+const SETTLE_S = 5; // Herdr's age, in seconds, before an editor starts (see start())
 const PAD = { x: 8, y: 8 }; // px around the grid
 const FLOAT = { x: 8, y: 6, gap: 4 }; // a float's padding, and its distance from the line it's about
 // Cmd chords the editor keeps; any other Cmd chord stays Herdr's (new tab, palette…).
@@ -81,6 +82,11 @@ export default class Editor extends View {
     // that resumes after the view is gone crashes Herdr's script runtime. Nothing async
     // starts in init: `herdr-app check` makes a copy and drops it straight away.
     this.cx.spawn(async () => {
+      // An editor started while Herdr itself starts (its tab restored) crashes Herdr's script
+      // runtime within seconds, every time; a few seconds in, it doesn't. So it waits for that.
+      const up = await exec("sh", ["-c", "ps -o etime= -p $PPID"]).catch(() => null);
+      const secs = (up?.stdout ?? "").trim().split(/[-:]/).reduce((a, n) => a * 60 + Number(n), 0);
+      if (up?.code === 0 && secs < SETTLE_S) await cx.sleep((SETTLE_S - secs) * 1000);
       const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: dirname(this.file) }).catch(() => null);
       if (top?.code === 0) this.root = top.stdout.trim();
       try {
