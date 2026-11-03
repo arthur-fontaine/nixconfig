@@ -75,7 +75,8 @@ let
   # prompt-cache breakpoints on user blocks reach the API (auto-mode places them where Claude
   # Code's classifier does), and a model asked for by full id ("claude-sonnet-5") isn't routed
   # through Claude Code's "sonnet" alias, which now means Sonnet 5.5; a spawn that lands while
-  # Claude Code's updater rewrites its binary (ENOEXEC) is tried again. No runtime dependencies:
+  # Claude Code's updater rewrites its binary (ENOEXEC) is tried again; a rewritten request keeps
+  # at most the API's four cache breakpoints. No runtime dependencies:
   # its imports are Pi's own packages.
   piClaudeCode = pkgs.runCommand "pi-claude-code-70abb65-patched" { } ''
     cp -r ${

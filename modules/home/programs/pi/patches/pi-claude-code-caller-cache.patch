@@ -1,5 +1,5 @@
 diff --git a/src/claude-cli.ts b/src/claude-cli.ts
-index 6c0595e..e87576a 100644
+index 6c0595e..8c21f5d 100644
 --- a/src/claude-cli.ts
 +++ b/src/claude-cli.ts
 @@ -316,6 +316,36 @@ export async function discoverClaudeModels(
@@ -39,7 +39,7 @@ index 6c0595e..e87576a 100644
  function spawnCommand(
    command: string,
    args: string[],
-@@ -629,6 +659,30 @@ function normalizeLeadingSystemCache(system: unknown): void {
+@@ -629,6 +659,51 @@ function normalizeLeadingSystemCache(system: unknown): void {
    }
  }
  
@@ -51,6 +51,26 @@ index 6c0595e..e87576a 100644
 +// auto-mode classifier does: the end of the history and the action under review). Claude
 +// Code adds its own on the system prompt and its trailing environment message, which would
 +// exceed the API's four, so keep one at the end of the system prompt and the caller's.
++// The API takes at most four cache breakpoints. A rewritten request can carry more: Claude
++// Code's own marks on earlier messages, plus the system, tool and replay marks set here.
++// Keep the system and tool marks, then the latest message marks, and drop the rest.
++const MAX_CACHE_BREAKPOINTS = 4;
++
++export function capCacheBreakpoints(payload: { system?: unknown; tools?: unknown; messages?: NativeRequestMessage[] }): void {
++  const marked = (value: unknown): Record<string, unknown>[] => {
++    if (!Array.isArray(value)) return [];
++    return value.filter((block): block is Record<string, unknown> =>
++      Boolean(block) && typeof block === "object" && "cache_control" in (block as Record<string, unknown>));
++  };
++  const fixed = [...marked(payload.system), ...marked(payload.tools)];
++  const inMessages = (payload.messages ?? []).flatMap((message) => marked(message.content));
++  let room = Math.max(0, MAX_CACHE_BREAKPOINTS - fixed.length);
++  for (let index = inMessages.length - 1; index >= 0; index--) {
++    if (room > 0) room -= 1;
++    else delete inMessages[index]!.cache_control;
++  }
++}
++
 +export function keepCallerCacheBreakpoints(body: Buffer, canonicalContent: unknown[]): Buffer {
 +  const payload = JSON.parse(body.toString("utf8")) as { messages?: NativeRequestMessage[]; system?: unknown };
 +  normalizeLeadingSystemCache(payload.system);
@@ -64,13 +84,22 @@ index 6c0595e..e87576a 100644
 +      if (marker !== undefined && target && typeof target === "object") (target as Record<string, unknown>).cache_control = marker;
 +    });
 +  }
++  capCacheBreakpoints(payload as Parameters<typeof capCacheBreakpoints>[0]);
 +  return Buffer.from(JSON.stringify(payload));
 +}
 +
  export function rewriteInitialRequest(
    body: Buffer,
    prefix: unknown[] | undefined,
-@@ -805,7 +859,7 @@ class ClaudeProcess {
+@@ -669,6 +744,7 @@ export function rewriteInitialRequest(
+     normalizeLeadingSystemCache(payload.system);
+   }
+   if (initialSystemMessages?.length || nativeSystemInjections) setReplayCacheBreakpoints(messages!);
++  capCacheBreakpoints(payload as Parameters<typeof capCacheBreakpoints>[0]);
+ 
+   return Buffer.from(JSON.stringify(payload));
+ }
+@@ -805,7 +881,7 @@ class ClaudeProcess {
          JSON.stringify(mcp),
        ];
  
@@ -79,7 +108,7 @@ index 6c0595e..e87576a 100644
          // Claude Code tells the model its process cwd. Keep transport files
          // private while exposing Pi's real working directory to the model.
          cwd: input.cwd ?? process.cwd(),
-@@ -898,10 +952,9 @@ class ClaudeProcess {
+@@ -898,10 +974,9 @@ class ClaudeProcess {
        input.onEvent?.(event);
      };
      const canonicalInitialUser = input.frames.find((frame) => frame.type === "user")?.message.content ?? [];
@@ -92,7 +121,7 @@ index 6c0595e..e87576a 100644
              rewriteInitialRequest(
                body,
                input.initialUserPrefix,
-@@ -909,7 +962,13 @@ class ClaudeProcess {
+@@ -909,7 +984,13 @@ class ClaudeProcess {
                input.initialSystemMessages,
                input.nativeSystemInjections,
              )
