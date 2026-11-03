@@ -2,7 +2,7 @@
 // git knows but nothing has open, or a new one named here. Level 2 picks what, in that worktree: a
 // new Pi session, a terminal, or one of its past Pi sessions to resume (an open one is focused).
 // Typing on level 1 also searches the sessions of every worktree of the project.
-// Props: { repo?, name?, folder?, machine?, space?, level?, worktrees? } (level 2 opens on `space`;
+// Props: { repo?, name?, folder?, machine?, space?, level?, path?, branch?, worktrees? } (level 2 opens on `space`, or `path`;
 // worktrees: the sidebar's prefetched checkouts, so the list shows at once).
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
@@ -10,6 +10,7 @@ import { run, props, closeOverlay, theme, spaces, panes, exec, home, knownAgents
 import { repoOf, createWorktree, defaultBranch, slug } from "../_lib/repo.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
+const HEIGHT = 404;
 const ORCHESTRATOR = "Orchestrator";
 // Not the person's own chats: orchestrators, and pi-subagents' workers ("general-purpose#534df88b").
 const hidden = (name) => name === ORCHESTRATOR || /#[0-9a-f]{6,}$/.test(name ?? "");
@@ -98,7 +99,10 @@ export default class New extends View {
     // Sessions by worktree path: undefined while read, then newest first.
     this.sessions = new Map();
     // Level 2's worktree: { space?, path, branch }.
-    this.here = p.level === 2 && this.space0 ? { space: this.space0.id, path: place(this.space0, ps), branch: this.space0.branch ?? this.space0.name } : null;
+    // (A checkout with no space yet comes as `path` + `branch`: starting there makes its space.)
+    this.here = p.level !== 2 ? null
+      : p.path ? { space: this.space0?.id ?? null, path: p.path, branch: p.branch ?? base(p.path) }
+      : this.space0 ? { space: this.space0.id, path: place(this.space0, ps), branch: this.space0.branch ?? this.space0.name } : null;
     const field = (placeholder) => {
       const f = InputState.new({ placeholder });
       f.on("change", (_e, cx) => {
@@ -445,8 +449,10 @@ export default class New extends View {
         .child(svg(ICON("server")).size(11)).child(this.on)))
       .child(div().flex_1())
       .when(Boolean(key), (e) => e.child(div().flex_none().text_size(11).font_normal().text_color(t.dim).child(key)));
+    // A popup is as tall as its content, and the list only fills what is left: the height is
+    // stated here (the openers ask for 404 too), or the list and its actions collapse to nothing.
     return v_flex().id("nix-new").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
-      .size_full().bg(t.popover).text_color(t.foreground)
+      .w_full().h(HEIGHT).bg(t.popover).text_color(t.foreground)
       .child(head)
       .child(h_flex().flex_none().mx(8).mb(6).h(30).px(9).gap(7).items_center().rounded(6).border_1().border_color(t.ring ?? t.accent).bg(t.background)
         .child(svg(ICON("search")).size(13).flex_none().text_color(t.dim))

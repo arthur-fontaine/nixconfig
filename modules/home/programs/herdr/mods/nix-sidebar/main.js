@@ -262,9 +262,33 @@ export default class Sidebar extends View {
     this.repoByKey = repos;
     for (const r of repos.values()) r.project = sp.find((s) => s.id === projects[r.key]) ?? null;
     const inside = (p, dir) => p === dir || p.startsWith(dir + "/");
+    // Workers (hc run children) go under the worktree their cwd is in when their parent is an
+    // orchestrator or works elsewhere; the rest stay under their parent's tab (workerRows).
+    const byAddress = new Map(agents().map((a) => [a.address, a]));
+    const spaceOf = new Map(sp.map((x) => [x.id, x]));
+    this.placed = new Set();
+    const workers = terminals().filter((x) => x.state === "live" && x.parent && x.cwd);
+    for (const r of repos.values()) {
+      r.workers = new Map(); // checkout path -> workers
+      const checkouts = (this.trees[r.key] ?? []).slice().sort((a, b) => b.path.length - a.path.length);
+      for (const x of workers) {
+        const c = checkouts.find((c) => inside(x.cwd, c.path));
+        if (!c) continue;
+        const parent = byAddress.get(x.parent);
+        const ps0 = parent ? spaceOf.get(parent.space) : null;
+        const tab = ps0?.tabs.find((tb) => tb.id === parent.tab);
+        const orchestrated = Boolean(parent && (owned.has(parent.space) || (tab && isOrchestrator(tab))));
+        const there = ps0 ? place(ps0, ps) : null;
+        if (!orchestrated && there && inside(there, c.path)) continue;
+        r.workers.set(c.path, [...(r.workers.get(c.path) ?? []), x]);
+        this.placed.add(x.address);
+      }
+    }
     for (const r of repos.values()) {
       const at = r.items.map(({ s }) => place(s, ps));
       r.idle = (this.trees[r.key] ?? []).filter((c) => !at.some((p) => p && inside(p, c.path)));
+      // Checkouts with nothing open but workers running in them get a row of their own.
+      r.busy = r.idle.filter((c) => r.workers.has(c.path));
       r.ahead = r.items.reduce((n, { g }) => n + g.ahead, 0);
       r.behind = r.items.reduce((n, { g }) => n + g.behind, 0);
     }
@@ -355,16 +379,48 @@ export default class Sidebar extends View {
   workerRows(tab, pl, t) {
     const parents = new Set(agents().filter((a) => a.tab === tab.id).map((a) => a.address));
     if (!parents.size) return [];
-    return terminals().filter((x) => x.state === "live" && parents.has(x.parent)).map((x) => {
-      const status = ["working", "blocked", "done"].includes(x.status) ? x.status : null;
-      return h_flex().id(`worker-${x.address}`).h(26).pl(pl).pr(10).gap(8).items_center().rounded(6).cursor_pointer()
-        .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground))
-        .tooltip(`Peek at ${x.name ?? x.address}`)
-        .on_click(() => run("terminal.peek", { terminal: x.address }))
-        .child(this.picture({ app: x.agent === "pi" ? "pi" : null, program: null }, t, 12))
-        .child(div().flex_1().min_w(0).truncate().child(x.name ?? x.address))
-        .when(Boolean(this.status(t, status)), (e) => e.child(this.status(t, status)));
-    });
+    return terminals().filter((x) => x.state === "live" && parents.has(x.parent) && !this.placed?.has(x.address))
+      .map((x) => this.workerRow(x, pl, t));
+  }
+
+  workerRow(x, pl, t) {
+    const status = ["working", "blocked", "done"].includes(x.status) ? x.status : null;
+    return h_flex().id(`worker-${x.address}`).h(26).pl(pl).pr(10).gap(8).items_center().rounded(6).cursor_pointer()
+      .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground))
+      .tooltip(`Peek at ${x.name ?? x.address}`)
+      .on_click(() => run("terminal.peek", { terminal: x.address }))
+      // hc leaves `agent` empty for a worker it started: Pi is known by its command too.
+      .child(this.picture({ app: x.agent === "pi" || base(String(x.argv?.[0] ?? "")) === "pi" ? "pi" : null, program: null }, t, 12))
+      .child(div().flex_1().min_w(0).truncate().child(x.name ?? x.address))
+      .when(Boolean(this.status(t, status)), (e) => e.child(this.status(t, status)));
+  }
+
+  // The most urgent status of some workers, as a space's is.
+  urgent(list) {
+    const rank = { blocked: 3, done: 2, working: 1 };
+    return list.map((x) => x.status).filter((st) => rank[st]).sort((a, b) => rank[b] - rank[a])[0] ?? null;
+  }
+
+  // A checkout with workers but no space: a worktree row whose click makes its space with the
+  // orchestrator in it, and whose + opens on what to start there.
+  checkoutRows(r, c, t) {
+    const id = `checkout-${c.path}`, fkey = `co:${c.path}`, folded = this.folded.has(fkey);
+    const list = r.workers.get(c.path) ?? [];
+    const title = c.branch ?? base(c.path);
+    if (this.filter && !this.matches(title) && !list.some((x) => this.matches(x.name ?? ""))) return [];
+    const status = this.urgent(list);
+    const rows = [this.hoverable(id, h_flex().h(28).pl(24).pr(10).gap(7).items_center().rounded(6).cursor_pointer()
+      .hover((x) => x.bg(t.hover)).tooltip(c.path)
+      .on_click(() => run("space.new", { folder: c.path, machine: r.on ?? "", tab: ORCHESTRATOR, argv: orchestratorArgv("worktree") }))
+      .child(div().id(`fold-${fkey}`).w(12).h(14).flex_none().flex().items_center().justify_center().text_color(t.dim)
+        .on_click((_e, cx) => { cx.stop_propagation(); this.toggle(this.folded, "folded", fkey, cx); })
+        .child(svg(ICON(folded ? "chevron-right" : "chevron-down")).size(10)))
+      .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(t.muted).child(title))
+      .when(this.hovered === id, (e) => e.child(this.small(`add-${c.path}`, "plus", "Start Pi or a terminal",
+        (cx) => this.openNew(cx, { repo: r.key, name: r.name, folder: c.path, machine: r.on, level: 2, path: c.path, branch: title, worktrees: this.trees[r.key] }), t)))
+      .when(this.hovered !== id, (e) => e.when(Boolean(this.status(t, status)), (e) => e.child(this.status(t, status)))))];
+    if (!folded) rows.push(...list.map((x) => this.workerRow(x, 40, t)));
+    return rows;
   }
 
   // The + popover (nix-new), a fixed-height palette kept inside the window: popups aren't clamped.
@@ -460,6 +516,8 @@ export default class Sidebar extends View {
     if (!folded) {
       if (orchestrator) rows.push(...this.workerRows(orchestrator, 40, t));
       for (const tab of tabs) rows.push(...this.tabRows(s, tab, ps, t, order));
+      const r = g && this.repoByKey?.get(g.repo), at = place(s, ps);
+      for (const [path, list] of r?.workers ?? []) if (at && (at === path || at.startsWith(path + "/"))) rows.push(...list.map((x) => this.workerRow(x, 40, t)));
     }
     return rows;
   }
@@ -494,7 +552,7 @@ export default class Sidebar extends View {
     const workers = projectTab ? this.workerRows(projectTab, 24, t) : [];
     if (folded && !this.filter) return [head, ...workers];
     if (r.closed && !this.trees[r.key]) this.loadTrees(r.key, null);
-    return [head, ...workers, ...items.flatMap((it) => this.worktreeRow(it, ps, t, order))];
+    return [head, ...workers, ...items.flatMap((it) => this.worktreeRow(it, ps, t, order)), ...r.busy.flatMap((c) => this.checkoutRows(r, c, t))];
   }
 
   folderRow({ s }, ps, t, order) {
