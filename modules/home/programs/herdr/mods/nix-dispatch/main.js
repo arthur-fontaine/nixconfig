@@ -100,11 +100,11 @@ export default class NewWorktree extends View {
       : r === null ? `${tilde(this.folder) ?? "This folder"} isn't in a git repository.`
       : fit(`${tilde(r.root)}/${name ? slug(name) : "…"}`, 50);
     return v_flex().id("new-worktree").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
-      .size_full().p(8).gap(8).bg(t.popover).text_size(13).text_color(t.foreground)
+      .size_full().p(10).gap(8).bg(t.popover).text_size(13).text_color(t.foreground)
       .child(h_flex().h(30).px(8).gap(7).items_center().rounded(6).border_1().border_color(t.accent).bg(t.background)
         .child(svg("mods/workspace-chrome/git-branch.svg").size(13).flex_none().text_color(t.muted))
         .child(Input.new(this.branch).flex_1().h_full().text_size(13)))
-      .child(div().px(2).text_size(11).text_color(r === null || this.error ? t.blocked : t.dim).truncate()
+      .child(div().h(20).px(2).flex().items_center().text_size(11).text_color(r === null || this.error ? t.blocked : t.dim).truncate()
         .child(this.error || (this.busy ? "Creating…" : where)))
       .child(h_flex().gap(2).items_center()
         .when(Boolean(a), (e) => e.child(this.option("start-agent", this.start === "agent",

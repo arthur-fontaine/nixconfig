@@ -291,7 +291,7 @@ export default class Sidebar extends View {
     const title = g ? (g.branch ?? "detached") : s.name;
     const tabs = (s.tabs ?? []).filter((x) => !x.settled);
     const rows = [this.hoverable(id, h_flex().h(28).pl(22).pr(8).gap(7).items_center().rounded(6).cursor_pointer()
-      .when(s.active, (e) => e.bg(t.selected)).when(!s.active, (e) => e.hover((x) => x.bg(t.hover)))
+      .when(s.active && (folded || !tabs.length), (e) => e.bg(t.selected)).when(!(s.active && (folded || !tabs.length)), (e) => e.hover((x) => x.bg(t.hover)))
       .on_click(() => run("space.select", { id: s.id }))
       .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 260, props: { tab: "space", target: { id: s.id } } }))
       .child(div().id(`fold-${s.id}`).size(14).flex_none().flex().items_center().justify_center().text_color(t.dim)
@@ -347,11 +347,11 @@ export default class Sidebar extends View {
       .when(this.hovered === id, (e) => e
         .child(this.small(`new-wt-${r.key}`, "plus", "New worktree", () => {
           const first = r.items[0];
-          openOverlay({ mod: "nix-dispatch", kind: "popup", width: 320, height: 104, props: { space: first?.s.id, folder: first ? place(first.s, ps) : JSON.parse(r.key)[1], machine: r.on } });
+          openOverlay({ mod: "nix-dispatch", kind: "popup", width: 320, height: 114, props: { space: first?.s.id, folder: first ? place(first.s, ps) : JSON.parse(r.key)[1], machine: r.on } });
         }, t))
         .when(r.closed, (e) => e.child(this.small(`forget-${r.key}`, "x", "Hide from the list", (cx) => this.forget(r.key, cx), t))))
       .when(this.hovered !== id && folded && count > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`${count}`)))
-      .when(this.hovered !== id && !folded && !r.closed && (r.behind > 0 || r.ahead > 0), (e) => e
+      .when(this.hovered !== id && folded && !r.closed && (r.behind > 0 || r.ahead > 0), (e) => e
         .when(r.behind > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`↓${r.behind}`)))
         .when(r.ahead > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`↑${r.ahead}`)))));
     if (folded && !this.filter) return [head];

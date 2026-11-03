@@ -56,7 +56,7 @@ export default class Tabs extends View {
     const space = spaces().find(p => p.active);
     const shown = space?.tabs ?? [];
     const stop = (_e, cx) => cx.stop_propagation();
-    const button = (id, label, action) => div().id(id).size(26).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
+    const button = (id, label, action) => div().id(id).size(28).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
       .on_mouse_down("left", stop).on_click(action).child(label);
     const item = (c, i) => {
       const program = panes().find(p => p.tab === c.id && p.program?.agent)?.program ?? panes().find(p => p.tab === c.id)?.program;
@@ -102,8 +102,9 @@ export default class Tabs extends View {
     return h_flex().size_full().min_w(0).px(8).pl(lightsPadding).gap(4).items_center().bg(t.chrome).border_b(1).border_color(t.border)
       .on_mouse_up("left", () => { this.pressed = null; })
       .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })
-      .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(3).overflow_x_scrollbar().children(shown.map(item)))
-      .child(button("tab-new", "+", () => openOverlay({ mod: "nix-new-menu", kind: "popup", width: 240, height: 90 })))
+      // + right after the last tab, as in a browser; the right group is the panels.
+      .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(4).overflow_x_scrollbar().children(shown.map(item))
+        .child(button("tab-new", "+", () => openOverlay({ mod: "nix-new-menu", kind: "popup", width: 240, height: 90 }))))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))

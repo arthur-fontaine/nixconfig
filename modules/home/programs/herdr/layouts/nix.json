@@ -102,11 +102,11 @@
                   },
                   "focus": {
                     "width": 1,
-                    "color": "muted"
+                    "color": "dim"
                   },
                   "header": {
                     "content": {
-                      "mod": "pane"
+                      "mod": "nix-pane"
                     },
                     "height": 30,
                     "position": "top",

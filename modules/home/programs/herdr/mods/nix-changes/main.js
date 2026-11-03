@@ -324,9 +324,7 @@ export default class Changes extends View {
 
   statusIcon(status, t) {
     const color = status === "A" ? t.ansi2 : status === "D" || status === "U" ? t.ansi1 : status === "R" ? t.ansi4 : t.ansi3;
-    const mark = status === "A" ? "plus" : status === "D" ? "minus" : null;
-    return div().size(14).flex_none().rounded(3).border_1().border_color(color).flex().items_center().justify_center()
-      .child(mark ? svg(ICON(mark)).size(10).text_color(color) : div().size(4).rounded(2).bg(color));
+    return div().w(12).flex_none().text_size(11).font_medium().text_color(color).text_center().child(status);
   }
 
   fileRow(f, t) {
@@ -337,9 +335,9 @@ export default class Changes extends View {
       .on_click((_e, cx) => this.showFile(f.path, cx))
       .child(this.checkbox(f.staged, t, (cx) => this.toggleStage(f, cx), `stage-${f.path}`))
       .child(this.statusIcon(f.status, t))
-      .child(h_flex().flex_1().min_w(0)
-        .child(div().min_w(0).flex_shrink(1).truncate().text_color(t.dim).child(dir))
-        .child(div().flex_none().text_color(f.status === "D" ? t.muted : t.foreground).when(f.status === "D", (e) => e.line_through()).child(name)))
+      .child(h_flex().flex_1().min_w(0).gap(6)
+        .child(div().flex_none().text_color(f.status === "D" ? t.muted : t.foreground).when(f.status === "D", (e) => e.line_through()).child(name))
+        .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(dir.replace(/\/$/, ""))))
       .when(f.add > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi2).child(`+${f.add}`)))
       .when(f.del > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi1).child(`−${f.del}`)));
   }
@@ -359,7 +357,7 @@ export default class Changes extends View {
     return h_flex().id(`commit-${c.sha}`).h(26).flex_none().px(8).gap(8).items_center().rounded(6).cursor_pointer()
       .hover((s) => s.bg(t.hover))
       .on_click((_e, cx) => this.openDiff(c.sha, c.subject.length > 32 ? `${c.subject.slice(0, 31)}…` : c.subject, cx))
-      .child(div().size(7).flex_none().rounded(4).bg(c.session ? t.accent : t.border))
+      .child(div().size(6).flex_none().rounded(3).bg(c.session ? t.accent : t.border))
       .child(div().flex_1().min_w(0).truncate().text_color(c.session ? t.foreground : t.muted).child(c.subject))
       .child(div().flex_none().text_size(11).text_color(t.dim).child(ago(c.time)));
   }
@@ -397,7 +395,7 @@ export default class Changes extends View {
       // The branch's PR, then the branch and the commit box.
       .when(Boolean(this.prSection(t)), (e) => e.child(this.prSection(t)))
       .child(v_flex().flex_none().border_t(1).border_color(t.border)
-        .when(Boolean(b?.name), (e) => e.child(h_flex().h(32).px(12).gap(7).items_center().text_size(12).text_color(t.muted)
+        .when(Boolean(b?.name), (e) => e.child(h_flex().h(28).px(10).gap(7).items_center().text_size(12).text_color(t.muted)
           .child(svg(ICON("git-branch")).size(13).flex_none().text_color(t.dim))
           .child(div().min_w(0).truncate().child(b.upstream ? `${b.upstream.split("/")[0]}/${b.name}` : b.name))
           .child(div().flex_1())
@@ -416,7 +414,7 @@ export default class Changes extends View {
       .when(this.commits.length > 0, (e) => e.child(v_flex().flex_none().h(Math.min(260, 40 + this.commits.length * 28)).border_t(1).border_color(t.border)
         .child(h_flex().h(32).flex_none().px(12).gap(8).items_center()
           .child(div().text_size(11).text_color(t.dim).child("History"))
-          .when(mine > 0, (e) => e.child(div().px(6).py(1).rounded(4).bg(t.accent + "26").text_size(11).text_color(t.accent)
+          .when(mine > 0, (e) => e.child(div().px(6).py(1).rounded(4).bg(t.accent + "1a").text_size(11).text_color(t.accent)
             .child(`${mine} this session`))))
         .child(v_flex().id("changes-commits").flex_1().min_h(0).overflow_y_scrollbar().px(6).pb(6)
           .children(this.commits.map((c) => this.commitRow(c, t))))));
