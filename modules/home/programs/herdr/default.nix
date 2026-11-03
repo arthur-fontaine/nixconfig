@@ -128,9 +128,17 @@ in
 
   xdg.configFile = modFiles // {
     "herdr-app/layouts/nix.json".source = ./layouts/nix.json;
-    # The layout's light and dark themes, and the icons every nix-* mod draws from.
+    # The layout's light and dark themes.
     "herdr-app/themes/nix-light.json".source = ./themes/nix-light.json;
     "herdr-app/themes/nix-dark.json".source = ./themes/nix-dark.json;
-    "herdr-app/mods/nix-head/icons" = { source = ./mods/nix-head/icons; recursive = true; };
   };
+
+  # The icons every nix-* mod draws from. Copied, not linked: Herdr draws an svg only
+  # when it is a real file in its home (a link into the store shows nothing).
+  home.activation.herdrIcons = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    rm -rf "${home}/mods/nix-head/icons"
+    mkdir -p "${home}/mods/nix-head/icons"
+    cp ${./mods/nix-head/icons}/*.svg "${home}/mods/nix-head/icons/"
+    chmod u+w "${home}/mods/nix-head/icons/"*.svg
+  '';
 }

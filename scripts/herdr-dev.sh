@@ -33,6 +33,9 @@ link() {
     for f in "$src"*; do ln -sfn "$(readlink "$f" || echo "$f")" "$HOME_DIR/mods/$name/$(basename "$f")"; done
   done
   for f in "$files"/.config/herdr-app/layouts/*; do ln -sfn "$(readlink "$f" || echo "$f")" "$HOME_DIR/layouts/$(basename "$f")"; done
+  # Copied, as the module does: Herdr draws only svgs that are real files in its home.
+  rm -rf "$HOME_DIR/mods/nix-head/icons"
+  cp -R "$repo/modules/home/programs/herdr/mods/nix-head/icons" "$HOME_DIR/mods/nix-head/icons"
   mkdir -p "$HOME_DIR/themes"
   for f in "$files"/.config/herdr-app/themes/*; do ln -sfn "$(readlink "$f" || echo "$f")" "$HOME_DIR/themes/$(basename "$f")"; done
 }
