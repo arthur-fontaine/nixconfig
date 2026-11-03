@@ -1,6 +1,11 @@
-import { View, div, image, svg } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
+// The sidebar's head and footer (workspace-chrome's two slots), reduced to their controls.
+// Head: the macOS traffic lights' inset, then the sidebar toggle. Footer: Settings (with
+// the update dot) and Add machine as icon buttons. Props: { footer? }.
+import { View, div, svg } from "gpui-kit";
+import { h_flex } from "gpui-base";
 import { theme, run, props, window, shared, setShared, updates, layout } from "herdr";
+
+const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -20,33 +25,35 @@ function toggleSidebar() {
   if (!narrow()) setShared("sidebar.width", width);
   // Mods edited before the rail went by width still read the flag.
   setShared("sidebar.collapsed", !narrow());
-  run("layout.resize", { id: "sidebar", px: narrow() ? (shared("sidebar.width") ?? 268) : window()?.platform === "macos" ? 76 : 44 });
+  run("layout.resize", { id: "sidebar", px: narrow() ? (shared("sidebar.width") ?? 256) : window()?.platform === "macos" ? 76 : 44 });
 }
 
-export default class WorkspaceChrome extends View {
-  button(id, label, action) {
+export default class Head extends View {
+  button(id, icon, tip, action, size = 28) {
     const t = theme();
-    return div().id(id).size(26).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(action).child(label);
+    return div().id(id).size(size).flex_none().relative().flex().items_center().justify_center().rounded(6).text_color(t.dim)
+      .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip)
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(action)
+      .child(svg(ICON(icon)).size(14));
   }
+
   render() {
     const t = theme();
     const collapsed = narrow();
+    const mac = window()?.platform === "macos";
     if (props()?.footer) {
-      const row = (id, icon, label, dim, action) => h_flex().id(id).h(28).px(8).gap(9).items_center().rounded(8)
-        .text_color(dim ? t.dim : t.muted).hover(s => s.bg(t.hover).text_color(t.foreground)).cursor_pointer()
-        .on_click(action).child(svg(`mods/workspace-chrome/${icon}.svg`).size(14))
-        .when(!collapsed, el => el.child(label));
-      return v_flex().size_full().bg(t.chrome).border_t(1).border_color(t.border).px(8).pt(4).pb(8).text_size(13)
-        .child(row("settings", "settings", "Settings", false, () => run("app.settings"))
-          .when(Boolean(updates().app.ready), el => el.child(div().size(6).rounded_full().bg(t.accent))))
-        .child(row("machine", "plus", "Add machine", true, () => run("mod.open", { name: "machine-add" })));
+      const settings = this.button("settings", "settings", "Settings", () => run("app.settings"))
+        .when(Boolean(updates().app.ready), (el) => el.child(div().absolute().top(5).right(5).size(6).rounded(3).bg(t.accent)));
+      // The rail has room for one button: Add machine stays in the command palette.
+      return h_flex().size_full().bg(t.chrome).border_t(1).border_color(t.border).px(8).gap(2).items_center()
+        .when(collapsed, (el) => el.justify_center())
+        .child(settings)
+        .when(!collapsed, (el) => el.child(this.button("machine", "server", "Add machine", () => run("mod.open", { name: "machine-add" }))));
     }
-    return h_flex().size_full().bg(t.chrome).pl(collapsed ? 6 : 14).pr(10).gap(4).items_center().text_size(13.5)
-      .when(window()?.platform === "macos" && !window()?.fullscreen && !collapsed, el => el.pl(76))
-      .when(!collapsed, el => el.child(h_flex().flex_1().gap(8).items_center().child(image("frame/welcome/herdr.png").size(20).rounded(5)).child(div().font_semibold().text_color(t.foreground).child("Herdr"))))
-      .when(!collapsed, el => el.child(this.button("search", svg("mods/workspace-chrome/search.svg").size(15), () => run("mod.open", { name: "picker" }))))
+    return h_flex().size_full().bg(t.chrome).pl(collapsed ? 6 : 12).pr(10).items_center()
+      .when(mac && !window()?.fullscreen && !collapsed, (el) => el.pl(76))
+      .child(div().flex_1())
       // On the macOS rail the traffic lights fill the row; the agents list's » unfolds it.
-      .when(!(collapsed && window()?.platform === "macos"), el => el.child(this.button("sidebar-toggle", svg("mods/workspace-chrome/sidebar.svg").size(15), toggleSidebar)));
+      .when(!(collapsed && mac), (el) => el.child(this.button("sidebar-toggle", "panel-left", collapsed ? "Show sidebar" : "Hide sidebar", toggleSidebar, 24)));
   }
 }

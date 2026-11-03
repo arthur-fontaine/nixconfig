@@ -8,6 +8,14 @@ function piSession(title) {
   return parts[0] === "π" && parts.length > 2 ? parts.slice(1, -1).join(" - ") : "";
 }
 
+const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
+
+// Pi's program glyph: a π in a small raised tile, as the sidebar draws it.
+function piTile(t, on) {
+  return div().size(14).flex_none().rounded(3).bg(t.raised).flex().items_center().justify_center()
+    .font_family("JetBrains Mono").font_bold().text_size(10).text_color(on ? t.foreground : t.muted).child("π");
+}
+
 function find(node, id) {
   if (node?.id === id) return node;
   for (const child of node?.children ?? []) {
@@ -56,8 +64,8 @@ export default class Tabs extends View {
     const space = spaces().find(p => p.active);
     const shown = space?.tabs ?? [];
     const stop = (_e, cx) => cx.stop_propagation();
-    const button = (id, label, action) => div().id(id).size(28).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
-      .on_mouse_down("left", stop).on_click(action).child(label);
+    const button = (id, label, action, tip) => div().id(id).size(28).flex_none().self_center().flex().items_center().justify_center().rounded(6).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
+      .when(Boolean(tip), el => el.tooltip(tip)).on_mouse_down("left", stop).on_click(action).child(label);
     const item = (c, i) => {
       const program = panes().find(p => p.tab === c.id && p.program?.agent)?.program ?? panes().find(p => p.tab === c.id)?.program;
       // An unnamed tab reads as its agent's session: Pi's "π - <name> - <folder>" title,
@@ -65,9 +73,11 @@ export default class Tabs extends View {
       const lead = panes().find(p => p.tab === c.id && p.program?.agent);
       const session = !c.named && lead?.app === "pi" ? piSession(lead.title) : "";
       const name = session || (/^tb\d+$/.test(c.name) ? program?.name ?? "Terminal" : c.name);
-      return h_flex().id(`tab-${c.id}`).h(28).px(10).gap(7).rounded(6).items_center().flex_none().text_size(12.5)
-        .border(1).border_color(c.active ? t.border : t.chrome).bg(c.active ? t.raised : t.chrome).text_color(c.active ? t.foreground : t.muted)
-        .hover(s => s.bg(t.hover))
+      // Full height; the active tab takes the terminal's color and covers the bar's bottom
+      // hairline, so it joins the pane below it.
+      return h_flex().id(`tab-${c.id}`).h(36).px(12).gap(8).rounded_t(6).items_center().flex_none().text_size(13)
+        .when(c.active, el => el.bg(t.background).border_l(1).border_t(1).border_r(1).border_color(t.border).text_color(t.foreground))
+        .when(!c.active, el => el.text_color(t.muted).hover(s => s.bg(t.hover)))
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
         .on_mouse_up("left", () => {
           const from = this.pressed; this.pressed = null;
@@ -75,40 +85,45 @@ export default class Tabs extends View {
           else run("tab.select", { id: c.id });
         })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "nix-menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: space.id } } }); })
-        .when(Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).text_color(t.muted) : image(program.icon).size(14)))
+        .when(lead?.app === "pi", el => el.child(piTile(t, c.active)))
+        .when(lead?.app !== "pi" && Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).flex_none().text_color(t.dim) : image(program.icon).size(14).flex_none()))
         .child(div().max_w(170).truncate().child(c.zoomed ? `${name} Z` : name))
-        .when(c.status === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
+        .when(c.status === "working", el => el.child(svg(ICON("loader")).size(12).flex_none().text_color(t.working).spin(900)))
         .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(3).bg(t[c.status])))
-        .when(c.active, el => el.child(div().id(`close-${c.id}`).text_color(t.dim).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg("mods/pane/close.svg").size(12))));
+        .when(c.active, el => el.child(div().id(`close-${c.id}`).text_color(t.dim).hover(s => s.text_color(t.foreground)).tooltip("Close tab").on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg(ICON("x")).size(12))));
     };
     const root = layout(), sidebar = find(root, "sidebar"), w = window();
     // Old saved rails and a dragged-narrow sidebar can be smaller than the window buttons.
     const lightsPadding = w?.platform === "macos" && w.titlebar === "none" && !w.fullscreen && root?.traffic_lights
-      ? Math.max(10, (root.traffic_lights[0] + 64) / settings().zoom - (sidebar?.hidden ? 0 : sidebar?.size?.px ?? 0))
-      : 10;
+      ? Math.max(8, (root.traffic_lights[0] + 64) / settings().zoom - (sidebar?.hidden ? 0 : sidebar?.size?.px ?? 0))
+      : 8;
     const panel = find(root, "panel"), body = find(root, "panel-body");
     const enabled = shared("workspace.panels") ?? ["files", "changes"];
     this.syncPanel(space, panel, body, enabled);
+    // Icon toggles; the shown panel's is on.
     const panelButton = (id, label, icon) => {
       const on = panel && !panel.hidden && body?.active === id;
-      return h_flex().id(`panel-${id}`).h(28).px(8).gap(5).flex_none().items_center().rounded(6)
-        .text_size(12).bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
-        .hover(s => s.bg(t.hover)).on_mouse_down("left", stop)
+      return div().id(`panel-${id}`).size(28).flex_none().flex().items_center().justify_center().rounded(6)
+        .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.dim)
+        .hover(s => s.bg(on ? t.selected : t.hover).text_color(t.foreground)).tooltip(label).on_mouse_down("left", stop)
         .on_click(() => {
           if (on) run("layout.hide", { id: "panel" });
           else { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); }
-        }).child(svg(icon).size(14)).child(label);
+        }).child(svg(ICON(icon)).size(14));
     };
-    return h_flex().size_full().min_w(0).px(8).pl(lightsPadding).gap(4).items_center().bg(t.chrome).border_b(1).border_color(t.border)
+    return h_flex().relative().size_full().min_w(0).px(8).pl(lightsPadding).gap(4).items_stretch().bg(t.chrome)
       .on_mouse_up("left", () => { this.pressed = null; })
       .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })
+      // The bar's bottom hairline, drawn first so the active tab covers it.
+      .child(div().absolute().left_0().right_0().bottom(0).h(1).bg(t.border))
       // + right after the last tab, as in a browser; the right group is the panels.
-      .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(4).overflow_x_scrollbar().children(shown.map(item))
-        .child(button("tab-new", "+", () => openOverlay({ mod: "nix-new-menu", kind: "popup", width: 240, height: 90 }))))
-      .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
-      .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
-      .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))
+      .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_stretch().gap(2).overflow_x_scrollbar().children(shown.map(item))
+        .child(button("tab-new", svg(ICON("plus")).size(14), () => openOverlay({ mod: "nix-new-menu", kind: "popup", width: 240, height: 90 }), "New tab")))
+      .child(h_flex().flex_none().self_center().gap(2)
+        .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "file")))
+        .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "git-compare"))))
+      .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs/win-min.svg").size(16) : svg(ICON("minus")).size(14), () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
-        .child(button("close-window", w.platform === "windows" ? svg("mods/tabs/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));
+        .child(button("close-window", w.platform === "windows" ? svg("mods/tabs/win-close.svg").size(16) : svg(ICON("x")).size(14), () => run("window.close"))));
   }
 }

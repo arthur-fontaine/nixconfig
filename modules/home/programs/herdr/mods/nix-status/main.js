@@ -6,12 +6,13 @@
 //   worktree  the worktree dialog (new), worktrees (open)
 //   review    the diff of the focused checkout, in the middle
 //   editor    the focused checkout in Zed, else $VISUAL's GUI editor, else a Neovim tab
-// Left: machine, branch, agents (needs you in red). Right: the focused repo and the palette hint.
+// Left: machine, branch, then the agents that matter (need you, done, working). Right: key hints.
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, agents, panes, focused, theme, run, window, keys, nextCommand, openOverlay, exec, shared, setShared } from "herdr";
 
 const RANK = { blocked: 2, done: 1 };
+const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 
 // The focused checkout: the focused pane's folder, else a terminal of the tab, else the space's.
 function place() {
@@ -70,8 +71,8 @@ export default class Status extends View {
     }
   }
 
-  // The palette key as actually bound, not a hardcoded one.
-  hint() {
+  // The keys as actually bound, not hardcoded ones: [[keys, label]].
+  hints() {
     const mac = window()?.platform === "macos";
     const mod = { cmd: mac ? "⌘" : "Ctrl+", ctrl: mac ? "⌃" : "Ctrl+", shift: mac ? "⇧" : "Shift+", alt: mac ? "⌥" : "Alt+", option: mac ? "⌥" : "Alt+" };
     const show = (action) => {
@@ -79,8 +80,8 @@ export default class Status extends View {
       const parts = b && b.keys.endsWith("--") ? [...b.keys.slice(0, -2).split("-"), "-"] : b?.keys.split("-");
       return parts && parts.map((p) => mod[p.toLowerCase()] ?? p.toUpperCase()).join("");
     };
-    return [["nix-status.dispatch", "new worktree"], ["nix-status.jump", "needs you"], ["app.palette", "commands"]]
-      .map(([a, label]) => (show(a) ? `${show(a)} ${label}` : null)).filter(Boolean).join("   ");
+    return [["nix-status.dispatch", "New worktree"], ["nix-status.jump", "Needs you"], ["app.palette", "Commands"]]
+      .flatMap(([a, label]) => (show(a) ? [[show(a), label, a]] : []));
   }
 
   render() {
@@ -90,17 +91,18 @@ export default class Status extends View {
     const needs = list.filter((a) => a.status === "blocked").length;
     const done = list.filter((a) => a.status === "done").length;
     const working = list.filter((a) => a.status === "working").length;
-    const label = (icon, text) => h_flex().gap(6).items_center().child(svg(`mods/workspace-chrome/${icon}.svg`).size(13)).child(text);
-    return h_flex().size_full().px(8).gap(14).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(12).text_color(t.muted)
+    const label = (icon, text) => h_flex().gap(5).items_center().child(svg(ICON(icon)).size(12).flex_none().text_color(t.dim)).child(text);
+    const count = (id, n, word, color) => h_flex().id(id).gap(5).items_center().cursor_pointer().text_color(color ?? t.muted)
+      .on_click(() => this.command("jump")).when(Boolean(color), (el) => el.child(div().size(6).flex_none().rounded(3).bg(color))).child(`${n} ${word}`);
+    return h_flex().size_full().px(12).gap(14).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(11).text_color(t.muted)
       .child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer"))
-      .when(Boolean(space?.branch), (el) => el.child(label("branch", space.branch)))
-      .child(h_flex().id("agents-count").gap(6).items_center().cursor_pointer().on_click(() => this.command("jump"))
-        .child(div().size(6).rounded(3).bg(needs ? t.blocked : working ? t.working : t.dim))
-        .child(`${list.length} agents`)
-        .when(working > 0, (el) => el.child(div().child(`· ${working} working`)))
-        .when(needs > 0, (el) => el.child(div().child(`· ${needs} needs you`)))
-        .when(done > 0, (el) => el.child(div().child(`· ${done} done`))))
+      .when(Boolean(space?.branch), (el) => el.child(label("git-branch", space.branch)))
+      .when(needs > 0, (el) => el.child(count("agents-need", needs, needs === 1 ? "needs you" : "need you", t.blocked)))
+      .when(done > 0, (el) => el.child(count("agents-done", done, "done", t.done)))
+      .when(working > 0, (el) => el.child(count("agents-working", working, "working")))
       .child(div().flex_1())
-      .child(div().id("palette").text_color(t.dim).cursor_pointer().on_click(() => run("app.palette")).child(this.hint()));
+      .child(h_flex().gap(14).items_center().text_color(t.dim).children(this.hints().map(([key, text, action]) =>
+        h_flex().id(`hint-${action}`).gap(4).items_center().cursor_pointer().on_click(() => run(action))
+          .child(div().font_medium().text_color(t.muted).child(key)).child(text))));
   }
 }

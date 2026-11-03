@@ -14,6 +14,8 @@ function icon(p, size, color) {
 }
 
 // The folder's name only: the sidebar already shows where it sits.
+const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
+
 function folder(cwd) {
   if (!cwd) return "";
   return cwd === home() ? "~" : cwd.replace(/\/+$/, "").split("/").pop();
@@ -41,7 +43,7 @@ export default class Pane extends View {
         cx.stop_propagation();
         run(command, args);
       })
-      .child(svg(`mods/pane/${icon}.svg`).size(12));
+      .child(svg(ICON(icon)).size(12));
   }
 
   render(cx) {
@@ -49,7 +51,10 @@ export default class Pane extends View {
     const p = this.me();
     if (!p) return div();
     const name = ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
-    const pic = icon(p.program, 14, t.dim);
+    // Pi as the π tile the tabs and sidebar draw.
+    const pic = p.app === "pi"
+      ? div().size(14).flex_none().rounded(3).bg(t.raised).flex().items_center().justify_center().font_family("JetBrains Mono").font_bold().text_size(10).text_color(p.focused ? t.foreground : t.muted).child("π")
+      : icon(p.program, 14, t.dim);
     const st = p.status;
     const pane = p.pane;
     return h_flex()
@@ -67,14 +72,13 @@ export default class Pane extends View {
       .when(Boolean(pic), (el) => el.child(pic))
       .child(div().flex_none().truncate().max_w(260).text_color(p.focused ? t.foreground : t.muted).child(name))
       .child(div().flex_1().truncate().text_color(t.dim).child(folder(p.cwd)))
-      .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
-      // A dot and a word, as in the sidebar and status bar; no pill.
-      .when(st === "blocked" || st === "done", el => el.child(h_flex().flex_none().gap(6).items_center().text_size(11).text_color(t[st])
-        .child(div().size(7).flex_none().rounded(4).bg(t[st])).child(st === "blocked" ? "Needs you" : "Done")))
+      .when(st === "working", el => el.child(svg(ICON("loader")).size(12).flex_none().text_color(t.working).spin(900)))
+      // The status vocabulary: a 6px dot, no word.
+      .when(st === "blocked" || st === "done", el => el.child(div().size(6).flex_none().rounded(3).bg(t[st])))
       .when(this.hovered, el => el
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
         .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
         .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
-        .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })));
+        .child(this.button(t, `ph-x-${pane}`, "x", "pane.close", { pane })));
   }
 }
