@@ -49,6 +49,14 @@ const MONO = "JetBrains Mono";
 const SHOWN = 200;
 const TOOL_ICON = { bash: "terminal", read: "file", edit: "pen", write: "pen", ask: "help-circle", fetch: "globe", agent: "user" };
 const LABELS = { usage: "Usage", context: "Context window", activity: "Agent activity", lines: "Lines changed" };
+const KINDS = [
+  { key: "all", label: "All" },
+  { key: "bash", label: "bash", keep: (c) => c.kind === "bash" },
+  { key: "read", label: "read", keep: (c) => c.kind === "read" },
+  { key: "edit", label: "edit/write", keep: (c) => c.kind === "edit" || c.kind === "write" },
+  { key: "ask", label: "ask", keep: (c) => c.kind === "ask" },
+  { key: "errors", label: "errors", keep: (c) => c.error === true },
+];
 // "in 2h 10m" reads as is; days read as words in the sub-lines ("in 4 days").
 const days = (msec) => { const d = Math.round(msec / 86400000); return d >= 1 && msec >= 86400000 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(msec); };
 const usageColor = (t, r) => (r >= 0.85 ? t.blocked : r >= 0.6 ? t.ansi3 : t.done);
@@ -67,6 +75,19 @@ export default class Info extends View {
     this.detail = null;
     this.asked = undefined;
     this.all = false; // every tool call rendered, not just the latest 200
+    this.kind = "all"; // the activity detail's filter
+    this.handle = cx.focus_handle();
+  }
+
+  open(key, cx) {
+    this.detail = key;
+    this.handle.focus();
+    cx.notify();
+  }
+
+  back(cx) {
+    this.detail = null; this.all = false; this.kind = "all";
+    cx.notify();
   }
 
   // The session file of a Pi pane: its label, else the newest file in its cwd's session
@@ -161,14 +182,15 @@ export default class Info extends View {
   // Values in `muted` among `dim` words: parts are strings (dim) or [text] (muted).
   mixed(t, parts) {
     return h_flex().min_w(0).gap(0).text_size(12).text_color(t.dim).overflow_hidden()
-      .children(parts.map((p, i) => div().flex_none().text_color(Array.isArray(p) ? t.muted : t.dim).child(Array.isArray(p) ? p[0] : p)));
+      .children(parts.map((p, i) => div().when(i < parts.length - 1, (e) => e.flex_none()).when(i === parts.length - 1, (e) => e.min_w(0).truncate())
+        .text_color(Array.isArray(p) ? t.muted : t.dim).child(Array.isArray(p) ? p[0] : p)));
   }
 
   // A key figure tile: label, figure + qualifier, optional bar, sub-line; a click opens its detail.
   tile(t, key, label, figure, qualifier, barEl, sub) {
     return h_flex().id(`tile-${key}`).px(16).py(10).gap(10).items_center().border_b(1).border_color(t.border)
       .cursor_pointer().hover((e) => e.bg(t.hover))
-      .on_click((_e, cx) => { this.detail = key; cx.notify(); })
+      .on_click((_e, cx) => this.open(key, cx))
       .child(v_flex().flex_1().min_w(0).gap(3)
         .child(div().text_size(12).font_medium().text_color(t.muted).line_height("16px").child(label))
         .child(h_flex().gap(8).items_baseline().child(figure).child(div().min_w(0).truncate().text_size(13).text_color(t.muted).child(qualifier)))
@@ -198,7 +220,7 @@ export default class Info extends View {
       .when(path, (e) => e.text_ellipsis_start()).when(!path, (e) => e.truncate()).child(c.arg || c.name);
     return h_flex().id(`call-${c.id}`).h(big ? 32 : 28).flex_none().px(big ? 6 : 16).when(big, (e) => e.mx(10).rounded(6)).gap(big ? 10 : 8).items_center()
       .when(c.running, (e) => e.bg(t.hover)).when(!c.running, (e) => e.hover((x) => x.bg(t.hover)))
-      .when(Boolean(c.arg), (e) => e.tooltip(c.arg))
+      .when(Boolean(c.full || c.arg), (e) => e.tooltip(c.full || c.arg))
       .when(Boolean(opens), (e) => e.cursor_pointer().on_click(() => run("tab.new", { mod: "nix-editor", name: c.path.split("/").pop(), props: { file: c.path } })))
       .child(svg(ICON(icon)).size(big ? 13 : 14).flex_none().text_color(t.dim))
       .child(div().w(40).flex_none().text_size(12.5).text_color(c.error ? t.blocked : t.muted).child(c.kind))
@@ -244,13 +266,13 @@ export default class Info extends View {
 
   usageTile(t, f, now) {
     const u = f.usage, w = u?.fiveHour;
-    if (!u || !w) return this.tile(t, "usage", "Usage, this 5 hours", this.figure(t, "—", t.muted), "no usage reported yet", null, null);
-    const qualifier = u.stale ? `${infoSpan(now - u.at)} ago` : w.resetsAt ? `resets in ${infoSpan(w.resetsAt - now)}` : "";
+    if (!u || !w) return this.tile(t, "usage", "Usage · 5 h", this.figure(t, "—", t.muted), "no usage reported yet", null, null);
+    const qualifier = u.stale ? `${infoAge(now - u.at)} ago` : w.resetsAt ? `resets in ${infoSpan(w.resetsAt - now)}` : "";
     const week = u.sevenDay;
     const sub = u.overage
       ? div().text_size(12).text_color(t.blocked).truncate().child(`Overage on · ${u.overageStatus ?? ""}`)
       : this.mixed(t, week ? ["This week ", [pct(week.ratio)], ...(week.resetsAt ? [` · resets in ${days(week.resetsAt - now)}`] : [])] : [" "]);
-    return this.tile(t, "usage", "Usage, this 5 hours", this.figure(t, pct(w.ratio), u.stale ? t.muted : t.foreground), qualifier,
+    return this.tile(t, "usage", "Usage · 5 h", this.figure(t, pct(w.ratio), u.stale ? t.muted : t.foreground), qualifier,
       this.bar(t, w.ratio, usageColor(t, w.ratio)), sub);
   }
 
@@ -262,10 +284,10 @@ export default class Info extends View {
       rows.push(this.usageTile(t, f, now));
       return rows;
     }
-    const meta = s && f.started ? [[s.model ?? "model"], " · thinking ", [s.thinking ?? "—"], " · ", [`${s.messages} msgs`], " · started ", [`${infoAge(now - s.started)} ago`]] : ["…"];
+    const meta = s && f.started ? [[s.model ?? "model"], " · thinking ", [s.thinking ?? "—"], " · ", [`${s.messages} msgs`], " · ", [infoAge(now - s.started)]] : ["…"];
     rows.push(v_flex().px(16).py(10).gap(4).border_b(1).border_color(t.border)
       .child(h_flex().gap(8).items_center().child(this.piTile(t))
-        .child(div().min_w(0).truncate().text_size(14).font_medium().text_color(t.foreground).child(s?.name ?? infoParseTitle(this.pane.title)?.name ?? "Pi"))
+        .child(div().flex_1().min_w(0).truncate().text_size(14).font_medium().text_color(t.foreground).child(s?.name ?? infoParseTitle(this.pane.title)?.name ?? "Pi"))
         .when(Boolean(f.working), (e) => e.child(this.spinner(t, 14))))
       .child(this.mixed(t, meta)));
     rows.push(this.usageTile(t, f, now));
@@ -282,8 +304,7 @@ export default class Info extends View {
     const since = f.running.reduce((m, r) => Math.min(m, r.started ?? now), now);
     rows.push(this.tile(t, "activity", "Agent activity",
       this.figure(t, f.running.length ? `${f.running.length} running` : "Idle"),
-      f.running.length ? `since ${infoDuration(now - since)}` : last ? `last call ${infoSpan(now - last)} ago` : "no tool calls yet", null,
-      this.mixed(t, f.total ? [[`${f.total} tool calls`], ...(f.errors ? [" · ", [`${f.errors} errors`]] : [])] : ["No tool calls yet"])));
+      f.running.length ? `since ${infoDuration(now - since)}` : last ? `last call ${infoAge(now - last)} ago` : "no tool calls yet", null, null));
     const l = f.lines, added = l.rows.reduce((n, r) => n + r.added, 0), removed = l.rows.reduce((n, r) => n + r.removed, 0);
     rows.push(this.tile(t, "lines", "Lines changed",
       l.files ? h_flex().gap(8).child(this.figure(t, `+${added}`, t.ansi2)).child(this.figure(t, `−${removed}`, t.ansi1)) : this.figure(t, "—", t.muted),
@@ -318,7 +339,7 @@ export default class Info extends View {
           ...(u.fiveHour ? [row("This 5 hours", u.fiveHour)] : []),
           ...(u.sevenDay ? [row("This week", u.sevenDay)] : []),
           ...(u.overage ? [this.kv(t, "Overage", div().text_size(12).text_color(t.blocked).child(u.overageStatus ?? "on"))] : []),
-          div().px(16).pt(8).text_size(12).text_color(t.dim).child(`Updated ${infoSpan(now - (u.at ?? now))} ago`),
+          div().px(16).pt(8).text_size(12).text_color(t.dim).child(`Updated ${infoAge(now - (u.at ?? now))} ago`),
         ];
       }
       case "context": {
@@ -330,23 +351,32 @@ export default class Info extends View {
           h_flex().h(30).px(16).gap(10).items_center().child(div().flex_1().child(this.bar(t, c.ratio, contextColor(t, c.ratio))))
             .child(div().text_size(13).font_medium().child(pct(c.ratio)))
             .child(div().text_size(12).text_color(t.dim).child(`${infoTokens(c.used)} / ${infoTokens(c.window)}`)),
-          h_flex().h(24).px(16).gap(1).items_end().children(spark.map((b, i) =>
-            div().w(4).flex_none().rounded(1).h(Math.max(1, Math.round(b.ratio * 24)))
+          h_flex().h(20).px(16).gap(1).items_end().children(spark.map((b, i) =>
+            div().w(4).flex_none().rounded(1).h(Math.max(1, Math.round(b.ratio * 20)))
               .bg(i === spark.length - 1 ? t.accent : b.afterCompaction ? t.dim : t.input))),
           div().h(8),
           this.kv(t, "Cache hits", h_flex().gap(8).items_baseline().child(div().text_size(13).font_medium().child(pct(cache.session)))
             .child(div().text_size(12).text_color(t.dim).child(`${pct(cache.last)} on the last request`))),
           this.kv(t, "Cache tokens", div().text_size(12).text_color(t.muted).child(`${infoTokens(cache.read)} read · ${infoTokens(cache.written)} written`)),
           this.kv(t, "Compactions", div().text_size(12).text_color(t.muted).child(c.compactions
-            ? `${c.compactions}${s.lastCompaction ? ` · last ${infoSpan(now - s.lastCompaction)} ago` : ""}` : "none yet")),
+            ? `${c.compactions}${s.lastCompaction ? ` · last ${infoAge(now - s.lastCompaction)} ago` : ""}` : "none yet")),
         ];
       }
       case "activity": {
         if (!s) return [];
+        const keep = KINDS.find((k) => k.key === this.kind)?.keep ?? (() => true);
+        const running = f.running.filter(keep), history = f.history.filter(keep);
+        const chip = (k) => {
+          const on = this.kind === k.key;
+          return div().id(`kind-${k.key}`).h(22).px(8).flex_none().flex().items_center().rounded(6).cursor_pointer().text_size(12)
+            .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted).when(!on, (e) => e.hover((x) => x.bg(t.hover)))
+            .on_click((_e, cx) => { this.kind = k.key; this.all = false; cx.notify(); }).child(k.label);
+        };
         return [
-          ...(f.running.length ? [this.section(t, "Running", String(f.running.length), false), ...f.running.map((c) => this.toolRow(t, c, now, true))] : []),
-          this.section(t, "History", `${f.history.length} calls${f.errors ? ` · ${f.errors} errors` : ""}`, f.running.length > 0),
-          ...(f.history.length ? this.toolList(t, [], f.history, now, true) : [div().px(16).py(12).text_size(12).text_color(t.dim).child("No tool calls yet")]),
+          h_flex().h(36).flex_none().px(14).gap(2).items_center().children(KINDS.map(chip)),
+          ...(running.length ? [this.section(t, "Running", String(running.length)), ...running.map((c) => this.toolRow(t, c, now, true))] : []),
+          this.section(t, "History", `${history.length} calls${f.errors && this.kind === "all" ? ` · ${f.errors} errors` : ""}`),
+          ...(history.length ? this.toolList(t, [], history, now, true) : [div().px(16).py(12).text_size(12).text_color(t.dim).child("None")]),
         ];
       }
       case "lines": {
@@ -383,10 +413,12 @@ export default class Info extends View {
     const header = h_flex().h(36).flex_none().px(16).gap(6).items_center().border_b(1).border_color(t.border)
       .when(Boolean(this.detail), (e) => e.child(div().id("info-back").ml(-8).size(24).flex_none().flex().items_center().justify_center().rounded(6)
         .text_color(t.dim).cursor_pointer().hover((x) => x.bg(t.hover).text_color(t.foreground)).tooltip("Back")
-        .on_click((_e, cx) => { this.detail = null; this.all = false; cx.notify(); }).child(svg(ICON("chevron-left")).size(13))))
+        .on_click((_e, cx) => this.back(cx)).child(svg(ICON("chevron-left")).size(13))))
       .child(div().flex_none().text_size(13).font_medium().text_color(t.foreground).child(this.detail ? LABELS[this.detail] : "Info"))
       .when(Boolean(meta), (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(meta)));
-    const root = v_flex().id("info").size_full().min_h(0).bg(t.chrome).text_color(t.foreground).child(header);
+    const root = v_flex().id("info").track_focus(this.handle).size_full().min_h(0).bg(t.chrome).text_color(t.foreground)
+      .on_key_down((e, cx) => { if (e.key === "escape" && this.detail) { cx.stop_propagation(); this.back(cx); } })
+      .child(header);
     if (this.detail) return root.child(v_flex().id("info-detail").flex_1().min_h(0).overflow_y_scrollbar().pb(8).children(this.detailView(t, f, now)));
     const top = this.overview(t, f, now);
     if (!this.session || !f.started) return root.child(v_flex().flex_none().children(top));

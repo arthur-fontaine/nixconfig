@@ -62,13 +62,36 @@ function rel(path, cwd) {
 
 const firstLine = (s) => String(s ?? "").split("\n")[0];
 
+// A bash command as people read it: without the set-up in front of the real program
+// (`cd <dir> &&`, `export X=…;`, `X=… ` assignments, `set -e;`), repeatedly; newlines
+// count as `;`. When nothing is left, the command as written.
+const WORD = `(?:"[^"]*"|'[^']*'|\\$\\([^)]*\\)|[^\\s;&|]+)`;
+const SEP = "\\s*(?:&&|;|\\n)\\s*";
+const NOISE = [
+  new RegExp(`^cd(?:\\s+${WORD})?${SEP}`),
+  new RegExp(`^export\\s+[A-Za-z_]\\w*(?:=${WORD})?(?:\\s+[A-Za-z_]\\w*(?:=${WORD})?)*${SEP}`),
+  new RegExp(`^set(?:\\s+[^;&\\n]+)?${SEP}`),
+  new RegExp(`^[A-Za-z_]\\w*=${WORD}?(?:${SEP}|\\s+)`),
+];
+export function infoCommand(command) {
+  let rest = String(command ?? "").replace(/^\s+/, "");
+  for (let changed = true; changed && rest;) {
+    changed = false;
+    for (const re of NOISE) {
+      const m = re.exec(rest);
+      if (m && m[0].length < rest.length) { rest = rest.slice(m[0].length).replace(/^\s+/, ""); changed = true; }
+    }
+  }
+  return firstLine(rest || command).trim();
+}
+
 // A tool call as listed: `kind` is the short word, `arg` the one thing that tells calls apart.
 export function infoTool(call, cwd) {
   const a = call.arguments ?? {};
   const base = { id: call.id, name: call.name, path: null };
   switch (call.name) {
     case "bash":
-      return { ...base, kind: "bash", arg: firstLine(a.command) };
+      return { ...base, kind: "bash", arg: infoCommand(a.command), full: String(a.command ?? "") };
     case "read":
     case "edit":
     case "write":
@@ -219,7 +242,7 @@ export function infoCache(state) {
 export function infoTools(state) {
   return state.order.slice().reverse().map((id) => {
     const c = state.tools.get(id);
-    return { id: c.id, kind: c.kind, name: c.name, arg: c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null };
+    return { id: c.id, kind: c.kind, name: c.name, arg: c.arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null };
   });
 }
 
@@ -289,7 +312,8 @@ export function infoTokens(n) {
 // 120 → "0.1s", 2400 → "2.4s", 242000 → "4m 02s", 3 h → "3h 05m".
 export function infoDuration(msec) {
   if (msec === null || msec === undefined) return "";
-  if (msec < 100) return "<0.1s";
+  // Instant calls say nothing; the column keeps its width.
+  if (msec < 100) return "";
   const s = msec / 1000;
   if (s < 60) return `${s < 10 ? (Math.round(s * 10) / 10).toFixed(1) : Math.round(s)}s`;
   const m = Math.floor(s / 60);

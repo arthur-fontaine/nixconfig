@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  infoCache, infoCategory, infoFiles, infoLastCall, infoContext, infoDuration, infoFeed, infoLineDiff, infoLines, infoNewSession, infoParseTitle,
+  infoCache, infoCategory, infoCommand, infoFiles, infoLastCall, infoContext, infoDuration, infoFeed, infoLineDiff, infoLines, infoNewSession, infoParseTitle,
   infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length,
 } from "../model.js";
 
@@ -79,6 +79,7 @@ test("helpers", () => {
   assert.equal(infoTokens(1_400_000), "1.4M");
   assert.equal(infoTokens(8600), "8.6k");
   assert.equal(infoDuration(120), "0.1s");
+  assert.equal(infoDuration(40), "");
   assert.equal(infoDuration(242000), "4m 02s");
   assert.equal(infoSpan(130 * 60000), "2h 10m");
   assert.equal(infoSpan(4 * 86400000), "4d");
@@ -102,4 +103,15 @@ test("last call, last compaction, touched files", () => {
   assert.equal(infoLastCall(s), Date.parse("2026-11-03T10:01:05.000Z"));
   assert.equal(s.lastCompaction, Date.parse("2026-11-03T10:01:00.000Z"));
   assert.deepEqual(infoFiles(s).map((f) => [f.rel, f.added, f.removed]), [["src/x.ts", 2, 1], ["src/x.test.ts", 2, 0]]);
+});
+
+test("bash commands lose their set-up in front", () => {
+  assert.equal(infoCommand("cd ~/Developer/code/x && git status --porcelain"), "git status --porcelain");
+  assert.equal(infoCommand('cd "/a b"; export HERDR_APP_HOME=/tmp/h; herdr-app check x'), "herdr-app check x");
+  assert.equal(infoCommand("H=~/.config/herdr-app; sed -n 1,5p $H/AGENTS.md"), "sed -n 1,5p $H/AGENTS.md");
+  assert.equal(infoCommand("set -euo pipefail; FOO=1 BAR=$(date) node --test x"), "node --test x");
+  assert.equal(infoCommand("cd modules/home\ngrep -n x y"), "grep -n x y");
+  assert.equal(infoCommand("export A=1 B=2 && pnpm test"), "pnpm test");
+  assert.equal(infoCommand("cd /tmp"), "cd /tmp");
+  assert.equal(infoCommand("git log -n 5"), "git log -n 5");
 });
