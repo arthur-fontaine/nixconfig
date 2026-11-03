@@ -87,6 +87,7 @@ let
     "cmd-shift-b" = "nix-status.worktrees";
     "cmd-shift-r" = "nix-status.review";
     "cmd-shift-o" = "nix-status.editor";
+    "cmd-f" = "nix-sidebar.filter"; # the sidebar is always shown too
   };
   shared = {
     layout = "nix";

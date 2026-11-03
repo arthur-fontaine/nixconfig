@@ -6,7 +6,7 @@
 // worktree starts Pi or a terminal in it; right-click a worktree for its menu.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { spaces, panes, agents, terminals, machines, run, openOverlay, exec, theme, window, layout, watchFolder, setAgentOrder, pickFolder, home, shared, setShared } from "herdr";
+import { spaces, panes, agents, terminals, machines, run, openOverlay, exec, theme, window, layout, watchFolder, setAgentOrder, pickFolder, home, shared, setShared, focused, nextCommand } from "herdr";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // Repo state can only change on its own this rarely while nothing happens here.
@@ -91,8 +91,45 @@ export default class Sidebar extends View {
     this.input.on("change", (_e, cx) => { this.filter = this.input.value().trim().toLowerCase(); cx.notify(); });
     this.input.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.input.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
+    this.input.on("submit", (_e, cx) => this.openFirst(cx));
+    // ⌘F (nix-sidebar.filter in keys.json) puts the keyboard in the filter.
+    cx.spawn(async (cx) => {
+      for (;;) {
+        const command = await nextCommand();
+        if (command === "filter") this.input.focus();
+        cx.notify();
+      }
+    });
     cx.timer.every(400, (cx) => this.tick(cx));
     cx.timer.every(30000, (cx) => cx.notify());
+  }
+
+  clearFilter(cx) {
+    this.input.set_value("");
+    this.filter = "";
+    cx.notify();
+  }
+
+  // The keyboard back to the pane it came from.
+  leaveFilter() {
+    const pane = focused()?.pane;
+    if (pane) run("pane.focus", { pane });
+  }
+
+  // Enter: the first row the filter matched (recorded by the last render), then back to it.
+  openFirst(cx) {
+    const hit = this.first ?? this.firstAny;
+    if (!hit) return;
+    run("space.select", { id: hit.space });
+    if (hit.tab) run("tab.select", { id: hit.tab });
+    cx.timer.after(50, () => this.leaveFilter());
+  }
+
+  filterKey(e, cx) {
+    if (e.key !== "escape") return;
+    cx.stop_propagation();
+    if (this.input.value()) this.clearFilter(cx);
+    else this.leaveFilter();
   }
 
   save(name, set) { localStorage.setItem(name, JSON.stringify([...set])); }
@@ -377,6 +414,7 @@ export default class Sidebar extends View {
 
   tabRow(s, tab, ps, t, order) {
     const { lead, label } = this.tabInfo(tab, ps);
+    if (this.filter && !this.first && this.matches(label)) this.first = { space: s.id, tab: tab.id };
     for (const a of agents()) if (a.tab === tab.id) order.push(a.address);
     const id = `tab-${tab.id}`, on = s.active && tab.active;
     const time = tab.status === "working" ? tab.working_since : tab.changed_at;
@@ -397,6 +435,8 @@ export default class Sidebar extends View {
   worktreeRow({ s, g }, ps, t, order) {
     const id = `space-${s.id}`, folded = this.folded.has(s.id);
     const title = g ? (g.branch ?? "detached") : s.name;
+    if (this.filter && !this.first && this.matches(title)) this.first = { space: s.id };
+    if (this.filter && !this.firstAny) this.firstAny = { space: s.id };
     // The worktree row stands for its orchestrator: its tab isn't listed, its workers are.
     const orchestrator = (s.tabs ?? []).find(isOrchestrator);
     const tabs = (s.tabs ?? []).filter((x) => !x.settled && x !== orchestrator);
@@ -492,6 +532,7 @@ export default class Sidebar extends View {
     const t = theme();
     if (narrow()) return this.rail(t);
     const { open, closed, folders, ps } = this.model();
+    this.first = null; this.firstAny = null;
     const order = [];
     const info = (s) => this.git[where(s, ps)] ?? null;
     const body = [
@@ -501,16 +542,25 @@ export default class Sidebar extends View {
     const rest = closed.flatMap((r) => this.repoBlock(r, ps, t, order));
     setAgentOrder(order);
     const remote = machines().filter((m) => m.name && m.layout === "loading");
+    const filled = Boolean(this.input.value());
     return v_flex().size_full().min_h(0).bg(t.chrome).text_color(t.foreground)
-      // The filter: a raised field without a border at rest, the focus ring while typing.
-      .child(h_flex().flex_none().px(10).pb(8).gap(6).items_center()
-        .child(h_flex().flex_1().h(28).px(9).gap(7).items_center().rounded(6).bg(t.raised)
-          .border_1().border_color(this.typing ? (t.ring ?? t.accent) : t.raised)
+      // The filter, in the app's one field vocabulary (background + hairline, ring on focus),
+      // its box on the tree rows' edges (px 6); text at the size of the rows it filters.
+      .child(h_flex().flex_none().px(6).pb(8).gap(8).items_center()
+        .child(h_flex().id("filter").flex_1().h(28).pl(10).pr(8).gap(7).items_center().rounded(6).bg(t.background)
+          .border_1().border_color(this.typing ? (t.ring ?? t.accent) : t.border)
+          .when(!this.typing, (e) => e.hover((x) => x.border_color(t.input)))
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-          .child(svg(ICON("search")).size(13).flex_none().text_color(t.dim))
-          .child(Input.new(this.input).flex_1().h_full().text_size(12).text_color(t.foreground)))
+          .on_key_down((e, cx) => this.filterKey(e, cx))
+          .child(svg(ICON("search")).size(13).flex_none().text_color(this.typing || filled ? t.muted : t.dim))
+          .child(Input.new(this.input).flex_1().h_full().text_size(13).text_color(t.foreground))
+          .when(filled, (e) => e.child(div().id("filter-clear").size(16).flex_none().rounded(4).flex().items_center().justify_center()
+            .text_color(t.dim).hover((x) => x.bg(t.hover).text_color(t.foreground)).tooltip("Clear")
+            .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+            .on_click((_e, cx) => { this.clearFilter(cx); this.input.focus(); })
+            .child(svg(ICON("x")).size(10)))))
         .child(div().id("open-folder").size(28).flex_none().rounded(6).flex().items_center().justify_center().text_color(t.dim)
-          .hover((x) => x.bg(t.hover).text_color(t.foreground)).tooltip("Open a folder or repo")
+          .hover((x) => x.bg(t.hover).text_color(t.foreground)).active((x) => x.bg(t.selected)).tooltip("Open a folder or repo")
           .on_click((_e, cx) => cx.spawn(async () => {
             const folder = await pickFolder({ prompt: "Open" });
             if (folder) run("space.new", { folder });

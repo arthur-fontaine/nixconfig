@@ -50,10 +50,10 @@ export default class Head extends View {
         .child(settings)
         .when(!collapsed, (el) => el.child(this.button("machine", "server", "Add machine", () => run("mod.open", { name: "machine-add" }))));
     }
-    return h_flex().size_full().bg(t.chrome).pl(collapsed ? 6 : 12).pr(10).items_center()
+    return h_flex().size_full().bg(t.chrome).pl(collapsed ? 6 : 12).pr(6).items_center()
       .when(mac && !window()?.fullscreen && !collapsed, (el) => el.pl(76))
       .child(div().flex_1())
       // On the macOS rail the traffic lights fill the row; the agents list's » unfolds it.
-      .when(!(collapsed && mac), (el) => el.child(this.button("sidebar-toggle", "panel-left", collapsed ? "Show sidebar" : "Hide sidebar", toggleSidebar, 24)));
+      .when(!(collapsed && mac), (el) => el.child(this.button("sidebar-toggle", "panel-left", collapsed ? "Show sidebar" : "Hide sidebar", toggleSidebar)));
   }
 }
