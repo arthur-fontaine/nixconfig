@@ -1,8 +1,45 @@
 diff --git a/src/claude-cli.ts b/src/claude-cli.ts
-index 6c0595e..2e8812b 100644
+index 6c0595e..e87576a 100644
 --- a/src/claude-cli.ts
 +++ b/src/claude-cli.ts
-@@ -629,6 +629,30 @@ function normalizeLeadingSystemCache(system: unknown): void {
+@@ -316,6 +316,36 @@ export async function discoverClaudeModels(
+   }
+ }
+ 
++// Claude Code's own updater rewrites its binary in place; a spawn in that window fails with
++// ENOEXEC (half-written file), ETXTBSY or ENOENT. Waiting until the process really started,
++// and trying again a few times, rides out the reinstall instead of failing the turn.
++const RESPAWN_CODES = new Set(["ENOEXEC", "ETXTBSY", "ENOENT", "EACCES"]);
++
++async function spawnStarted(
++  command: string,
++  args: string[],
++  options: Parameters<typeof spawn>[2],
++): Promise<ChildProcess> {
++  for (let attempt = 0; ; attempt++) {
++    let failure: NodeJS.ErrnoException | null;
++    let child: ChildProcess | undefined;
++    try {
++      // ENOEXEC is thrown right away on macOS; other failures come as an "error" event.
++      child = spawnCommand(command, args, options);
++      const started = child;
++      failure = await new Promise<NodeJS.ErrnoException | null>((resolve) => {
++        started.once("spawn", () => resolve(null));
++        started.once("error", (error: NodeJS.ErrnoException) => resolve(error));
++      });
++    } catch (error) {
++      failure = error as NodeJS.ErrnoException;
++    }
++    if (!failure && child) return child;
++    if (attempt >= 6 || !RESPAWN_CODES.has(failure.code ?? "")) throw failure;
++    await new Promise((resolve) => setTimeout(resolve, 500));
++  }
++}
++
+ function spawnCommand(
+   command: string,
+   args: string[],
+@@ -629,6 +659,30 @@ function normalizeLeadingSystemCache(system: unknown): void {
    }
  }
  
@@ -33,7 +70,16 @@ index 6c0595e..2e8812b 100644
  export function rewriteInitialRequest(
    body: Buffer,
    prefix: unknown[] | undefined,
-@@ -898,10 +922,9 @@ class ClaudeProcess {
+@@ -805,7 +859,7 @@ class ClaudeProcess {
+         JSON.stringify(mcp),
+       ];
+ 
+-      child = spawnCommand(command, args, {
++      child = await spawnStarted(command, args, {
+         // Claude Code tells the model its process cwd. Keep transport files
+         // private while exposing Pi's real working directory to the model.
+         cwd: input.cwd ?? process.cwd(),
+@@ -898,10 +952,9 @@ class ClaudeProcess {
        input.onEvent?.(event);
      };
      const canonicalInitialUser = input.frames.find((frame) => frame.type === "user")?.message.content ?? [];
@@ -46,7 +92,7 @@ index 6c0595e..2e8812b 100644
              rewriteInitialRequest(
                body,
                input.initialUserPrefix,
-@@ -909,7 +932,13 @@ class ClaudeProcess {
+@@ -909,7 +962,13 @@ class ClaudeProcess {
                input.initialSystemMessages,
                input.nativeSystemInjections,
              )
