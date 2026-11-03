@@ -64,7 +64,41 @@ For an *ask*, in order (function at `m527.p.js:120409`):
 
 Before the call reaches step 1, Bash's own check already allows many
 read-only commands (`ls`, `cat`, `git status`, …) through a large command
-validator, so those never reach auto mode at all.
+validator, so those never reach auto mode at all. As read in 2.1.317
+(`yrt` = checkReadOnlyConstraints, called per subcommand from `qVr`; the
+compound handling in `x2e`):
+
+- The command is parsed with tree-sitter (`zU`); too complex, a subshell or
+  command group, `&`, a bare assignment outside the allowlist, or a `$` plus
+  a variable character outside single quotes (`t2e`) → not read-only.
+- Per simple command: redirects only `<`-type, to `/dev/null`, or `>&N`;
+  env prefixes only from a fixed list (`LANG`, `TZ`, `NO_COLOR`, …) with a
+  value that is not a path; no `~user`; an unquoted glob only for `ls cat
+  head tail wc stat grep … cd` (and then no flag check). Then the argv
+  verdict (`EDo`: commands read-only with any arguments such as `cat head
+  tail wc stat diff du df …`, `echo`, `ls`, `cd` with at most one operand,
+  `find` without `-exec -delete -fprint …`, `printf` without escapes that
+  write bytes), else the text verdict (`RDo`): the safe-flag table
+  (`e2t`: `git diff/log/show/status/blame/branch/tag/…`, `grep`, `rg`,
+  `sed`, `sort`, `xargs` into `echo printf wc grep head tail`, `tree`,
+  `date`, `ps`, `docker logs/inspect`, `test`, …; every flag in the table
+  with a value of the right type, an argument with `$` or brace expansion
+  refused, plus per-command callbacks), or a text pattern (`jq`, `uniq`,
+  …). `gh` read commands are in an internal-only table and not used.
+- Git (`Jft`): refused when the working directory's `.git` file or symlink
+  points somewhere that is not under a `.git` directory (a bare repository
+  kept in `.bare/`, as in a worktree layout), or when bare-repository files
+  lie in the directory or a parent.
+- Paths (`ZQ`/`QIo`): the path operands of `cd ls find cat head tail grep
+  rg sed jq git grep/diff …` must resolve (symlinks followed) inside the
+  working directories.
+- `cd`: the exact text `cd <cwd>` is dropped; more than one `cd` → ask; a
+  `cd` and a git command together → ask unless the `cd` target is the
+  working directory itself (same inode); a leading `cd DIR &&` (only `&&`
+  and `|` in the command, DIR absolute or `./…`, inside the working
+  directories) makes later paths resolve from DIR, otherwise they resolve
+  from the working directory. Pipes split the command into segments that are
+  each checked this way.
 
 ## 2. The classifier
 
