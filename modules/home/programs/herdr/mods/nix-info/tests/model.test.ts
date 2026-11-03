@@ -3,7 +3,7 @@ import { test } from "node:test";
 import {
   infoCache, infoCategory, infoCommand, infoFiles, infoLastCall, infoContext, infoDuration, infoFeed, infoLineDiff, infoLines, infoNewSession, infoParseTitle,
   infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length,
-  infoCapValue, infoClock, infoEditDiff, infoJsonLines, infoResultLines, RESULT_CAP,
+  infoCapValue, infoClock, infoEditDiff, infoJsonLines, infoParseDiff, infoResultLines, RESULT_CAP,
 } from "../model.js";
 
 const line = (o) => JSON.stringify(o) + "\n";
@@ -153,4 +153,12 @@ test("an edit reads as a diff, a result as its first lines", () => {
   assert.deepEqual(infoEditDiff({ path: "p" }), []);
   assert.deepEqual(infoResultLines("1\n2\n3\n", 2), { lines: ["1", "2"], more: 1 });
   assert.match(infoClock(Date.UTC(2026, 10, 3, 10, 0, 0, 7)), /^\d\d:00:00\.007$/);
+});
+
+test("Pi's edit diff gives numbered lines and the changed range", () => {
+  const d = infoParseDiff("     ...\n  27 }\n- 28 const a = 1;\n+ 28 const a = 2;\n+ 29   // indented\n     ...\n  40 end");
+  assert.deepEqual(d.lines.map((l) => `${l.sign}${l.num ?? ""}|${l.text}`), [" |⋯", " 27|}", "-28|const a = 1;", "+28|const a = 2;", "+29|  // indented", " |⋯", " 40|end"]);
+  assert.equal(d.from, 28);
+  assert.equal(d.to, 29);
+  assert.match(infoClock(Date.UTC(2026, 10, 3, 10, 0, 0, 7), false), /^\d\d:00:00$/);
 });

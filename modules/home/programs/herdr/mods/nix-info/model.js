@@ -215,6 +215,9 @@ function apply(state, entry) {
     const text = resultText(m.content);
     call.result = text.length > RESULT_CAP ? text.slice(0, RESULT_CAP) : text;
     call.resultCut = text.length > RESULT_CAP;
+    // Pi's edit result carries the diff with line numbers: the inspector shows it as is.
+    const diff = m.details?.diff;
+    if (typeof diff === "string") call.diff = infoParseDiff(diff.length > RESULT_CAP ? diff.slice(0, RESULT_CAP) : diff);
     // Lines count once the edit or write went through.
     if (!call.error) countLines(state, call.call);
     delete call.call;
@@ -281,17 +284,33 @@ export function infoEditDiff(args) {
   return out;
 }
 
+// Pi's edit diff ("+ 31 text", "- 30 text", "  27 text", "   ..." between hunks) as
+// { lines: [{ sign: "+" | "-" | " ", num, text }], from, to }: from–to spans the changed lines.
+export function infoParseDiff(diff) {
+  const lines = [];
+  let from = null, to = null;
+  for (const raw of String(diff).split("\n")) {
+    if (!raw.trim()) continue;
+    const m = /^([+\- ])\s*(\d+) ?(.*)$/.exec(raw);
+    if (!m) { lines.push({ sign: " ", num: null, text: "⋯" }); continue; }
+    const num = Number(m[2]);
+    lines.push({ sign: m[1], num, text: m[3] });
+    if (m[1] !== " ") { from = from === null ? num : Math.min(from, num); to = to === null ? num : Math.max(to, num); }
+  }
+  return { lines, from, to };
+}
+
 // The first `max` lines of a result, and how many more there are.
 export function infoResultLines(text, max = 200) {
   const lines = String(text ?? "").replace(/\n$/, "").split("\n");
   return { lines: lines.slice(0, max), more: Math.max(0, lines.length - max) };
 }
 
-// "16:48:27.954", local time.
-export function infoClock(msec) {
+// "16:48:27.954" (or "16:48:27" without `ms`), local time.
+export function infoClock(msec, ms = true) {
   if (!msec) return "—";
   const d = new Date(msec), p = (n, w = 2) => String(n).padStart(w, "0");
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}${ms ? `.${p(d.getMilliseconds(), 3)}` : ""}`;
 }
 
 // Feeds a chunk read from the file (`bytes` of it); returns whether anything new was applied.
@@ -336,7 +355,7 @@ export function infoTools(state) {
   return state.order.slice().reverse().map((id) => {
     const c = state.tools.get(id);
     return { id: c.id, kind: c.kind, name: c.name, arg: c.arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null,
-      args: c.args, result: c.result, resultCut: c.resultCut, finished: c.finished };
+      args: c.args, result: c.result, resultCut: c.resultCut, finished: c.finished, diff: c.diff ?? null };
   });
 }
 

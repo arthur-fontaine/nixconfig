@@ -285,15 +285,28 @@ export default class Info extends View {
       .when(Boolean(extra), (e) => e.child(div().text_size(11).text_color(t.dim).child(extra)));
   }
 
+  // One payload line: a 16px marker column, an optional number column, and the text, which
+  // wraps inside its own column so continuations hang under the text, not the marker.
+  // Diff lines tint the whole row, wrapped parts included.
+  line(t, { marker = "", markerColor = t.dim, num, text, color = t.foreground, tint }) {
+    return h_flex().w_full().items_start().when(Boolean(tint), (e) => e.bg(tint))
+      .child(div().w(16).flex_none().text_color(markerColor).child(marker || " "))
+      .when(num !== undefined, (e) => e.child(div().w(30).pr(8).flex_none().text_right().text_color(t.dim).child(num === null ? "" : String(num))))
+      .child(typeof text === "string" ? div().flex_1().min_w(0).text_color(color).child(text || " ") : text);
+  }
+
   jsonLines(t, value) {
     const color = { key: t.ansi4, string: t.ansi2, number: t.ansi3, literal: t.ansi5, punct: t.dim };
-    return infoJsonLines(value).map((l) => h_flex().flex_wrap().pl(l.indent * 14)
-      .children(l.parts.map((p) => div().when(p.kind === "string", (e) => e.min_w(0)).text_color(color[p.kind] ?? t.foreground).child(p.text))));
+    return infoJsonLines(value).map((l) => this.line(t, {
+      text: h_flex().flex_1().min_w(0).flex_wrap().pl(l.indent * 14)
+        .children(l.parts.map((p) => div().when(p.kind === "string", (e) => e.min_w(0)).text_color(color[p.kind] ?? t.foreground).child(p.text))),
+    }));
   }
 
   inspector(t, c, now, area) {
     const icon = TOOL_ICON[c.kind] ?? "box";
     const opens = (c.kind === "edit" || c.kind === "write" || c.kind === "read") && c.path;
+    const range = c.kind === "edit" && c.diff?.from ? (c.diff.from === c.diff.to ? `line ${c.diff.from}` : `lines ${c.diff.from}–${c.diff.to}`) : "";
     const took = infoDuration(c.duration) || "<0.1s";
     const status = c.running
       ? h_flex().gap(5).items_center().text_color(t.working).child(this.spinner(t)).child(`running ${infoDuration(now - (c.started ?? now))}`)
@@ -303,14 +316,19 @@ export default class Info extends View {
     const args = c.args ?? {};
     const sections = [];
     if (c.kind === "bash" && typeof args.command === "string") {
-      sections.push(this.label(t, "Command"), this.code(t, args.command.replace(/\n$/, "").split("\n").map((l) => div().w_full().text_color(t.foreground).child(l || " "))));
+      sections.push(this.label(t, "Command"), this.code(t, args.command.replace(/\n$/, "").split("\n").map((l) => this.line(t, { text: l }))));
     }
     if (c.kind === "edit") {
-      const diff = infoEditDiff(args);
-      if (diff.length) sections.push(this.label(t, "Change"), this.code(t, diff.map((l) => h_flex().w_full().gap(8)
-        .when(l.sign === "-", (e) => e.bg(t.ansi1 + "1a")).when(l.sign === "+", (e) => e.bg(t.ansi2 + "1a"))
-        .child(div().w(10).flex_none().text_color(l.sign === "-" ? t.ansi1 : l.sign === "+" ? t.ansi2 : t.dim).child(l.sign))
-        .child(div().flex_1().min_w(0).text_color(l.sign === " " ? t.dim : t.foreground).child(l.text || " ")))));
+      // Pi's own diff when the result has it (numbered, with context), else old → new text.
+      const numbered = Boolean(c.diff?.lines.length);
+      const diff = numbered ? c.diff.lines : infoEditDiff(args);
+      const sign = { "-": ["−", t.ansi1], "+": ["+", t.ansi2] };
+      if (diff.length) sections.push(this.label(t, "Change"), this.code(t, diff.map((l) => this.line(t, {
+        marker: sign[l.sign]?.[0] ?? "", markerColor: sign[l.sign]?.[1] ?? t.dim,
+        ...(numbered && { num: l.num }),
+        text: l.text, color: l.text === "⋯" ? t.dim : t.foreground,
+        tint: sign[l.sign] ? sign[l.sign][1] + "14" : undefined,
+      }))));
     }
     // The command and the diff above say it all for those; the rest show their arguments.
     const rest = Object.keys(args).filter((k) => !(c.kind === "bash" && k === "command") && !(c.kind === "edit" && (k === "edits" || k === "oldText" || k === "newText")));
@@ -321,7 +339,7 @@ export default class Info extends View {
       const extra = r.more ? `+${r.more} more lines` : c.resultCut ? "cut at 64 KB" : r.lines.length > 1 ? `${r.lines.length} lines` : "";
       sections.push(this.label(t, c.error ? "Error" : "Result", extra),
         (c.result ?? "") === "" ? div().px(16).py(4).text_size(12).text_color(t.dim).child("Nothing")
-          : this.code(t, r.lines.map((l) => div().w_full().text_color(c.error ? t.blocked : t.foreground).child(l || " "))));
+          : this.code(t, r.lines.map((l) => this.line(t, { text: l, color: c.error ? t.blocked : t.foreground }))));
     }
     const kv = (k, v) => h_flex().h(22).px(16).gap(10).items_center().text_size(12)
       .child(div().w(70).flex_none().text_color(t.muted).child(k)).child(div().font_family(MONO).text_color(t.foreground).child(v));
@@ -334,11 +352,11 @@ export default class Info extends View {
           .child(svg(ICON(icon)).size(14).flex_none().text_color(c.error ? t.blocked : t.muted))
           .child(div().flex_none().text_size(13).font_medium().text_color(c.error ? t.blocked : t.foreground).child(c.name))
           .child(div().flex_1())
-          .when(Boolean(opens), (e) => e.child(button("inspector-open", "Open file", c.path, () => run("tab.new", { mod: "nix-editor", name: c.path.split("/").pop(), props: { file: c.path } }))))
+          .when(Boolean(opens), (e) => e.child(button("inspector-open", "Open file", c.path, () => run("tab.new", { mod: "nix-editor", name: c.path.split("/").pop(), props: { file: c.path, ...(c.diff?.from && { line: c.diff.from }) } }))))
           .child(button("inspector-close", svg(ICON("x")).size(12), "Close (Esc)", (_e, cx) => { this.sel = null; cx.notify(); })))
         .child(div().min_w(0).font_family(MONO).text_size(12).text_color(t.foreground)
-          .when(Boolean(c.path), (e) => e.text_ellipsis_start()).when(!c.path, (e) => e.truncate()).child(c.arg || c.name))
-        .child(h_flex().gap(6).text_size(11).text_color(t.dim).child(status).child(`· ${infoClock(c.started)}`)))
+          .when(Boolean(c.path), (e) => e.text_ellipsis_start()).when(!c.path, (e) => e.truncate()).child(range ? `${c.arg} · ${range}` : c.arg || c.name))
+        .child(h_flex().gap(6).text_size(11).text_color(t.dim).child(status).child(`· ${infoClock(c.started, false)}`)))
       .child(v_flex().id("inspector-body").flex_1().min_h(0).overflow_y_scrollbar().pb(10).children(sections));
   }
 
