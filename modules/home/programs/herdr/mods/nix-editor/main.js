@@ -4,7 +4,7 @@
 // Opened with tab.new { mod: "nix-editor", props: { file, line? } }.
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, settings, props, exec, home } from "herdr";
+import { theme, settings, props, exec, home, shared } from "herdr";
 import { Grid, nvimKey } from "./grid.js";
 import { startNvim } from "./nvim.js";
 
@@ -14,6 +14,11 @@ const PAD = { x: 8, y: 6 }; // px around the grid
 const OWN_CMD = new Set(["s", "z", "a", "c", "x", "v", "f", "/", "[", "]", "left", "right", "up", "down", "backspace", "d", "p"]);
 
 const dirname = (p) => p.replace(/\/[^/]*$/, "") || "/";
+// Light or dark, from how bright the theme's background is.
+const appearance = (hex) => {
+  const n = parseInt((hex ?? "#000000").slice(1, 7), 16);
+  return ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000 > 128 ? "light" : "dark";
+};
 
 export default class Editor extends View {
   init(_props, cx) {
@@ -29,15 +34,12 @@ export default class Editor extends View {
     this.dragging = false;
     this.wheel = { x: 0, y: 0 };
     this.root = dirname(this.file ?? "/");
+    // A line asked of this file's tab by nix-files or nix-diff (nix-editor.goto); one asked
+    // before this tab existed was for another one.
+    this.gotoSeen = shared("nix-editor.goto")?.n;
     this.handle = cx.focus_handle();
     this.cx = cx;
     cx.timer.after(50, () => this.handle.focus());
-    // Every await goes through cx.spawn, so Herdr cancels it with the view: a bare promise
-    // that resumes after the tab closed crashes Herdr's script runtime.
-    if (this.file) cx.spawn(async (cx) => {
-      const r = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: dirname(this.file) }).catch(() => null);
-      if (r?.code === 0) { this.root = r.stdout.trim(); cx.notify(); }
-    });
   }
 
   close() {
@@ -69,7 +71,12 @@ export default class Editor extends View {
     if (typeof startNvim !== "function") { this.error = "The editor backend (nvim.js) isn't installed"; return this.cx.notify(); }
     this.starting = true;
     const cx = this.cx;
+    // Every await goes through cx.spawn, so Herdr cancels it with the view: a bare promise
+    // that resumes after the view is gone crashes Herdr's script runtime. Nothing async
+    // starts in init: `herdr-app check` makes a copy and drops it straight away.
     this.cx.spawn(async () => {
+      const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: dirname(this.file) }).catch(() => null);
+      if (top?.code === 0) this.root = top.stdout.trim();
       try {
         this.nvim = await startNvim({
           home: home(),
@@ -281,8 +288,30 @@ export default class Editor extends View {
       .child(div().flex_none().text_color(state === "ready" ? t.muted : t.dim).child(`${name} ${state}`));
   }
 
+  // Neovim's background follows Herdr's appearance, so its colors match the theme.
+  followAppearance() {
+    const want = appearance(theme().background);
+    if (!this.nvim || want === this.appearance) return;
+    this.appearance = want;
+    this.nvim.notify("nvim_set_option_value", "background", want, {});
+    // On the theme's own surfaces, as the terminal is; the rest of the scheme stays nvim's.
+    const t = theme(), int = (hex) => parseInt(hex.slice(1, 7), 16);
+    this.nvim.notify("nvim_set_hl", 0, "Normal", { bg: int(t.background), fg: int(t.foreground) });
+    this.nvim.notify("nvim_set_hl", 0, "NormalFloat", { bg: int(t.popover ?? t.background), fg: int(t.foreground) });
+  }
+
+  followGoto() {
+    const want = shared("nix-editor.goto");
+    if (!want || want.n === this.gotoSeen || want.file !== this.file || !this.nvim) return;
+    this.gotoSeen = want.n;
+    this.nvim.notify("nvim_win_set_cursor", 0, [want.line, 0]);
+    this.nvim.notify("nvim_exec_lua", "vim.cmd('normal! zz')", []);
+  }
+
   render(cx) {
     const t = theme(), m = this.metrics(), g = this.grid;
+    this.followGoto();
+    this.followAppearance();
     g.takeDirty();
     const body = div().id("editor-grid").flex_1().min_h(0).relative().overflow_hidden()
       .bg(g.defaults.bg ?? t.background).font_family(m.mono).text_size(m.size).line_height(`${m.lh}px`)

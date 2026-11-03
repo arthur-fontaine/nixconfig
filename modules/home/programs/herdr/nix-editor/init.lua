@@ -83,11 +83,16 @@ vim.diagnostic.config({
   update_in_insert = true,
   float = { border = "rounded", source = "if_many" },
 })
--- Problems as a wavy line in their color, as editors draw them.
-for _, level in ipairs({ "Error", "Warn", "Info", "Hint" }) do
-  local sign = vim.api.nvim_get_hl(0, { name = "Diagnostic" .. level, link = false })
-  vim.api.nvim_set_hl(0, "DiagnosticUnderline" .. level, { undercurl = true, sp = sign.fg })
+-- Problems as a wavy line in their color, as editors draw them; again after every
+-- colorscheme load (the mod switches `background` with Herdr's appearance).
+local function undercurls()
+  for _, level in ipairs({ "Error", "Warn", "Info", "Hint" }) do
+    local sign = vim.api.nvim_get_hl(0, { name = "Diagnostic" .. level, link = false })
+    vim.api.nvim_set_hl(0, "DiagnosticUnderline" .. level, { undercurl = true, sp = sign.fg })
+  end
 end
+undercurls()
+vim.api.nvim_create_autocmd("ColorScheme", { callback = undercurls })
 
 vim.api.nvim_create_autocmd("LspAttach", {
   callback = function(args)
@@ -213,3 +218,6 @@ map({ "n", "i" }, "<MouseMove>", function()
     if hover.at == at.key then show_hover(at) end
   end))
 end)
+
+-- No ~ past the end of the file: the editor area ends where the text does.
+vim.opt.fillchars:append({ eob = " " })
