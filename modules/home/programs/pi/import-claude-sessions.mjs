@@ -6,6 +6,9 @@
 // Incremental: a state file remembers each Claude transcript's size and mtime
 // and the Pi file written from it. An unchanged transcript is skipped; a Pi copy
 // that changed since it was written (continued in Pi) is never overwritten.
+// When the conversion itself changes (VERSION), copies made by an older one are
+// converted again, under the same rule; a copy that comes out different is
+// first kept aside in claude-sessions-import-backup/.
 //
 // node import-claude-sessions.mjs [--claude-dir ~/.claude] [--pi-dir ~/.pi/agent] [--thinking high]
 
@@ -21,6 +24,10 @@ const claudeDir = args.get("claude-dir") ?? process.env.CLAUDE_CONFIG_DIR ?? pat
 const piDir = args.get("pi-dir") ?? process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".pi", "agent");
 const thinkingLevel = args.get("thinking") ?? "high";
 const statePath = path.join(piDir, "claude-sessions-import.json");
+const backupDir = path.join(piDir, "claude-sessions-import-backup");
+// 2: Claude Code's compactions become Pi compaction entries on one branch; its `!`
+// commands become Pi's bash executions, its slash commands plain prompts.
+const VERSION = 2;
 
 // Resumed sessions take their model from the last assistant message, so the
 // copies name pi-claude-code's provider: under "anthropic" they would resume
@@ -97,6 +104,37 @@ function stopReason(record) {
 	return "error";
 }
 
+const unescapeXml = (text) => text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+const tag = (text, name) => {
+	const m = text.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`));
+	return m ? m[1] : undefined;
+};
+
+// What Claude Code writes as a user prompt for its own commands, in Pi's terms:
+// a `!` command and its output, a slash command, a local command's output.
+function claudeCommand(record) {
+	const raw = record.message.content;
+	const text = typeof raw === "string" ? raw : Array.isArray(raw) && raw.length === 1 && raw[0]?.type === "text" ? raw[0].text : undefined;
+	if (typeof text !== "string") return undefined;
+	const t = text.trim();
+	if (/^<bash-input>[\s\S]*<\/bash-input>$/.test(t)) return { kind: "bash", command: unescapeXml(tag(t, "bash-input")).trim() };
+	if (/^<bash-stdout>[\s\S]*<\/bash-stderr>$/.test(t) || /^<bash-stdout>[\s\S]*<\/bash-stdout>$/.test(t)) {
+		const out = unescapeXml(tag(t, "bash-stdout") ?? "").replace(/\n+$/, "");
+		const err = unescapeXml(tag(t, "bash-stderr") ?? "").replace(/\n+$/, "");
+		return { kind: "bashOutput", output: [out, err].filter(Boolean).join("\n") };
+	}
+	if (t.startsWith("<command-name>") || t.startsWith("<command-message>")) {
+		const name = tag(t, "command-name")?.trim();
+		const args = unescapeXml(tag(t, "command-args") ?? "").trim();
+		return name ? { kind: "prompt", text: args ? `${name} ${args}` : name } : undefined;
+	}
+	if (/^<local-command-stdout>[\s\S]*<\/local-command-stdout>$/.test(t)) {
+		const out = unescapeXml(tag(t, "local-command-stdout")).trim();
+		return { kind: "localOutput", output: out === "(no content)" ? "" : out };
+	}
+	return undefined;
+}
+
 // One Claude user record becomes user and tool-result messages, in block order.
 function userMessages(record, timestamp, toolNames) {
 	const raw = record.message.content;
@@ -135,6 +173,8 @@ async function convert(file, fallbackMs) {
 	const lines = [];
 	const parents = new Map(); // Claude uuid → its parentUuid
 	const tails = new Map(); // Claude uuid → the last Pi entry made from it (or from its ancestors)
+	const heads = new Map(); // Claude uuid → the first Pi entry made from it
+	const boundaries = new Map(); // compact_boundary uuid → its compactMetadata
 	const toolNames = new Map();
 	let cwd;
 	let customTitle;
@@ -142,6 +182,8 @@ async function convert(file, fallbackMs) {
 	let created;
 	let count = 0;
 	let pending; // An assistant entry still taking blocks from records of the same response.
+	let lastId = null; // The Pi entry made last.
+	let bash; // The bash execution a `<bash-stdout>` record fills in.
 
 	const parentOf = (uuid) => {
 		const seen = new Set();
@@ -151,7 +193,15 @@ async function convert(file, fallbackMs) {
 		}
 		return null;
 	};
-	const push = (entry) => lines.push(entry);
+	const push = (entry) => {
+		lines.push(entry);
+		lastId = entry.id;
+	};
+	// A parent Claude never wrote (it happens) continues from the entry made last.
+	const parentFor = (record) => {
+		const parent = str(record, "parentUuid");
+		return parent ? (parentOf(parent) ?? lastId) : null;
+	};
 	const flush = () => {
 		if (pending) push(pending.entry);
 		pending = undefined;
@@ -173,6 +223,13 @@ async function convert(file, fallbackMs) {
 		cwd ??= str(record, "cwd");
 		if (record.type === "custom-title") customTitle = str(record, "customTitle") ?? customTitle;
 		if (record.type === "ai-title") aiTitle = str(record, "aiTitle") ?? aiTitle;
+		// A compaction starts a new root in Claude's tree; the conversation it ends is its
+		// logical parent, so Pi keeps one branch through it.
+		if (record.type === "system" && record.subtype === "compact_boundary" && uuid) {
+			parents.set(uuid, str(record, "logicalParentUuid"));
+			boundaries.set(uuid, isRecord(record.compactMetadata) ? record.compactMetadata : {});
+			continue;
+		}
 		if ((record.type !== "user" && record.type !== "assistant") || record.isSidechain === true || record.isMeta === true) continue;
 		if (!isRecord(record.message) || !uuid) continue;
 
@@ -187,7 +244,7 @@ async function convert(file, fallbackMs) {
 			const responseId = str(record.message, "id");
 			// Claude Code writes one record per content block of a response; Pi keeps a
 			// response in one message (thinking must stay with its tool calls).
-			if (pending && responseId && pending.entry.message.responseId === responseId && parentOf(str(record, "parentUuid")) === pending.entry.id) {
+			if (pending && responseId && pending.entry.message.responseId === responseId && parentFor(record) === pending.entry.id) {
 				pending.entry.message.content.push(...content);
 				pending.entry.message.usage = usage(record.message.usage);
 				pending.entry.message.stopReason = stopReason(record);
@@ -199,7 +256,7 @@ async function convert(file, fallbackMs) {
 			const entry = {
 				type: "message",
 				id: `${uuid}-${++count}`,
-				parentId: parentOf(str(record, "parentUuid")),
+				parentId: parentFor(record),
 				timestamp: iso,
 				message: {
 					role: "assistant",
@@ -215,16 +272,60 @@ async function convert(file, fallbackMs) {
 				},
 			};
 			pending = { entry };
+			lastId = entry.id;
 			tails.set(uuid, entry.id);
+			heads.set(uuid, entry.id);
+			continue;
+		}
+
+		// The summary Claude continues from is Pi's compaction entry: Pi then sends it and
+		// what Claude kept (the preserved messages), not the conversation before.
+		const boundary = boundaries.get(str(record, "parentUuid"));
+		if (record.isCompactSummary === true && boundary) {
+			flush();
+			const raw = record.message.content;
+			const summary = typeof raw === "string" ? raw : toolResultContent(raw).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+			const id = `${uuid}-${++count}`;
+			const kept = (isRecord(boundary.preservedMessages) && Array.isArray(boundary.preservedMessages.uuids) ? boundary.preservedMessages.uuids : [])
+				.map((u) => heads.get(u)).find(Boolean);
+			push({ type: "compaction", id, parentId: parentFor(record), timestamp: iso, summary, firstKeptEntryId: kept ?? id, tokensBefore: num(boundary, "preTokens") });
+			tails.set(uuid, id);
+			continue;
+		}
+
+		const command = claudeCommand(record);
+		if (command?.kind === "bashOutput" && bash && parentFor(record) === bash.id) {
+			bash.message.output = command.output;
+			tails.set(uuid, bash.id);
+			continue;
+		}
+		if (command?.kind === "localOutput" && !command.output) continue;
+		if (command) {
+			flush();
+			const id = `${uuid}-${++count}`;
+			const message =
+				command.kind === "bash" || command.kind === "bashOutput"
+					? { role: "bashExecution", command: command.command ?? "", output: command.output ?? "", exitCode: undefined, cancelled: false, truncated: false, timestamp }
+					: command.kind === "prompt"
+						? { role: "user", content: command.text, timestamp }
+						: undefined;
+			const entry = message
+				? { type: "message", id, parentId: parentFor(record), timestamp: iso, message }
+				: { type: "custom_message", id, parentId: parentFor(record), timestamp: iso, customType: "claude-code", content: command.output, display: true };
+			push(entry);
+			bash = command.kind === "bash" ? entry : undefined;
+			tails.set(uuid, id);
+			heads.set(uuid, id);
 			continue;
 		}
 
 		const messages = userMessages(record, timestamp, toolNames);
 		if (!messages.length) continue;
 		flush();
-		let parentId = parentOf(str(record, "parentUuid"));
+		let parentId = parentFor(record);
 		for (const message of messages) {
 			const id = `${uuid}-${++count}`;
+			if (!heads.has(uuid)) heads.set(uuid, id);
 			push({ type: "message", id, parentId, timestamp: iso, message });
 			parentId = id;
 		}
@@ -275,7 +376,7 @@ async function main() {
 			const now = await fileState(source);
 			if (!now) continue;
 			const known = state[source];
-			if (known && known.size === now.size && known.mtimeMs === now.mtimeMs) {
+			if (known && known.size === now.size && known.mtimeMs === now.mtimeMs && (known.version ?? 1) >= VERSION) {
 				counts.unchanged++;
 				continue;
 			}
@@ -289,7 +390,7 @@ async function main() {
 			try {
 				const result = await convert(source, now.mtimeMs);
 				if (!result) {
-					state[source] = { ...now };
+					state[source] = { ...now, version: VERSION };
 					counts.empty++;
 					continue;
 				}
@@ -307,9 +408,14 @@ async function main() {
 				} finally {
 					await out.close();
 				}
+				const before = known?.piFile ? await readFile(piFile).catch(() => undefined) : undefined;
+				if (before && !before.equals(await readFile(tmp))) {
+					await mkdir(backupDir, { recursive: true });
+					await writeFile(path.join(backupDir, `${path.basename(piFile, ".jsonl")}.v${known.version ?? 1}.jsonl`), before);
+				}
 				await rename(tmp, piFile);
 				const pi = await fileState(piFile);
-				state[source] = { ...now, piFile, piSize: pi.size, piMtimeMs: pi.mtimeMs };
+				state[source] = { ...now, piFile, piSize: pi.size, piMtimeMs: pi.mtimeMs, version: VERSION };
 				known?.piFile ? counts.updated++ : counts.imported++;
 			} catch (error) {
 				counts.failed++;

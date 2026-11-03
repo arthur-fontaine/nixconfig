@@ -222,6 +222,8 @@ let
     rewind = ./extensions/rewind;
     # Herdr's Info panel: labels the terminal with its session file, keeps the Claude usage.
     herdr-session = ./extensions/herdr-session;
+    # A resumed session shows its whole conversation, each compaction where it happened.
+    full-history = ./extensions/full-history;
     # Pi's footer as two lines: where you are, then what's going on.
     footer = ./extensions/footer;
     # web_search and web_fetch through TinyFish, and view_image to look at a URL's image.
