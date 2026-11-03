@@ -335,12 +335,14 @@ async function convert(file, fallbackMs) {
 	if (!lines.length) return undefined;
 
 	// Settings Pi restores on resume, then the name /resume shows; both on the
-	// last branch, which stays the leaf (the last line).
+	// last branch, which stays the leaf (the last line). Their ids never change: Pi
+	// hangs what it adds on the leaf, also a Pi still open on the copy a new
+	// conversion replaced.
 	const end = lines[lines.length - 1];
 	const at = end.timestamp;
-	lines.push({ type: "thinking_level_change", id: `claude-thinking-${count}`, parentId: end.id, timestamp: at, thinkingLevel });
+	lines.push({ type: "thinking_level_change", id: "claude-thinking", parentId: end.id, timestamp: at, thinkingLevel });
 	const title = customTitle ?? aiTitle;
-	if (title) lines.push({ type: "session_info", id: `claude-title-${count}`, parentId: `claude-thinking-${count}`, timestamp: at, name: title.replace(/[\r\n]+/g, " ").trim() });
+	if (title) lines.push({ type: "session_info", id: "claude-title", parentId: "claude-thinking", timestamp: at, name: title.replace(/[\r\n]+/g, " ").trim() });
 	return { lines, cwd, created: created ?? fallbackMs };
 }
 
