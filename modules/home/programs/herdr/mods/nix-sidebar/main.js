@@ -6,7 +6,7 @@
 // worktree starts Pi or a terminal in it; right-click a worktree for its menu.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { spaces, panes, agents, machines, run, openOverlay, exec, theme, window, layout, watchFolder, setAgentOrder, pickFolder } from "herdr";
+import { spaces, panes, agents, terminals, machines, run, openOverlay, exec, theme, window, layout, watchFolder, setAgentOrder, pickFolder, home, shared, setShared } from "herdr";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // Repo state can only change on its own this rarely while nothing happens here.
@@ -57,6 +57,14 @@ function distinctNames(commons) {
   }
   return new Map(commons.map((c) => [c, name(c)]));
 }
+// The orchestrators: a Pi chat per worktree, and one per project, that steers the others
+// with hc (role prompts in ~/.pi/agent/orchestrator/). A click opens one, or starts it the
+// first time; nothing else here depends on them.
+const ORCHESTRATOR = "Orchestrator";
+const orchestratorArgv = (scope) => ["pi", "--name", ORCHESTRATOR, "--append-system-prompt", `${home()}/.pi/agent/orchestrator/${scope}.md`];
+const isOrchestrator = (tab) => tab.named && tab.name === ORCHESTRATOR;
+// Repo key → the space its project orchestrator lives in.
+const projectSpaces = () => shared("nix.orchestrators") ?? {};
 function ago(ms) {
   const m = Math.floor((Date.now() - ms) / 60000);
   return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
@@ -199,7 +207,9 @@ export default class Sidebar extends View {
   model() {
     const sp = spaces(), ps = panes(), now = Date.now();
     const repos = new Map(), folders = [];
+    const projects = projectSpaces(), owned = new Set(Object.values(projects));
     for (const s of sp) {
+      if (owned.has(s.id)) continue;
       const k = where(s, ps), g = this.git[k];
       if (g === undefined && now - (this.born[s.id] ?? now) < 1500) continue; // a moment for its git, so it doesn't jump
       if (!g) { folders.push({ s, g: null }); continue; }
@@ -214,6 +224,7 @@ export default class Sidebar extends View {
       for (const r of mine) r.name = names.get(JSON.parse(r.key)[1]);
     }
     this.names = new Map([...repos.values()].map((r) => [r.key, r.name]));
+    for (const r of repos.values()) r.project = sp.find((s) => s.id === projects[r.key]) ?? null;
     const inside = (p, dir) => p === dir || p.startsWith(dir + "/");
     for (const r of repos.values()) {
       const at = r.items.map(({ s }) => place(s, ps));
@@ -304,6 +315,49 @@ export default class Sidebar extends View {
       .child(div().h(1).flex_none().mx(4).my(8).bg(t.border));
   }
 
+  // The workers an agent started with hc run: no pane of their own; a click peeks at one.
+  workerRows(tab, pl, t) {
+    const parents = new Set(agents().filter((a) => a.tab === tab.id).map((a) => a.address));
+    if (!parents.size) return [];
+    return terminals().filter((x) => x.state === "live" && parents.has(x.parent)).map((x) => {
+      const status = ["working", "blocked", "done"].includes(x.status) ? x.status : null;
+      return h_flex().id(`worker-${x.address}`).h(26).pl(pl).pr(10).gap(8).items_center().rounded(6).cursor_pointer()
+        .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground))
+        .tooltip(`Peek at ${x.name ?? x.address}`)
+        .on_click(() => run("terminal.peek", { terminal: x.address }))
+        .child(this.picture({ app: x.agent === "pi" ? "pi" : null, program: null }, t, 12))
+        .child(div().flex_1().min_w(0).truncate().child(x.name ?? x.address))
+        .when(Boolean(this.status(t, status)), (e) => e.child(this.status(t, status)));
+    });
+  }
+
+  // A worktree's click: its orchestrator tab, started the first time.
+  openOrchestrator(s, folder) {
+    run("space.select", { id: s.id });
+    const tab = (s.tabs ?? []).find(isOrchestrator);
+    if (tab) run("tab.select", { id: tab.id });
+    else run("tab.new", { space: s.id, name: ORCHESTRATOR, folder, argv: orchestratorArgv("worktree") });
+  }
+
+  // A project's click: its orchestrator lives in a space of its own, at the repo's root.
+  openProject(r, cx) {
+    if (r.project) {
+      run("space.select", { id: r.project.id });
+      const tab = r.project.tabs.find(isOrchestrator);
+      if (tab) run("tab.select", { id: tab.id });
+      return;
+    }
+    const before = new Set(spaces().map((s) => s.id));
+    const root = "/" + repoPath(JSON.parse(r.key)[1]).join("/");
+    run("space.new", { name: `${r.name} project`, folder: root, tab: ORCHESTRATOR, argv: orchestratorArgv("project"), machine: r.on ?? "" });
+    const record = (tries) => {
+      const made = spaces().find((x) => !before.has(x.id));
+      if (made) { setShared("nix.orchestrators", { ...projectSpaces(), [r.key]: made.id }); cx.notify(); }
+      else if (tries > 0) cx.timer.after(100, () => record(tries - 1));
+    };
+    cx.timer.after(100, () => record(30));
+  }
+
   tabRow(s, tab, ps, t, order) {
     const { lead, label } = this.tabInfo(tab, ps);
     for (const a of agents()) if (a.tab === tab.id) order.push(a.address);
@@ -319,13 +373,21 @@ export default class Sidebar extends View {
       .when(Boolean(this.status(t, tab.status)), (e) => e.child(this.status(t, tab.status))));
   }
 
+  tabRows(s, tab, ps, t, order) {
+    return [this.tabRow(s, tab, ps, t, order), ...this.workerRows(tab, 56, t)];
+  }
+
   worktreeRow({ s, g }, ps, t, order) {
     const id = `space-${s.id}`, folded = this.folded.has(s.id);
     const title = g ? (g.branch ?? "detached") : s.name;
-    const tabs = (s.tabs ?? []).filter((x) => !x.settled);
+    // The worktree row stands for its orchestrator: its tab isn't listed, its workers are.
+    const orchestrator = (s.tabs ?? []).find(isOrchestrator);
+    const tabs = (s.tabs ?? []).filter((x) => !x.settled && x !== orchestrator);
+    const on = s.active && (folded || !tabs.length || Boolean(orchestrator?.active));
+    const status = folded ? s.status : orchestrator?.status;
     const rows = [this.hoverable(id, h_flex().h(28).pl(24).pr(10).gap(7).items_center().rounded(6).cursor_pointer()
-      .when(s.active && (folded || !tabs.length), (e) => e.bg(t.selected)).when(!(s.active && (folded || !tabs.length)), (e) => e.hover((x) => x.bg(t.hover)))
-      .on_click(() => run("space.select", { id: s.id }))
+      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)))
+      .on_click(() => this.openOrchestrator(s, place(s, ps)))
       .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 260, props: { tab: "space", target: { id: s.id } } }))
       .child(div().id(`fold-${s.id}`).w(12).h(14).flex_none().flex().items_center().justify_center().text_color(t.dim)
         .on_click((_e, cx) => { cx.stop_propagation(); this.toggle(this.folded, "folded", s.id, cx); })
@@ -337,8 +399,11 @@ export default class Sidebar extends View {
         .when(g?.ahead > 0, (e) => e.child(div().child(`↑${g.ahead}`)))))
       .when(this.hovered === id, (e) => e.child(this.small(`add-${s.id}`, "plus", "Start Pi or a terminal here",
         () => openOverlay({ mod: "nix-new-menu", kind: "popup", width: 240, height: 140, props: { space: s.id } }), t)))
-      .when(folded && this.hovered !== id, (e) => e.when(Boolean(this.status(t, s.status)), (e) => e.child(this.status(t, s.status)))))];
-    if (!folded) for (const tab of tabs) rows.push(this.tabRow(s, tab, ps, t, order));
+      .when(this.hovered !== id, (e) => e.when(Boolean(this.status(t, status)), (e) => e.child(this.status(t, status)))))];
+    if (!folded) {
+      if (orchestrator) rows.push(...this.workerRows(orchestrator, 40, t));
+      for (const tab of tabs) rows.push(...this.tabRows(s, tab, ps, t, order));
+    }
     return rows;
   }
 
@@ -371,10 +436,14 @@ export default class Sidebar extends View {
     if (this.filter && !items.length && !this.matches(r.name) && !idleMatch) return [];
     const machine = r.on ? h_flex().flex_none().gap(4).items_center().text_size(11).text_color(t.dim).child(svg(ICON("server")).size(11)).child(r.on) : null;
     const count = r.items.length + r.idle.length;
+    const fold = (cx) => r.closed ? this.toggle(this.folded, "folded", `open:${r.key}`, cx) : this.toggle(this.folded, "folded", r.key, cx);
+    const on = Boolean(r.project?.active);
     const head = this.hoverable(id, h_flex().h(28).px(10).gap(8).items_center().rounded(6).cursor_pointer()
-      .hover((x) => x.bg(t.hover))
-      .on_click((_e, cx) => r.closed ? this.toggle(this.folded, "folded", `open:${r.key}`, cx) : this.toggle(this.folded, "folded", r.key, cx))
-      .child(svg(ICON("folder")).size(14).flex_none().text_color(t.muted))
+      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)))
+      .on_click((_e, cx) => this.openProject(r, cx))
+      .child(div().id(`fold-${r.key}`).flex_none().text_color(t.muted).hover((x) => x.text_color(t.foreground)).tooltip(folded ? "Unfold" : "Fold")
+        .on_click((_e, cx) => { cx.stop_propagation(); fold(cx); })
+        .child(svg(ICON(this.hovered === id ? (folded ? "chevron-right" : "chevron-down") : "folder")).size(14)))
       .child(div().flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(r.closed ? t.muted : t.foreground).child(r.name))
       .when(Boolean(machine), (e) => e.child(machine))
       .when(this.hovered === id, (e) => e
@@ -386,10 +455,13 @@ export default class Sidebar extends View {
       .when(this.hovered !== id && folded && count > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`${count}`)))
       .when(this.hovered !== id && folded && !r.closed && (r.behind > 0 || r.ahead > 0), (e) => e
         .when(r.behind > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`↓${r.behind}`)))
-        .when(r.ahead > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`↑${r.ahead}`)))));
-    if (folded && !this.filter) return [head];
+        .when(r.ahead > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`↑${r.ahead}`))))
+      .when(this.hovered !== id && Boolean(this.status(t, r.project?.status)), (e) => e.child(this.status(t, r.project.status))));
+    const projectTab = r.project?.tabs.find(isOrchestrator);
+    const workers = projectTab ? this.workerRows(projectTab, 24, t) : [];
+    if (folded && !this.filter) return [head, ...workers];
     if (r.closed && !this.trees[r.key]) this.loadTrees(r.key, null);
-    return [head, ...items.flatMap((it) => this.worktreeRow(it, ps, t, order)), ...this.idleRows(r, t)];
+    return [head, ...workers, ...items.flatMap((it) => this.worktreeRow(it, ps, t, order)), ...this.idleRows(r, t)];
   }
 
   folderRow({ s }, ps, t, order) {
