@@ -1,0 +1,105 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import { charIndex, Grid, hex, nvimKey } from "../grid.js";
+
+const text = (g: Grid, row: number) => g.lines[row].map((c) => c[0]).join("");
+
+test("grid_line carries the highlight over and repeats cells", () => {
+  const g = new Grid();
+  g.apply([["grid_resize", [1, 6, 2]]]);
+  const flushed = g.apply([["grid_line", [1, 0, 0, [["a", 3], ["b"], [" ", 0, 2], ["c", 4]]]], ["flush", []]]);
+  assert.equal(flushed, true);
+  assert.equal(text(g, 0), "ab  c ");
+  assert.deepEqual(g.lines[0].map((c) => c[1]), [3, 3, 0, 0, 4, 0]);
+  assert.deepEqual(g.runs(0), [
+    { col: 0, cells: 2, text: "ab", hl: 3 },
+    { col: 2, cells: 2, text: "  ", hl: 0 },
+    { col: 4, cells: 1, text: "c", hl: 4 },
+    { col: 5, cells: 1, text: " ", hl: 0 },
+  ]);
+});
+
+test("grid_scroll moves a region up and down", () => {
+  const g = new Grid();
+  g.apply([["grid_resize", [1, 3, 4]]]);
+  for (let r = 0; r < 4; r++) g.apply([["grid_line", [1, r, 0, [[String(r), 0, 3]]]]]);
+  g.apply([["grid_scroll", [1, 0, 4, 0, 3, 1, 0]]]);
+  assert.deepEqual([0, 1, 2].map((r) => text(g, r)), ["111", "222", "333"]);
+  g.apply([["grid_scroll", [1, 0, 4, 0, 3, -2, 0]]]);
+  assert.deepEqual([2, 3].map((r) => text(g, r)), ["111", "222"]);
+});
+
+test("resize keeps what fits; clear blanks", () => {
+  const g = new Grid();
+  g.apply([["grid_resize", [1, 2, 1]], ["grid_line", [1, 0, 0, [["x", 1], ["y", 1]]]]]);
+  g.apply([["grid_resize", [1, 3, 2]]]);
+  assert.equal(text(g, 0), "xy ");
+  assert.equal(text(g, 1), "   ");
+  g.apply([["grid_clear", [1]]]);
+  assert.equal(text(g, 0), "   ");
+});
+
+test("styles fall back to the defaults and reverse swaps", () => {
+  const g = new Grid();
+  g.apply([["default_colors_set", [0xffffff, 0x111214, 0xff0000, 0, 0]], ["hl_attr_define", [5, { foreground: 0x5e6ad2, reverse: true, undercurl: true }, {}, []]]]);
+  assert.equal(hex(0x111214), "#111214");
+  const s = g.style(5);
+  assert.equal(s.fg, "#111214");
+  assert.equal(s.bg, "#5e6ad2");
+  assert.equal(s.undercurl, true);
+  assert.equal(g.style(0).fg, "#ffffff");
+});
+
+test("cursor shape follows the mode", () => {
+  const g = new Grid();
+  g.apply([["mode_info_set", [true, [{ name: "normal", cursor_shape: "block", cell_percentage: 0 }, { name: "insert", cursor_shape: "vertical", cell_percentage: 25 }]]], ["mode_change", ["insert", 1]]]);
+  assert.deepEqual(g.cursorShape(), { shape: "vertical", percentage: 25, name: "insert" });
+});
+
+test("popup menu shows, selects and hides", () => {
+  const g = new Grid();
+  g.apply([["popupmenu_show", [[["foo", "f", "", ""]], -1, 3, 4, 1]], ["popupmenu_select", [0]]]);
+  assert.equal(g.popup?.selected, 0);
+  g.apply([["popupmenu_hide", []]]);
+  assert.equal(g.popup, null);
+});
+
+const ev = (key: string, mods: Partial<Record<"shift" | "control" | "alt" | "platform", boolean>> = {}, key_char?: string) =>
+  ({ key, key_char, keystroke: key, modifiers: { shift: false, control: false, alt: false, platform: false, function: false, ...mods } });
+
+test("keys become Neovim notation", () => {
+  assert.equal(nvimKey(ev("a", {}, "a")), "a");
+  assert.equal(nvimKey(ev("a", { shift: true }, "A")), "A");
+  assert.equal(nvimKey(ev(",", {}, "<")), "<lt>");
+  assert.equal(nvimKey(ev("e", { alt: true }, "é")), "é");
+  assert.equal(nvimKey(ev("enter")), "<CR>");
+  assert.equal(nvimKey(ev("left", { alt: true })), "<A-Left>");
+  assert.equal(nvimKey(ev("s", { platform: true }, "s")), "<D-s>");
+  assert.equal(nvimKey(ev("z", { platform: true, shift: true }, "Z")), "<D-S-z>");
+  assert.equal(nvimKey(ev("a", { control: true }, "a")), "<C-a>");
+  assert.equal(nvimKey(ev("f12")), "<F12>");
+  assert.equal(nvimKey(ev("space", {}, " ")), "<Space>");
+  assert.equal(nvimKey(ev("shift")), null);
+});
+
+test("messages: the latest is kept, errors flagged, msg_clear empties", () => {
+  const g = new Grid();
+  g.apply([["msg_show", ["emsg", [[0, "E492: Not an editor command"]], false]]]);
+  assert.deepEqual(g.message, { kind: "emsg", text: "E492: Not an editor command", error: true });
+  g.apply([["msg_show", ["", [[0, '"x.ts" 3L written']], true]]]);
+  assert.equal(g.message?.error, false);
+  g.apply([["msg_clear", []]]);
+  assert.equal(g.message, null);
+});
+
+test("cmdline: shown with its prefix, cursor in characters, hidden", () => {
+  const g = new Grid();
+  g.apply([["cmdline_show", [[[0, "café"]], 5, "/", "", 0, 1]]]);
+  assert.deepEqual(g.cmdline, { lead: "/", text: "café", pos: 4 });
+  g.apply([["cmdline_pos", [3, 1]]]);
+  assert.equal(g.cmdline?.pos, 3);
+  g.apply([["cmdline_hide", [1, false]]]);
+  assert.equal(g.cmdline, null);
+  assert.equal(charIndex("aé", 3), 2);
+});

@@ -50,12 +50,15 @@ let
     nix-diff = { modules = [ "model.js" "syntax.js" ]; };
     nix-worktree = { shared = [ "repo.js" ]; };
     nix-menu = { };
-    nix-new-menu = { };
     nix-tabs = { };
     nix-status = { };
-    nix-dispatch = { shared = [ "repo.js" ]; };
     nix-pane = { };
     nix-head = { };
+    # The + popover: an open or idle worktree, or a new one, then Pi or a terminal.
+    nix-new = { shared = [ "repo.js" ]; };
+    # The code editor: a renderer for a headless Neovim; grid.js (its UI as a grid) and
+    # nvim.js (msgpack-RPC to it) joined in.
+    nix-editor = { modules = [ "grid.js" "nvim.js" ]; };
   };
   modFiles = lib.listToAttrs (lib.concatLists (lib.mapAttrsToList (mod: o: [
     { name = "herdr-app/mods/${mod}/main.js"; value.source = if o == { } then ./mods/${mod}/main.js else bundle mod o; }
@@ -131,6 +134,21 @@ in
     # The layout's light and dark themes.
     "herdr-app/themes/nix-light.json".source = ./themes/nix-light.json;
     "herdr-app/themes/nix-dark.json".source = ./themes/nix-dark.json;
+    # nix-editor's backend: the config `nvim --embed` starts with.
+    "herdr-app/nix-editor/init.lua".source = ./nix-editor/init.lua;
+  };
+
+  # The stdio launcher nix-editor reaches over 127.0.0.1:7741 (a mod can't start
+  # processes). Run by the login shell, so it finds the user's node, nvim and language
+  # servers on their PATH; nothing is installed for them.
+  launchd.agents.herdr-lsp-bridge = {
+    enable = true;
+    config = {
+      ProgramArguments = [ "/bin/zsh" "-lc" "exec node ${./lsp-bridge/bridge.js}" ];
+      RunAtLoad = true;
+      KeepAlive = true;
+      StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/herdr-lsp-bridge.log";
+    };
   };
 
   # The icons every nix-* mod draws from. Copied, not linked: Herdr draws an svg only

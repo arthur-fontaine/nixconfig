@@ -1,0 +1,304 @@
+// A code editor tab: a headless Neovim does the editing, highlighting, LSP and
+// completion (nvim.js, through the bridge); this view draws its UI grid in the
+// terminal's look and turns keys and the mouse into Neovim input, as Neovide does.
+// Opened with tab.new { mod: "nix-editor", props: { file, line? } }.
+import { View, div } from "gpui-kit";
+import { h_flex, v_flex } from "gpui-base";
+import { theme, settings, props, exec, home } from "herdr";
+import { Grid, nvimKey } from "./grid.js";
+import { startNvim } from "./nvim.js";
+
+const STATUS = 24; // px, the strip under the grid
+const PAD = { x: 8, y: 6 }; // px around the grid
+// Cmd chords the editor keeps; any other Cmd chord stays Herdr's (new tab, palette…).
+const OWN_CMD = new Set(["s", "z", "a", "c", "x", "v", "f", "/", "[", "]", "left", "right", "up", "down", "backspace", "d", "p"]);
+
+const dirname = (p) => p.replace(/\/[^/]*$/, "") || "/";
+
+export default class Editor extends View {
+  init(_props, cx) {
+    const p = props() ?? {};
+    this.file = p.file;
+    this.line = p.line ?? null;
+    this.grid = new Grid();
+    this.status = null; // herdr_status: { file, modified, errors, warnings, lsp }
+    this.error = null;
+    this.size = null; // { cols, rows }
+    this.nvim = null;
+    this.starting = false;
+    this.dragging = false;
+    this.wheel = { x: 0, y: 0 };
+    this.root = dirname(this.file ?? "/");
+    this.handle = cx.focus_handle();
+    this.cx = cx;
+    cx.timer.after(50, () => this.handle.focus());
+    // Every await goes through cx.spawn, so Herdr cancels it with the view: a bare promise
+    // that resumes after the tab closed crashes Herdr's script runtime.
+    if (this.file) cx.spawn(async (cx) => {
+      const r = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: dirname(this.file) }).catch(() => null);
+      if (r?.code === 0) { this.root = r.stdout.trim(); cx.notify(); }
+    });
+  }
+
+  close() {
+    this.nvim?.close();
+    this.nvim = null;
+  }
+
+  // The layout's terminal font; each cell is the font's advance (JetBrains Mono: 0.6em).
+  metrics() {
+    const s = settings();
+    const size = Number(s.font_size) || 12;
+    return { mono: s.font_family ?? "JetBrains Mono", size, cw: size * 0.6, lh: Math.round(size * 1.45) };
+  }
+
+  resized(px) {
+    const { cw, lh } = this.metrics();
+    const cols = Math.max(20, Math.floor((px.width - PAD.x * 2) / cw));
+    const rows = Math.max(4, Math.floor((px.height - PAD.y * 2) / lh));
+    if (this.size?.cols === cols && this.size?.rows === rows) return;
+    this.size = { cols, rows };
+    if (!this.nvim && !this.starting) return this.start();
+    // A window drag reports many sizes: nvim hears the last one.
+    this.resizeTask?.cancel();
+    this.resizeTask = this.cx.timer.after(80, () => this.nvim?.resize(cols, rows));
+  }
+
+  start() {
+    if (!this.file) { this.error = "No file to open"; return this.cx.notify(); }
+    if (typeof startNvim !== "function") { this.error = "The editor backend (nvim.js) isn't installed"; return this.cx.notify(); }
+    this.starting = true;
+    const cx = this.cx;
+    this.cx.spawn(async () => {
+      try {
+        this.nvim = await startNvim({
+          home: home(),
+          spawn: (body) => cx.spawn(() => body()),
+          file: this.file,
+          cwd: dirname(this.file),
+          width: this.size.cols,
+          height: this.size.rows,
+          onRedraw: (events) => { if (this.grid.apply(events)) cx.notify(); },
+          onNotify: (name, args) => {
+            if (name === "herdr_status") { this.status = args?.[0] ?? null; cx.notify(); }
+            if (name === "nvim_closed") { this.nvim = null; this.error = "Neovim exited"; cx.notify(); }
+          },
+        });
+        if (!this.nvim) this.error = "Couldn't start Neovim";
+        else if (this.line) await this.nvim.request("nvim_win_set_cursor", 0, [this.line, 0]);
+      } catch (e) {
+        this.error = `Couldn't start Neovim: ${e?.message ?? e}`;
+      }
+      this.starting = false;
+      cx.notify();
+    });
+  }
+
+  // Keys, as Neovim notation. Clipboard chords go through the system clipboard here,
+  // since a headless Neovim has none.
+  key(e, cx) {
+    if (!this.nvim) return;
+    const m = e.modifiers;
+    if (m.platform && !OWN_CMD.has(e.key)) return; // Herdr's own shortcut
+    cx.stop_propagation();
+    if (m.platform && !m.shift && !m.control && !m.alt && e.key === "v") {
+      const text = cx.read_from_clipboard();
+      if (text) cx.spawn(async () => { await this.nvim?.request("nvim_paste", text, true, -1).catch(() => {}); });
+      return;
+    }
+    const keys = nvimKey(e);
+    if (!keys) return;
+    this.nvim.input(keys);
+    if (m.platform && !m.shift && (e.key === "c" || e.key === "x")) {
+      // After the mapping has yanked into "+.
+      cx.spawn(async (cx) => {
+        await cx.sleep(30);
+        const text = await this.nvim?.request("nvim_call_function", "getreg", ["+"]).catch(() => null);
+        if (typeof text === "string" && text) cx.write_to_clipboard(text);
+      });
+    }
+  }
+
+  cell(e) {
+    const { cw, lh } = this.metrics();
+    const p = e.local_position ?? { x: 0, y: 0 };
+    const col = Math.max(0, Math.min(this.grid.cols - 1, Math.floor((p.x - PAD.x) / cw)));
+    const row = Math.max(0, Math.min(this.grid.rows - 1, Math.floor((p.y - PAD.y) / lh)));
+    return { row, col };
+  }
+
+  mods(m) {
+    return (m.control ? "C" : "") + (m.alt ? "A" : "") + (m.shift ? "S" : "") + (m.platform ? "D" : "");
+  }
+
+  mouseDown(e, cx) {
+    this.handle.focus();
+    if (!this.nvim || !this.grid.mouse) return;
+    const { row, col } = this.cell(e);
+    this.dragging = true;
+    this.last = { row, col };
+    if (e.modifiers.platform) {
+      // Cmd+click: the caret there, then the LSP's definition.
+      this.nvim.inputMouse("left", "press", "", 0, row, col);
+      this.nvim.inputMouse("left", "release", "", 0, row, col);
+      this.dragging = false;
+      cx.spawn(async () => { await this.nvim?.request("nvim_exec_lua", "vim.lsp.buf.definition()", []).catch(() => {}); });
+      return;
+    }
+    this.nvim.inputMouse("left", "press", this.mods(e.modifiers), 0, row, col);
+  }
+
+  // Drags select; plain moves reach nvim's <MouseMove>, which shows the hover float.
+  mouseMove(e) {
+    if (!this.nvim || !this.grid.mouse) return;
+    const { row, col } = this.cell(e);
+    if (row === this.last?.row && col === this.last?.col) return;
+    this.last = { row, col };
+    if (this.dragging) this.nvim.inputMouse("left", "drag", this.mods(e.modifiers), 0, row, col);
+    else this.nvim.inputMouse("move", "", this.mods(e.modifiers), 0, row, col);
+  }
+
+  mouseUp(e) {
+    if (!this.dragging || !this.nvim) return;
+    this.dragging = false;
+    const { row, col } = this.cell(e);
+    this.nvim.inputMouse("left", "release", this.mods(e.modifiers), 0, row, col);
+  }
+
+  // Trackpads report pixels: one wheel step per line height, in either direction.
+  scroll(e) {
+    if (!this.nvim || !this.grid.mouse) return;
+    const { lh, cw } = this.metrics();
+    const { row, col } = this.cell(e);
+    this.wheel.y += e.delta.y;
+    this.wheel.x += e.delta.x;
+    while (Math.abs(this.wheel.y) >= lh) {
+      const up = this.wheel.y > 0;
+      this.nvim.inputMouse("wheel", up ? "up" : "down", this.mods(e.modifiers), 0, row, col);
+      this.wheel.y += up ? -lh : lh;
+    }
+    while (Math.abs(this.wheel.x) >= cw * 4) {
+      const left = this.wheel.x > 0;
+      this.nvim.inputMouse("wheel", left ? "left" : "right", this.mods(e.modifiers), 0, row, col);
+      this.wheel.x += left ? -cw * 4 : cw * 4;
+    }
+    if (e.touch_phase === "ended") this.wheel = { x: 0, y: 0 };
+  }
+
+  // One element per run of a highlight, at its cell; a run's width is its cells' so
+  // columns stay exact whatever the glyphs measure.
+  row(r, m, t) {
+    const g = this.grid;
+    const base = g.defaults.bg;
+    const runs = g.runs(r).map((run) => {
+      const s = g.style(run.hl);
+      const blank = !run.text.trim();
+      return div().absolute().left(run.col * m.cw).top(0).w(run.cells * m.cw).h(m.lh).flex_none().overflow_hidden()
+        .whitespace_nowrap().line_height(`${m.lh}px`)
+        .when(Boolean(s.bg) && s.bg !== base, (e) => e.bg(s.bg))
+        .when(!blank, (e) => e.text_color(s.fg ?? t.foreground)
+          .when(s.bold, (e) => e.font_weight(700))
+          .when(s.italic, (e) => e.italic())
+          .when(s.underline && !s.spSet, (e) => e.underline())
+          .when(s.strikethrough, (e) => e.line_through())
+          .child(run.text))
+        // A line in the special color (GPUI colors decorations like the text): an underline
+        // drawn under spaces of that color, wavy for undercurl.
+        .when(s.undercurl || (s.underline && s.spSet), (e) => e.child(div().absolute().left(0).top(0).w_full().h(m.lh).line_height(`${m.lh}px`)
+          .text_color(s.sp ?? t.blocked).underline().when(s.undercurl, (e) => e.text_decoration_wavy()).whitespace_nowrap()
+          .child(" ".repeat(run.cells))));
+    });
+    return div().absolute().left(PAD.x).top(PAD.y + r * m.lh).w(g.cols * m.cw).h(m.lh).children(runs);
+  }
+
+  caret(m, t) {
+    const g = this.grid, { row, col } = g.cursor;
+    if (row >= g.rows || col >= g.cols) return null;
+    const { shape, percentage } = g.cursorShape();
+    const x = PAD.x + col * m.cw, y = PAD.y + row * m.lh;
+    if (shape === "vertical") return div().absolute().left(x).top(y).w(2).h(m.lh).bg(t.accent);
+    if (shape === "horizontal") {
+      const h = Math.max(2, Math.round((m.lh * (percentage || 20)) / 100));
+      return div().absolute().left(x).top(y + m.lh - h).w(m.cw).h(h).bg(t.accent);
+    }
+    // A block shows the character under it in the background's color.
+    const [text] = g.lines[row]?.[col] ?? [" "];
+    return div().absolute().left(x).top(y).w(m.cw).h(m.lh).bg(t.accent).text_color(g.defaults.bg ?? t.background)
+      .line_height(`${m.lh}px`).whitespace_nowrap().overflow_hidden().child(text || " ");
+  }
+
+  // Neovim's completion menu, drawn by us under the word it completes.
+  popup(m, t) {
+    const p = this.grid.popup;
+    if (!p || !p.items.length) return null;
+    const visible = 10, rowH = 22;
+    const first = Math.max(0, Math.min(p.items.length - visible, (p.selected ?? 0) - Math.floor(visible / 2)));
+    const items = p.items.slice(first, first + visible);
+    const width = Math.min(520, Math.max(200, ...items.map(([word, kind, menu]) => (word.length + (kind?.length ?? 0) + (menu?.length ?? 0) + 6) * m.cw)));
+    const below = PAD.y + (p.row + 1) * m.lh;
+    const height = items.length * rowH + 8;
+    const top = below + height > this.px?.height - STATUS && p.row * m.lh > height ? PAD.y + p.row * m.lh - height : below;
+    const left = Math.max(0, Math.min(PAD.x + p.col * m.cw - 6, (this.px?.width ?? 800) - width - 8));
+    return v_flex().absolute().left(left).top(top).w(width).p(4).gap(0).rounded(6).bg(t.popover).border_1().border_color(t.border)
+      .text_size(12.5).children(items.map(([word, kind, menu], i) => {
+        const on = first + i === p.selected;
+        return h_flex().h(rowH).px(8).gap(8).items_center().rounded(4).when(on, (e) => e.bg(t.selected))
+          .child(div().flex_1().min_w(0).truncate().font_family(m.mono).text_color(on ? t.foreground : t.muted).child(word))
+          .when(Boolean(kind), (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(kind)))
+          .when(Boolean(menu), (e) => e.child(div().flex_none().max_w(160).truncate().text_size(11).text_color(t.dim).child(menu)));
+      }));
+  }
+
+  // ":" commands and "/" searches (Cmd+F), typed on a line at the bottom of the editor.
+  cmdline(m, t) {
+    const c = this.grid.cmdline;
+    const h = m.lh + 12;
+    const caret = PAD.x + (c.lead.length + c.pos) * m.cw;
+    return div().absolute().left(0).bottom(0).w_full().h(h).bg(t.chrome).border_t(1).border_color(t.border)
+      .child(div().absolute().left(PAD.x).top(6).h(m.lh).line_height(`${m.lh}px`).whitespace_nowrap().overflow_hidden()
+        .child(h_flex().child(div().text_color(t.dim).child(c.lead)).child(div().text_color(t.foreground).child(c.text))))
+      .child(div().absolute().left(caret).top(6).w(2).h(m.lh).bg(t.accent));
+  }
+
+  statusBar(t) {
+    const s = this.status ?? {};
+    const file = s.file ?? this.file ?? "";
+    const rel = this.root && file.startsWith(this.root + "/") ? file.slice(this.root.length + 1) : file;
+    // init.lua reports the attached servers, "ts_ls (starting)" until initialized.
+    const servers = Array.isArray(s.lsp) ? s.lsp : [];
+    const state = !this.status ? "starting" : !servers.length ? "none" : servers.some((n) => n.endsWith("(starting)")) ? "starting" : "ready";
+    const name = "TS";
+    const msg = this.grid.message;
+    const count = (n, color) => h_flex().flex_none().gap(5).items_center()
+      .child(div().size(6).rounded(3).bg(color)).child(String(n));
+    return h_flex().h(STATUS).flex_none().px(12).gap(14).items_center().bg(t.chrome).border_t(1).border_color(t.border)
+      .text_size(11).text_color(t.muted)
+      .when(Boolean(msg), (e) => e.child(div().flex_1().min_w(0).truncate().whitespace_nowrap().text_color(msg.error ? t.blocked : t.muted).child(msg.text.replace(/\s+/g, " "))))
+      .when(!msg, (e) => e.child(div().flex_1().min_w(0).text_ellipsis_start().whitespace_nowrap().text_color(t.dim).child(rel)))
+      .when(Boolean(s.modified), (e) => e.child(div().flex_none().child("• modified")))
+      .when(s.errors > 0, (e) => e.child(count(s.errors, t.blocked)))
+      .when(s.warnings > 0, (e) => e.child(count(s.warnings, t.ansi3)))
+      .child(div().flex_none().text_color(state === "ready" ? t.muted : t.dim).child(`${name} ${state}`));
+  }
+
+  render(cx) {
+    const t = theme(), m = this.metrics(), g = this.grid;
+    g.takeDirty();
+    const body = div().id("editor-grid").flex_1().min_h(0).relative().overflow_hidden()
+      .bg(g.defaults.bg ?? t.background).font_family(m.mono).text_size(m.size).line_height(`${m.lh}px`)
+      .on_size_change((px, cx) => { this.px = px; this.resized(px); })
+      .on_mouse_down("left", (e, cx) => this.mouseDown(e, cx))
+      .on_mouse_move((e) => this.mouseMove(e))
+      .on_mouse_up("left", (e) => this.mouseUp(e))
+      .on_scroll_wheel((e) => this.scroll(e))
+      .when(Boolean(this.error), (e) => e.child(div().p(16).text_size(12).text_color(t.blocked).child(this.error)))
+      .when(!this.error && !g.rows, (e) => e.child(div().p(16).text_size(12).text_color(t.dim).child("Starting Neovim…")))
+      .children(Array.from({ length: g.rows }, (_, r) => this.row(r, m, t)))
+      .when(g.rows > 0 && Boolean(this.caret(m, t)), (e) => e.child(this.caret(m, t)))
+      .when(Boolean(this.popup(m, t)), (e) => e.child(this.popup(m, t)))
+      .when(Boolean(g.cmdline), (e) => e.child(this.cmdline(m, t)));
+    return v_flex().id("nix-editor").size_full().min_h(0).bg(g.defaults.bg ?? t.background).text_color(t.foreground)
+      .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
+      .child(body).child(this.statusBar(t));
+  }
+}
