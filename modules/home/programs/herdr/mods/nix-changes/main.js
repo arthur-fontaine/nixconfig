@@ -1,6 +1,6 @@
-// Changes, as Zed's git panel: the changed files in Tracked and Untracked
-// sections with a box to stage each, the branch with ahead/behind, a commit
-// box, and the branch's history, the focused agent's commits first. Diffs open
+// Changes, for reviewing what agents did: one list of changed files (a box to stage each
+// shows on hover), a one-line commit box, and the branch's history with the session's
+// commits marked, which gets the room whenever the list doesn't need it. Diffs open
 // in the middle, as a tab (the nix-diff mod): a file jumps to its place in
 // "Uncommitted Changes", a commit opens its own diff, shown the same way.
 import { View, div, svg } from "gpui-kit";
@@ -46,7 +46,7 @@ export default class Changes extends View {
     this.files = []; this.commits = []; this.branch = null; this.started = {}; this.tabs = {};
     this.prs = {}; // root\0branch -> { at, pr: {...} | null, tool }
     this.message = ""; this.handle = cx.focus_handle(); this.focusN = 0;
-    this.shown = null; this.foldedSections = new Set(); this.hovered = null;
+    this.shown = null; this.hovered = null;
     this.input = InputState.new({ placeholder: "Commit message" });
     this.input.on("change", (_e, cx) => {
       const had = Boolean(this.message.trim());
@@ -334,11 +334,14 @@ export default class Changes extends View {
   fileRow(f, t) {
     const slash = f.path.lastIndexOf("/");
     const dir = slash >= 0 ? f.path.slice(0, slash) : "", name = f.path.slice(slash + 1);
-    const on = this.shown === f.path;
-    return h_flex().id(`change-${f.path}`).h(26).flex_none().px(6).gap(8).items_center().rounded(6).cursor_pointer().text_size(12.5)
+    const id = `change-${f.path}`, on = this.shown === f.path;
+    // The box's column is kept at rest, so nothing shifts when it shows.
+    const box = this.hovered === id || f.staged !== "none";
+    return h_flex().id(id).h(26).flex_none().px(6).gap(8).items_center().rounded(6).cursor_pointer().text_size(12.5)
       .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((s) => s.bg(t.hover)))
+      .on_hover((hovered, cx) => { this.hovered = hovered ? id : this.hovered === id ? null : this.hovered; cx.notify(); })
       .on_click((_e, cx) => this.showFile(f.path, cx))
-      .child(this.checkbox(f.staged, t, (cx) => this.toggleStage(f, cx), `stage-${f.path}`))
+      .child(box ? this.checkbox(f.staged, t, (cx) => this.toggleStage(f, cx), `stage-${f.path}`) : div().size(14).flex_none())
       .child(this.statusIcon(f.status, t))
       .child(h_flex().flex_1().min_w(0).gap(5).items_baseline()
         .child(div().flex_none().max_w(180).truncate().text_color(f.status === "D" ? t.muted : t.foreground).when(f.status === "D", (e) => e.line_through()).child(name))
@@ -346,25 +349,6 @@ export default class Changes extends View {
       .child(h_flex().flex_none().gap(4).text_size(11)
         .child(div().w(34).text_right().text_color(t.ansi2).child(f.add > 0 ? `+${f.add}` : ""))
         .child(div().w(34).text_right().text_color(t.ansi1).child(f.del > 0 ? `−${f.del}` : "")));
-  }
-
-  // A section: its label and count; it folds from its chevron, and its box (shown on hover)
-  // stages or unstages the whole section.
-  section(label, files, t) {
-    if (!files.length) return [];
-    const state = files.every((f) => f.staged === "all") ? "all" : files.some((f) => f.staged !== "none") ? "some" : "none";
-    const toggle = (cx) => this.act(state === "all" ? ["reset", "-q", "--", ...files.map((f) => f.path)] : ["add", "--", ...files.map((f) => f.path)], cx);
-    const id = `section-${label}`, folded = this.foldedSections.has(label);
-    return [
-      h_flex().id(id).h(24).flex_none().px(6).gap(6).items_center().rounded(6).cursor_pointer().text_size(11).text_color(t.muted)
-        .on_hover((hovered, cx) => { this.hovered = hovered ? id : this.hovered === id ? null : this.hovered; cx.notify(); })
-        .on_click((_e, cx) => { folded ? this.foldedSections.delete(label) : this.foldedSections.add(label); cx.notify(); })
-        .child(svg(ICON(folded ? "chevron-right" : "chevron-down")).size(10).flex_none().text_color(t.dim))
-        .child(label).child(div().text_color(t.dim).child(String(files.length)))
-        .child(div().flex_1())
-        .when(this.hovered === id || state !== "none", (e) => e.child(this.checkbox(state, t, toggle, `stage-section-${label}`))),
-      ...(folded ? [] : files.map((f) => this.fileRow(f, t))),
-    ];
   }
 
   commitRow(c, t) {
@@ -380,61 +364,62 @@ export default class Changes extends View {
   render(cx) {
     if (key() !== this.context) this.refresh(cx);
     const t = theme();
-    const conflicts = this.files.filter((f) => !f.untracked && f.status === "U");
-    const tracked = this.files.filter((f) => !f.untracked && f.status !== "U"), untracked = this.files.filter((f) => f.untracked);
-    const allStaged = this.files.length > 0 && this.files.every((f) => f.staged === "all");
-    const enabled = Boolean(this.message.trim() && this.root && !this.busy && !this.loading && this.files.length);
+    // One list: conflicts first, then by path (untracked files read as A).
+    const files = [...this.files].sort((a, b) => (a.status === "U") !== (b.status === "U") ? (a.status === "U" ? -1 : 1) : a.path.localeCompare(b.path));
+    const allStaged = files.length > 0 && files.every((f) => f.staged === "all");
+    const enabled = Boolean(this.message.trim() && this.root && !this.busy && !this.loading && files.length);
     const mine = this.commits.filter((c) => c.session).length;
     const b = this.branch;
-    const n = this.files.length;
-    const textButton = (id, label, onClick) => div().id(id).h(24).px(8).flex().items_center().rounded(6).text_size(12).font_medium()
+    const n = files.length;
+    const add = files.reduce((s, f) => s + f.add, 0), del = files.reduce((s, f) => s + f.del, 0);
+    // The list takes what its rows need, at most half the panel; History has the rest.
+    const listH = Math.min(n * 26 + 8, Math.max(120, (this.height ?? 600) / 2));
+    const textButton = (id, label, onClick) => div().id(id).h(24).px(8).flex().flex_none().items_center().rounded(6).text_size(12).font_medium()
       .text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(onClick).child(label);
+    const empty = this.error || (this.loading && !this.root ? "Loading changes…" : this.root ? "Nothing to commit" : "No folder");
     return v_flex().id("changes").size_full().min_h(0).bg(t.chrome).text_color(t.foreground).text_size(13).track_focus(this.handle)
+      .on_size_change((size, cx) => { if (size.height !== this.height) { this.height = size.height; cx.notify(); } })
       .on_key_down((e, cx) => {
         if (e.key === "escape" && this.typing) { this.typing = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); }
       })
-      // Header: "Changes" and the count; on hover, the whole diff and Stage All.
+      // Header: "Changes", the totals, the whole diff; Stage all on hover.
       .child(h_flex().id("changes-head").h(36).flex_none().px(12).gap(4).items_center().border_b(1).border_color(t.border)
         .on_hover((hovered, cx) => { this.headHover = hovered; cx.notify(); })
-        .child(div().font_medium().child("Changes"))
+        .child(div().flex_none().font_medium().child("Changes"))
+        .child(div().ml(6).min_w(0).truncate().text_size(11).text_color(t.dim)
+          .child(this.root === null && !this.loading ? "Not a git repository" : n ? `${n} · +${add} −${del}` : ""))
         .child(div().flex_1())
-        .when(!(this.headHover && n > 0), (e) => e.child(div().text_size(11).text_color(t.dim)
-          .child(this.root === null && !this.loading ? "Not a git repository" : n ? `${n} ${n === 1 ? "file" : "files"}` : "")))
-        .when(Boolean(this.headHover && n > 0), (e) => e
-          .child(textButton("open-diff", "View Diff", (_e, cx) => this.openDiff(null, "Uncommitted Changes", cx)))
-          .child(textButton("stage-all", allStaged ? "Unstage All" : "Stage All", (_e, cx) => this.stageAll(cx)))))
-      // The files.
-      .child(v_flex().id("changes-list").flex_1().min_h(80).overflow_y_scrollbar().px(6).py(4)
-        .children([...this.section("Conflicts", conflicts, t), ...this.section("Tracked", tracked, t), ...this.section("Untracked", untracked, t)])
-        .when(!n, (e) => e.child(div().p(12).text_size(12).text_color(t.dim)
-          .child(this.error || (this.loading ? "Loading changes…" : this.root ? "Nothing to commit" : "No folder")))))
+        .when(Boolean(this.headHover && n > 0), (e) => e.child(textButton("stage-all", allStaged ? "Unstage all" : "Stage all", (_e, cx) => this.stageAll(cx))))
+        .when(n > 0, (e) => e.child(textButton("open-diff", "View diff", (_e, cx) => this.openDiff(null, "Uncommitted Changes", cx)))))
+      // The files, or one line when there are none.
+      .when(n > 0, (e) => e.child(v_flex().id("changes-list").flex_none().h(listH).overflow_y_scrollbar().px(6).py(4)
+        .children(files.map((f) => this.fileRow(f, t)))))
+      .when(!n, (e) => e.child(h_flex().h(36).flex_none().px(12).items_center().text_size(12).text_color(t.dim).child(empty)))
       .when(Boolean(this.note), (e) => e.child(div().px(12).py(6).text_size(12).text_color(t.ansi1).child(this.note)))
-      // The branch's PR or MR.
-      .when(Boolean(this.prSection(t)), (e) => e.child(this.prSection(t)))
-      // The commit box, then the branch and Commit.
-      .child(v_flex().flex_none().border_t(1).border_color(t.border).px(12).py(10)
-        .child(div().id("commit-message").h(60).px(10).py(8).flex().items_start().rounded(6).bg(t.background).border_1()
+      // A one-line commit box and Commit, while there is something to commit.
+      .when(n > 0, (e) => e.child(h_flex().flex_none().border_t(1).border_color(t.border).px(12).py(8).gap(8).items_center()
+        .child(div().id("commit-message").flex_1().min_w(0).h(30).px(10).flex().items_center().rounded(6).bg(t.background).border_1()
           .border_color(this.typing ? t.ring ?? t.accent : t.border).cursor_text().text_size(12.5)
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(() => this.input.focus())
           .child(Input.new(this.input).w_full().text_size(12.5).text_color(t.foreground)))
-        .child(h_flex().h(32).pt(8).gap(6).items_center().text_size(11).text_color(t.dim)
-          .when(Boolean(b?.name), (e) => e
-            .child(svg(ICON("git-branch")).size(12).flex_none().text_color(t.dim))
-            .child(div().min_w(0).truncate().child(b.upstream ? `${b.upstream.split("/")[0]}/${b.name}` : b.name))
-            .when(b.ahead > 0, (e) => e.child(div().flex_none().child(`↑${b.ahead}`)))
-            .when(b.behind > 0, (e) => e.child(div().flex_none().child(`↓${b.behind}`))))
+        .child(div().id("commit").h(26).px(10).flex().flex_none().items_center().rounded(6).text_size(12).font_medium()
+          .bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).when(enabled, (e) => e.cursor_pointer())
+          .tooltip(files.some((f) => f.staged !== "none") ? "Commits the staged changes" : "Commits every change")
+          .on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit"))))
+      // The branch's PR or MR.
+      .when(Boolean(this.prSection(t)), (e) => e.child(this.prSection(t)))
+      // History: this session's commits marked; the branch and its upstream in its header.
+      .child(v_flex().flex_1().min_h(0).border_t(1).border_color(t.border).px(6).pt(4).pb(6)
+        .when(this.commits.length > 0 || Boolean(b?.name), (e) => e.child(h_flex().h(28).flex_none().px(6).gap(8).items_center()
+          .child(div().flex_none().text_size(12).font_medium().text_color(t.muted).child("History"))
+          .when(mine > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`${mine} this session`)))
           .child(div().flex_1())
-          .child(div().id("commit").h(26).px(10).flex().flex_none().items_center().rounded(6).text_size(12).font_medium()
-            .bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).when(enabled, (e) => e.cursor_pointer())
-            .tooltip(this.files.some((f) => f.staged !== "none") ? "Commits the staged changes" : n ? "Commits every change" : "Nothing to commit")
-            .on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit"))))
-      // History: this session's commits marked.
-      .when(this.commits.length > 0, (e) => e.child(v_flex().flex_none().h(Math.min(260, 38 + this.commits.length * 26)).border_t(1).border_color(t.border)
-        .px(6).pt(4).pb(6)
-        .child(h_flex().h(28).flex_none().px(6).gap(8).items_center()
-          .child(div().text_size(12).font_medium().text_color(t.muted).child("History"))
-          .when(mine > 0, (e) => e.child(div().text_size(11).text_color(t.dim).child(`${mine} this session`))))
+          .when(Boolean(b?.name), (e) => e.child(h_flex().min_w(0).gap(5).items_center().text_size(11).text_color(t.dim)
+            .child(svg(ICON("git-branch")).size(12).flex_none())
+            .child(div().min_w(0).truncate().child(b.name))
+            .when(b.ahead > 0, (e) => e.child(div().flex_none().child(`↑${b.ahead}`)))
+            .when(b.behind > 0, (e) => e.child(div().flex_none().child(`↓${b.behind}`)))))))
         .child(v_flex().id("changes-commits").flex_1().min_h(0).overflow_y_scrollbar()
-          .children(this.commits.map((c) => this.commitRow(c, t))))));
+          .children(this.commits.map((c) => this.commitRow(c, t)))));
   }
 }

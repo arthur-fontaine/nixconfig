@@ -31,6 +31,17 @@ export default class Tabs extends View {
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
   }
 
+  // The + popover (nix-new) for the shown space's project, under the pointer and inside the window.
+  openNew(cx) {
+    const height = 404;
+    let at = "pointer";
+    try {
+      const m = cx.mouse_position(), v = cx.viewport_size();
+      at = { x: Math.max(8, Math.min(m.x - 8, v.width - 360 - 12)), y: Math.max(8, Math.min(m.y + 12, v.height - height - 8)) };
+    } catch {}
+    openOverlay({ mod: "nix-new", kind: "popup", width: 360, height, at, props: { space: spaces().find((s) => s.active)?.id } });
+  }
+
   // The side panel is remembered per space: switching shows that space's choice
   // (closed if it never had one), and opening or closing it records it.
   syncPanel(space, panel, body, enabled) {
@@ -118,7 +129,7 @@ export default class Tabs extends View {
       .child(div().absolute().left_0().right_0().bottom(0).h(1).bg(t.border))
       // + right after the last tab, as in a browser; the right group is the panels.
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_stretch().gap(2).overflow_x_scrollbar().children(shown.map(item))
-        .child(button("tab-new", svg(ICON("plus")).size(14), () => openOverlay({ mod: "nix-new-menu", kind: "popup", width: 240, height: 90 }), "New tab")))
+        .child(button("tab-new", svg(ICON("plus")).size(14), (_e, cx) => this.openNew(cx), "New tab")))
       .child(h_flex().flex_none().self_center().gap(2)
         .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "file")))
         .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "git-compare"))))

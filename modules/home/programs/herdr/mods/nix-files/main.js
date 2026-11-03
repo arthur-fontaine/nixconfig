@@ -38,6 +38,7 @@ export default class Files extends View {
   init(_props, cx) {
     this.saved = new Map();
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
+    this.changedOnly = localStorage.getItem("changedOnly") === "1";
     this.refresh(cx);
     cx.timer.every(10000, cx => this.refresh(cx));
   }
@@ -166,23 +167,61 @@ export default class Files extends View {
     });
   }
 
-  // Icons from the nix set, as every nix-* mod draws them.
+  // A tree row: a 16px indent per level with its guide (rows touch, so guides join into lines),
+  // the chevron's 10px box, the icon, the name, and the git mark or a changed-folder dot.
+  row(path, name, dir, depth, t) {
+    const open = this.folders.has(path), mark = this.marks[`${this.root}/${path}`] ?? this.marks[`${this.root}/${path}/`];
+    const on = this.opened === path;
+    const changed = dir && !mark && this.markedDirs.has(path);
+    const color = { A: t.ansi2, D: t.ansi1, U: t.ansi5 }[mark] ?? t.ansi3;
+    return h_flex().id(`file-${path}`).h(26).flex_none().pl(6).pr(8).items_center().rounded(6).cursor_pointer().text_size(12.5)
+      .when(on, (s) => s.bg(t.selected)).when(!on, (s) => s.hover((s) => s.bg(t.hover)))
+      .on_click((_e, cx) => { if (!dir) this.opened = path; dir ? this.toggle(path, cx) : this.edit(path, cx); })
+      .children(Array.from({ length: depth }, () => div().w(16).h_full().flex_none().child(div().ml(11).w(1).h_full().bg(t.border))))
+      .child(div().w(10).mr(6).flex_none().flex().items_center().justify_center()
+        .when(dir, (e) => e.child(svg(`mods/nix-head/icons/chevron-${open || this.changedOnly ? "down" : "right"}.svg`).size(10).text_color(t.dim))))
+      .child(svg(`mods/nix-head/icons/${dir ? "folder" : "file"}.svg`).size(14).mr(6).flex_none().text_color(t.muted))
+      // Dotfiles in dim.
+      .child(div().flex_1().min_w(0).truncate().text_color(name.startsWith(".") ? t.dim : t.foreground).child(name))
+      .when(Boolean(mark), (el) => el.child(div().flex_none().font_family(settings().font_family ?? "JetBrains Mono").text_size(11).font_medium().text_color(color).child(mark)))
+      .when(changed, (el) => el.child(div().flex_none().size(5).rounded(3).bg(t.dim)));
+  }
+
   rows(prefix, depth, out, t) {
     if (out.length >= TOTAL || depth > 40) return out;
     for (const entry of this.entries.get(prefix) ?? []) {
       if (out.length >= TOTAL) break;
-      const path = prefix ? `${prefix}/${entry.name}` : entry.name, open = this.folders.has(path), mark = this.marks[`${this.root}/${path}`];
-      const on = this.opened === path;
-      out.push(h_flex().id(`file-${path}`).h(26).flex_none().pl(6 + depth * 16).pr(6).gap(6).items_center().rounded(6).cursor_pointer().text_size(12.5)
-        .when(on, s => s.bg(t.selected)).when(!on, s => s.hover(s => s.bg(t.hover)))
-        .on_click((_e, cx) => { if (!entry.dir) this.opened = path; entry.dir ? this.toggle(path, cx) : this.edit(path, cx); })
-        .child(entry.dir ? svg(`mods/nix-head/icons/chevron-${open ? "down" : "right"}.svg`).size(10).flex_none().text_color(t.dim) : div().w(10).flex_none())
-        .child(svg(`mods/nix-head/icons/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
-        // Dotfiles in dim.
-        .child(div().flex_1().min_w(0).truncate().text_color(entry.name.startsWith(".") ? t.dim : t.foreground).child(entry.name))
-        .when(Boolean(mark), el => el.child(div().text_size(11).text_color(mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : t.blocked).child(mark))));
-      if (entry.dir && open) this.rows(path, depth + 1, out, t);
+      const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+      out.push(this.row(path, entry.name, entry.dir, depth, t));
+      if (entry.dir && this.folders.has(path)) this.rows(path, depth + 1, out, t);
     }
+    return out;
+  }
+
+  // Changed files only: the folders on the way to a marked file, all open, and the marked files.
+  changedRows(t) {
+    const prefix = `${this.root}/`, tree = new Map([["", new Map()]]);
+    for (const abs of Object.keys(this.marks)) {
+      if (!abs.startsWith(prefix)) continue;
+      const parts = abs.slice(prefix.length).replace(/\/$/, "").split("/");
+      let at = "";
+      parts.forEach((name, i) => {
+        const path = at ? `${at}/${name}` : name, dir = i < parts.length - 1;
+        tree.get(at).set(name, { name, dir });
+        if (dir && !tree.has(path)) tree.set(path, new Map());
+        at = path;
+      });
+    }
+    const out = [];
+    const walk = (at, depth) => {
+      const kids = [...(tree.get(at)?.values() ?? [])].sort((a, b) => (a.dir !== b.dir ? (a.dir ? -1 : 1) : a.name.localeCompare(b.name)));
+      for (const k of kids) {
+        const path = at ? `${at}/${k.name}` : k.name;
+        out.push(this.row(path, k.name, k.dir, depth, t));
+        if (k.dir) walk(path, depth + 1);
+      }
+    };
+    walk("", 0);
     return out;
   }
 
@@ -190,15 +229,29 @@ export default class Files extends View {
     if (key() !== this.context?.key) this.refresh(cx);
     const t = theme();
     const branch = spaces().find((s) => s.active)?.branch;
+    // Folders that hold a marked file, for their dot.
+    this.markedDirs = new Set();
+    for (const abs of Object.keys(this.marks)) {
+      if (!this.root || !abs.startsWith(`${this.root}/`)) continue;
+      const parts = abs.slice(this.root.length + 1).replace(/\/$/, "").split("/");
+      for (let i = 1; i < parts.length; i++) this.markedDirs.add(parts.slice(0, i).join("/"));
+    }
+    const only = this.changedOnly;
     return v_flex().id("files").size_full().min_h(0).bg(t.chrome).text_color(t.foreground).text_size(13)
-      .child(h_flex().h(36).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border)
+      .child(h_flex().h(36).flex_none().px(12).gap(4).items_center().border_b(1).border_color(t.border)
         .when(Boolean(this.file), el => el.child(div().id("files-back").size(20).flex_none().flex().items_center().justify_center().rounded(6).cursor_pointer()
           .text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => { this.show(null); cx.notify(); })
           .child(svg("mods/nix-head/icons/chevron-left.svg").size(12))))
-        .child(div().font_medium().child("Files"))
-        .child(div().flex_1().min_w(0).text_ellipsis_start().text_right().text_size(11).text_color(t.dim).child(this.file ?? branch ?? this.root?.split(/[\\/]/).pop() ?? "")))
-      .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().px(6).py(4).children(this.rows("", 0, [], t))
-        .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(12).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
+        .child(div().flex_none().font_medium().child("Files"))
+        .child(div().ml(6).flex_1().min_w(0).text_ellipsis_start().text_size(11).text_color(t.dim).child(this.file ?? branch ?? this.root?.split(/[\\/]/).pop() ?? ""))
+        .when(!this.file, el => el.child(div().id("changed-only").size(24).flex_none().flex().items_center().justify_center().rounded(6).cursor_pointer()
+          .when(only, (e) => e.bg(t.selected).text_color(t.foreground)).when(!only, (e) => e.text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground)))
+          .tooltip("Changed files only")
+          .on_click((_e, cx) => { this.changedOnly = !only; localStorage.setItem("changedOnly", this.changedOnly ? "1" : "0"); cx.notify(); })
+          .child(svg("mods/nix-head/icons/git-compare.svg").size(14)))))
+      .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().px(6).py(4).children(only ? this.changedRows(t) : this.rows("", 0, [], t))
+        .when(only && !this.error && !this.markedDirs.size && !Object.keys(this.marks).length, el => el.child(div().p(12).text_size(12).text_color(t.dim).child("No changed files")))
+        .when(!only && (Boolean(this.error) || !this.entries.get("")?.length), el => el.child(div().p(12).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
         .when(this.limited, el => el.child(div().p(12).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))
       .when(Boolean(this.file), el => el.child(this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(12).text_color(t.dim).child(this.fileError || "Loading file…")));
   }

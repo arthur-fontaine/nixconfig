@@ -87,7 +87,6 @@ export default class Sidebar extends View {
     this.filter = "";
     this.repos = JSON.parse(localStorage.getItem("repos") ?? "[]"); // [{ key, on, common, name }]
     this.folded = new Set(JSON.parse(localStorage.getItem("folded") ?? "[]"));
-    this.idleOpen = new Set(JSON.parse(localStorage.getItem("idleOpen") ?? "[]"));
     this.input = InputState.new({ placeholder: "Filter" });
     this.input.on("change", (_e, cx) => { this.filter = this.input.value().trim().toLowerCase(); cx.notify(); });
     this.input.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
@@ -101,7 +100,6 @@ export default class Sidebar extends View {
   toggle(set, name, id, cx) {
     set.has(id) ? set.delete(id) : set.add(id);
     this.save(name, set);
-    if (set === this.idleOpen && set.has(id)) this.loadTrees(id, cx);
     cx.notify();
   }
 
@@ -224,6 +222,7 @@ export default class Sidebar extends View {
       for (const r of mine) r.name = names.get(JSON.parse(r.key)[1]);
     }
     this.names = new Map([...repos.values()].map((r) => [r.key, r.name]));
+    this.repoByKey = repos;
     for (const r of repos.values()) r.project = sp.find((s) => s.id === projects[r.key]) ?? null;
     const inside = (p, dir) => p === dir || p.startsWith(dir + "/");
     for (const r of repos.values()) {
@@ -331,6 +330,28 @@ export default class Sidebar extends View {
     });
   }
 
+  // The + popover (nix-new), sized to its list and kept inside the window: popups aren't clamped.
+  // rows/groups: what its list will show, or null when it has to read the worktrees itself.
+  openNew(cx, props, rows, groups) {
+    const list = rows === null ? 290 : Math.max(90, Math.min(290, 22 * groups + 30 * rows));
+    const height = 32 + 36 + list + 40;
+    let at = "pointer";
+    try {
+      const m = cx.mouse_position(), v = cx.viewport_size();
+      at = { x: Math.max(8, Math.min(m.x - 8, v.width - 360 - 12)), y: Math.max(8, Math.min(m.y + 12, v.height - height - 8)) };
+    } catch {}
+    openOverlay({ mod: "nix-new", kind: "popup", width: 360, height, at, props });
+  }
+
+  // A repo's + (or a worktree's, preselecting it): its open and idle worktrees, or a new one.
+  openNewFor(r, s, ps, cx) {
+    const trees = this.trees[r.key];
+    const first = r.items[0];
+    const open = r.items.length, idle = r.idle?.length ?? 0;
+    this.openNew(cx, { repo: r.key, name: r.name, folder: first ? place(first.s, ps) : JSON.parse(r.key)[1], machine: r.on, ...(s && { space: s.id }), ...(trees && { worktrees: trees }) },
+      trees ? open + idle : null, (open > 0 ? 1 : 0) + (idle > 0 ? 1 : 0));
+  }
+
   // A worktree's click: its orchestrator tab, started the first time.
   openOrchestrator(s, folder) {
     run("space.select", { id: s.id });
@@ -397,32 +418,12 @@ export default class Sidebar extends View {
         .when(Boolean(g?.dirty), (e) => e.child(div().tooltip(`${g.dirty} changed files`).child(`±${g.dirty}`)))
         .when(g?.behind > 0, (e) => e.child(div().child(`↓${g.behind}`)))
         .when(g?.ahead > 0, (e) => e.child(div().child(`↑${g.ahead}`)))))
-      .when(this.hovered === id, (e) => e.child(this.small(`add-${s.id}`, "plus", "Start Pi or a terminal here",
-        () => openOverlay({ mod: "nix-new-menu", kind: "popup", width: 240, height: 140, props: { space: s.id } }), t)))
+      .when(this.hovered === id, (e) => e.child(this.small(`add-${s.id}`, "plus", "Start Pi or a terminal",
+        (cx) => { const r = g && this.repoByKey?.get(g.repo); r ? this.openNewFor(r, s, ps, cx) : this.openNew(cx, { space: s.id }, 2, 1); }, t)))
       .when(this.hovered !== id, (e) => e.when(Boolean(this.status(t, status)), (e) => e.child(this.status(t, status)))))];
     if (!folded) {
       if (orchestrator) rows.push(...this.workerRows(orchestrator, 40, t));
       for (const tab of tabs) rows.push(...this.tabRows(s, tab, ps, t, order));
-    }
-    return rows;
-  }
-
-  idleRows(r, t) {
-    if (!r.idle.length) return [];
-    const open = this.idleOpen.has(r.key) || Boolean(this.filter);
-    const shown = r.idle.filter((c) => this.matches(c.branch ?? c.path) || this.matches(r.name));
-    const rows = [h_flex().id(`idle-${r.key}`).h(26).pl(24).pr(10).gap(7).items_center().rounded(6).cursor_pointer()
-      .text_size(12).text_color(t.dim).hover((x) => x.bg(t.hover).text_color(t.muted))
-      .on_click((_e, cx) => this.toggle(this.idleOpen, "idleOpen", r.key, cx))
-      .child(div().w(12).h(14).flex_none().flex().items_center().justify_center().child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(10)))
-      .child(r.items.length ? `${r.idle.length} more ${r.idle.length === 1 ? "worktree" : "worktrees"}` : `${r.idle.length} ${r.idle.length === 1 ? "worktree" : "worktrees"}`)];
-    if (open) for (const c of shown) {
-      rows.push(h_flex().id(`checkout-${c.path}`).h(26).pl(40).pr(10).gap(8).items_center().rounded(6).cursor_pointer()
-        .text_size(12).text_color(t.dim).hover((x) => x.bg(t.hover).text_color(t.foreground)).tooltip(c.path)
-        .on_click(() => run("space.new", { folder: c.path, machine: r.on }))
-        .child(svg(ICON("git-branch")).size(12).flex_none())
-        .child(div().flex_1().min_w(0).truncate().child(c.branch ?? base(c.path)))
-        .when(c.at > 0, (e) => e.child(div().flex_none().text_size(11).child(ago(c.at)))));
     }
     return rows;
   }
@@ -432,8 +433,7 @@ export default class Sidebar extends View {
     const folded = r.closed ? !this.folded.has(`open:${r.key}`) : this.folded.has(r.key);
     const items = r.items.filter(({ s, g }) => this.matches(r.name) || this.matches(g.branch ?? "") ||
       (s.tabs ?? []).some((x) => this.matches(this.tabInfo(x, ps).label)));
-    const idleMatch = r.idle.some((c) => this.matches(c.branch ?? c.path));
-    if (this.filter && !items.length && !this.matches(r.name) && !idleMatch) return [];
+    if (this.filter && !items.length && !this.matches(r.name)) return [];
     const machine = r.on ? h_flex().flex_none().gap(4).items_center().text_size(11).text_color(t.dim).child(svg(ICON("server")).size(11)).child(r.on) : null;
     const count = r.items.length + r.idle.length;
     const fold = (cx) => r.closed ? this.toggle(this.folded, "folded", `open:${r.key}`, cx) : this.toggle(this.folded, "folded", r.key, cx);
@@ -447,10 +447,7 @@ export default class Sidebar extends View {
       .child(div().flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(r.closed ? t.muted : t.foreground).child(r.name))
       .when(Boolean(machine), (e) => e.child(machine))
       .when(this.hovered === id, (e) => e
-        .child(this.small(`new-wt-${r.key}`, "plus", "New worktree", () => {
-          const first = r.items[0];
-          openOverlay({ mod: "nix-dispatch", kind: "popup", width: 320, height: 114, props: { space: first?.s.id, folder: first ? place(first.s, ps) : JSON.parse(r.key)[1], machine: r.on } });
-        }, t))
+        .child(this.small(`new-wt-${r.key}`, "plus", "Start Pi or a terminal", (cx) => this.openNewFor(r, null, ps, cx), t))
         .when(r.closed, (e) => e.child(this.small(`forget-${r.key}`, "x", "Hide from the list", (cx) => this.forget(r.key, cx), t))))
       .when(this.hovered !== id && folded && count > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`${count}`)))
       .when(this.hovered !== id && folded && !r.closed && (r.behind > 0 || r.ahead > 0), (e) => e
@@ -461,7 +458,7 @@ export default class Sidebar extends View {
     const workers = projectTab ? this.workerRows(projectTab, 24, t) : [];
     if (folded && !this.filter) return [head, ...workers];
     if (r.closed && !this.trees[r.key]) this.loadTrees(r.key, null);
-    return [head, ...workers, ...items.flatMap((it) => this.worktreeRow(it, ps, t, order)), ...this.idleRows(r, t)];
+    return [head, ...workers, ...items.flatMap((it) => this.worktreeRow(it, ps, t, order))];
   }
 
   folderRow({ s }, ps, t, order) {
@@ -477,8 +474,8 @@ export default class Sidebar extends View {
       .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 260, props: { tab: "space", target: { id: s.id } } }))
       .child(svg(ICON("folder")).size(14).flex_none().text_color(t.muted))
       .child(div().flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(s.active ? t.foreground : t.muted).child(name))
-      .when(this.hovered === `space-${s.id}`, (e) => e.child(this.small(`add-${s.id}`, "plus", "Start Pi or a terminal here",
-        () => openOverlay({ mod: "nix-new-menu", kind: "popup", width: 240, height: 140, props: { space: s.id } }), t))));
+      .when(this.hovered === `space-${s.id}`, (e) => e.child(this.small(`add-${s.id}`, "plus", "Start Pi or a terminal",
+        (cx) => this.openNew(cx, { space: s.id }, 2, 1), t))));
     return rows.map((r, i) => (i === 0 ? r : r.pl(24)));
   }
 

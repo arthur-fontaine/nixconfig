@@ -164,7 +164,7 @@ Folder: `~/.config/herdr-app`. Repo module: `modules/home/programs/herdr/`.
 | `settings.json` | Merge: font size, contrast, sounds. Settings and the zoom keys write it. |
 | `shared.json` | Merge: the shown layout (`nix`) and the Files/Changes panels (`workspace.panels`). The rest is mods' state. Herdr holds it in memory, so quit Herdr before `rebuild`. |
 | `keys.json` | Merge: the `nix-status.*` keys below. Herdr's defaults stay. |
-| `layouts/nix.json`, `mods/nix-*/` | Symlinks. Copies of Herdr's `main` layout and its mods, patched (each mod's first commit is the shipped file, to diff against after a Herdr update), plus `nix-diff` and `nix-dispatch`. Mods split into modules (`mods/_lib/`, `nix-diff/model.js`…) are joined into one `main.js` by the module, since Herdr won't import across folders. |
+| `layouts/nix.json`, `mods/nix-*/` | Symlinks. Copies of Herdr's `main` layout and its mods, patched (each mod's first commit is the shipped file, to diff against after a Herdr update), plus `nix-diff` and `nix-new`. Mods split into modules (`mods/_lib/`, `nix-diff/model.js`…) are joined into one `main.js` by the module, since Herdr won't import across folders. |
 | `layouts/.state/` | Not managed: clicks on the shipped layouts. Port a click you want to keep into `layouts/nix.json`. |
 
 What the `nix` layout adds to Herdr's `main`:
