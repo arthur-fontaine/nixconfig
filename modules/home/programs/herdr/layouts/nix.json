@@ -6,10 +6,10 @@
     12,
     16
   ],
-  "background": "canvas",
+  "background": "chrome",
   "terminal_padding": [
-    14,
-    12
+    12,
+    16
   ],
   "divider": {
     "width": 1,
@@ -20,7 +20,7 @@
       "id": "sidebar",
       "type": "column",
       "size": {
-        "px": 288
+        "px": 256
       },
       "min": 44,
       "max": 480,
@@ -28,14 +28,14 @@
       "resizable": false,
       "children": [
         {
-          "id": "brand",
+          "id": "head",
           "type": "block",
           "size": {
             "px": 44
           },
           "window_drag": true,
           "content": {
-            "mod": "workspace-chrome"
+            "mod": "nix-head"
           }
         },
         {
@@ -53,10 +53,10 @@
           "id": "sidebar-footer",
           "type": "block",
           "size": {
-            "px": 69
+            "px": 36
           },
           "content": {
-            "mod": "workspace-chrome",
+            "mod": "nix-head",
             "props": {
               "footer": true
             }
@@ -73,7 +73,7 @@
           "id": "tabs",
           "type": "block",
           "size": {
-            "px": 44
+            "px": 36
           },
           "window_drag": true,
           "content": {
@@ -83,8 +83,6 @@
         {
           "id": "work-body",
           "type": "row",
-          "padding": 8,
-          "gap": 8,
           "children": [
             {
               "id": "main",
@@ -92,23 +90,23 @@
               "content": {
                 "tab": "active",
                 "pane": {
-                  "gap": 8,
-                  "radius": 10,
+                  "gap": 1,
+                  "radius": 0,
                   "background": "background",
-                  "lone": true,
+                  "lone": false,
                   "border": {
                     "width": 1,
                     "color": "border"
                   },
                   "focus": {
                     "width": 1,
-                    "color": "border"
+                    "color": "input"
                   },
                   "header": {
                     "content": {
                       "mod": "nix-pane"
                     },
-                    "height": 30,
+                    "height": 28,
                     "position": "top",
                     "reveal": "always"
                   }
@@ -120,7 +118,7 @@
               "type": "column",
               "hidden": false,
               "size": {
-                "px": 368
+                "px": 320
               },
               "min": 280,
               "max": 900,
@@ -146,15 +144,20 @@
                     }
                   ]
                 }
-              ]
+              ],
+              "background": "chrome"
             }
-          ]
+          ],
+          "divider": {
+            "width": 1,
+            "color": "border"
+          }
         },
         {
           "id": "status",
           "type": "block",
           "size": {
-            "px": 28
+            "px": 24
           },
           "content": {
             "mod": "nix-status"
@@ -162,5 +165,11 @@
         }
       ]
     }
-  ]
+  ],
+  "theme": {
+    "light": "nix-light",
+    "dark": "nix-dark"
+  },
+  "font": "JetBrains Mono",
+  "ui_font": "Inter"
 }
