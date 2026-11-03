@@ -79,11 +79,14 @@ export default class Tabs extends View {
       .when(Boolean(tip), el => el.tooltip(tip)).on_mouse_down("left", stop).on_click(action).child(label);
     const item = (c, i) => {
       const program = panes().find(p => p.tab === c.id && p.program?.agent)?.program ?? panes().find(p => p.tab === c.id)?.program;
-      // An unnamed tab reads as its agent's session: Pi's "π - <name> - <folder>" title,
-      // else Herdr's label. Nothing is renamed, so Herdr's numbering still holds.
-      const lead = panes().find(p => p.tab === c.id && p.program?.agent);
-      const session = !c.named && lead?.app === "pi" ? piSession(lead.title) : "";
-      const name = session || (/^tb\d+$/.test(c.name) ? program?.name ?? "Terminal" : c.name);
+      // A tab as the sidebar names it: an unnamed one reads as its agent's session (Pi's
+      // "π - <name> - <folder>" title), a mod's title, or what runs in it, never as Herdr's
+      // place number ("1"). Nothing is renamed, so Herdr's numbering still holds.
+      const own = panes().filter(p => p.tab === c.id);
+      const lead = own.find(p => p.program?.agent) ?? own.find(p => p.focused) ?? own[0];
+      const session = lead?.app === "pi" ? piSession(lead.title) : "";
+      const name = c.named ? c.name
+        : session || (lead?.mod ? lead.title : lead?.program?.shell ? "Terminal" : lead?.program?.name ?? "Terminal");
       // Full height; the active tab takes the terminal's color and covers the bar's bottom
       // hairline, so it joins the pane below it.
       return h_flex().id(`tab-${c.id}`).h(36).px(12).gap(8).rounded_t(6).items_center().flex_none().text_size(13)
