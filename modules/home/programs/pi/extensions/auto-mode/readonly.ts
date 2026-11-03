@@ -814,8 +814,11 @@ const PATHS: Record<string, (args: string[]) => string[]> = {
 	git: gitPaths,
 };
 
-const isCd = (argv: string[]) => ["cd", "pushd", "popd", "chdir"].includes(argv[0] ?? "");
-const isGit = (cmd: Command) => cmd.text.startsWith("git ") || cmd.text === "git" || cmd.argv[0] === "git" || (cmd.argv[0] === "xargs" && cmd.argv.includes("git"));
+const isCd = (argv: string[]) => ["cd", "pushd", "popd", "chdir"].includes(unwrap(argv)[0] ?? "");
+const isGit = (cmd: Command) => {
+	const argv = unwrap(cmd.argv);
+	return argv[0] === "git" || (argv[0] === "xargs" && argv.includes("git"));
+};
 
 // The paths a read-only command names, checked as Claude Code's path validation does.
 function pathsReadable(cmd: Command, root: string, bases: string[], afterCd: boolean): Refusal | null {
@@ -833,7 +836,9 @@ function pathsReadable(cmd: Command, root: string, bases: string[], afterCd: boo
 	if (name === "cd" && operands(args).length > 1) return "cd with two operands";
 	// The previous directory is unknown here.
 	if (name === "cd" && args.at(-1) === "-") return "cd -";
-	return extract(args).every((p) => bases.every((b) => readable(root, b, p))) ? null : "outside the working directory";
+	// Claude Code leaves a path given as `--flag=PATH` unchecked; here it is checked too.
+	const attached = args.filter((a) => a.startsWith("-") && a.includes("=")).map((a) => a.slice(a.indexOf("=") + 1)).filter((v) => /^[/~.]/.test(v));
+	return [...extract(args), ...attached].every((p) => bases.every((b) => readable(root, b, p))) ? null : "outside the working directory";
 }
 
 const sameDir = (a: string, b: string) => {
@@ -937,7 +942,10 @@ export function gitDirTrusted(cwd: string): boolean {
 	}
 }
 
-const cdTarget = (cmd: Command) => (cmd.argv.length === 2 && cmd.env.length === 0 && cmd.redirects.length === 0 ? cmd.argv[1]! : undefined);
+const cdTarget = (cmd: Command) => {
+	const argv = unwrap(cmd.argv);
+	return argv.length === 2 && cmd.env.length === 0 && cmd.redirects.length === 0 ? argv[1]! : undefined;
+};
 
 // One pipe segment, as Claude Code checks a command without pipes. `cdBefore` holds the
 // directories earlier segments may have moved to.
@@ -945,11 +953,11 @@ function segmentReadOnly(source: string, commands: Command[], joins: Join[], cwd
 	// `cd <working directory>` changes nothing and is dropped.
 	const plainCwd = !/[\s\\$`'"*?[\]{}<>|&;()]/.test(cwd);
 	const kept = commands.filter((c) => !(plainCwd && c.text === `cd ${cwd}` && cdTarget(c) !== undefined && !c.words.some((w) => w.glob)));
-	const cds = kept.filter((c) => isCd(unwrap(c.argv)));
+	const cds = kept.filter((c) => isCd(c.argv));
 	if (cds.length > 1) return "several cd";
 	if (cds.length === 1 && kept.some(isGit)) {
 		const target = cdTarget(cds[0]!);
-		if (target === undefined || cds[0]!.argv[0] !== "cd" || !cdKeepsRepo(target, cwd)) return "cd then git";
+		if (target === undefined || unwrap(cds[0]!.argv)[0] !== "cd" || !cdKeepsRepo(target, cwd)) return "cd then git";
 	}
 	// A leading `cd DIR &&` with a checkable DIR moves where later relative paths resolve.
 	const first = kept[0]!;
@@ -1006,12 +1014,12 @@ export function readOnlyRefusal(source: string, cwd: string): Refusal | null {
 	});
 	if (script.commands.some(isGit) && !gitDirTrusted(cwd)) return "git repository not trusted";
 	if (segments.length > 1) {
-		if (segments.filter((s) => isCd(unwrap(s.commands[0]!.argv))).length > 1) return "several cd";
-		const cds = script.commands.filter((c) => isCd(unwrap(c.argv)));
+		if (segments.filter((s) => isCd(s.commands[0]!.argv)).length > 1) return "several cd";
+		const cds = script.commands.filter((c) => isCd(c.argv));
 		if (cds.length > 0 && script.commands.some(isGit)) {
 			if (cds.length > 1) return "several cd";
 			const target = cdTarget(cds[0]!);
-			if (target === undefined || cds[0]!.argv[0] !== "cd" || !cdKeepsRepo(target, cwd)) return "cd then git";
+			if (target === undefined || unwrap(cds[0]!.argv)[0] !== "cd" || !cdKeepsRepo(target, cwd)) return "cd then git";
 		}
 	}
 	const cdBefore: string[] = [];

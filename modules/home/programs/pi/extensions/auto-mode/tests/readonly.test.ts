@@ -162,7 +162,7 @@ test("write-capable flags and commands still go to the classifier", () => {
 });
 
 test("paths must resolve inside the working directory", () => {
-	for (const cmd of ["cat /etc/hosts", "ls ~", "cat ../x", "grep foo /etc/passwd", "ls /", "cat src/../../x", "cat < /etc/hosts", "ls /etc/*"]) refused(cmd);
+	for (const cmd of ["cat /etc/hosts", "base64 --input=/etc/hosts", "ls ~", "cat ../x", "grep foo /etc/passwd", "ls /", "cat src/../../x", "cat < /etc/hosts", "ls /etc/*"]) refused(cmd);
 	allowed(`cat ${path.join(repo, "a.txt")}`);
 	// Claude Code follows such a path segment by segment for symlinks; here it is refused.
 	refused("ls src/../src");
@@ -180,6 +180,7 @@ test("cd: one directory change, inside the working directory, and not before git
 	refused("cd src && cd .. && ls", "several cd");
 	refused("cd src && git status", "cd then git");
 	refused("cd src | git status", "cd then git");
+	refused("cd src && command git log", "cd then git");
 	refused("cd src; cat ../../x", "outside the working directory");
 	refused("cd src; cat < a.txt", "input redirect after cd");
 });
@@ -188,5 +189,6 @@ test("git is refused where the repository could have been planted", () => {
 	assert.equal(gitDirTrusted(repo), true);
 	assert.equal(gitDirTrusted(worktree), false, "a .git file pointing outside a .git directory");
 	refused("git status", "git repository not trusted", worktree);
+	refused("command git status", "git repository not trusted", worktree);
 	allowed("ls", worktree);
 });
