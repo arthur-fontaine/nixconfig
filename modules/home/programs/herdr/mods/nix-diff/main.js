@@ -12,8 +12,8 @@ import { languageOf, splitAt, tokenize } from "./syntax.js";
 // Writes nothing under .git, so the folder watch doesn't wake itself.
 const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false", "-c", "core.quotepath=false"];
 const DIFF = ["--no-ext-diff", "--no-textconv", "--no-color", "--find-renames", "-U3"];
-const ICON = (name) => `mods/workspace-chrome/${name}.svg`;
-const SIZE = { file: 44, gap: 6, hunk: 24, line: 20, note: 28, end: 10 };
+const ICON = (name) => `mods/nix-head/icons/${name}.svg`;
+const SIZE = { file: 36, gap: 6, hunk: 24, line: 20, note: 28, end: 10 };
 const UNTRACKED_MAX = 200;
 
 const ago = (s) => {
@@ -88,7 +88,7 @@ export default class Diff extends View {
     this.rows = rowsOf(this.files, this.folded);
     this.sizes = this.rows.map((r) => SIZE[r.type]);
     const longest = Math.max(0, ...this.files.flatMap((f) => f.hunks.flatMap((h) => h.lines.map((l) => l.text.length))));
-    this.width = Math.max(600, longest * 7.3 + 120);
+    this.width = Math.max(600, longest * 7.9 + 130);
   }
 
   toggle(path, cx) {
@@ -128,29 +128,27 @@ export default class Diff extends View {
     };
   }
 
+  // The git status letter, mono, as the Changes panel shows it.
   statusIcon(status, t) {
-    const color = status === "A" ? t.ansi2 : status === "D" ? t.ansi1 : status === "R" ? t.ansi4 : t.ansi3;
-    const mark = status === "A" ? "plus" : status === "D" ? "minus" : null;
-    return div().size(14).flex_none().rounded(3).border_1().border_color(color).flex().items_center().justify_center()
-      .child(mark ? svg(ICON(mark)).size(10).text_color(color) : div().size(4).rounded(2).bg(color));
+    const color = { A: t.ansi2, D: t.ansi1, R: t.ansi4, U: t.ansi5 }[status] ?? t.ansi3;
+    return div().w(10).flex_none().font_family(this.mono).text_size(11).font_medium().text_color(color).text_center().child(status);
   }
 
   fileRow(f, t) {
     const open = !this.folded.has(f.path);
     const slash = f.path.lastIndexOf("/");
     const name = f.path.slice(slash + 1), dir = slash >= 0 ? f.path.slice(0, slash) : "";
-    const tint = f.status === "A" ? t.ansi2 : f.status === "D" ? t.ansi1 : f.status === "R" ? t.ansi4 : t.ansi3;
-    return div().w_full().h(SIZE.file).pt(8).px(8).flex_none().child(
-      h_flex().h(36).px(10).gap(9).items_center().rounded(6).border_1().border_color(t.border).bg(t.surface)
-        .cursor_pointer().hover((s) => s.bg(t.hover))
-        .child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(12).flex_none().text_color(t.dim))
-        .child(this.statusIcon(f.status, t))
-        .child(div().flex_none().font_semibold().text_color(tint).child(name))
-        .child(div().min_w(0).truncate().text_color(t.dim).child(f.status === "R" && f.oldPath ? `${dir}  ← ${f.oldPath}` : dir))
-        .child(div().flex_1())
-        .when(f.add > 0, (e) => e.child(div().flex_none().text_size(11.5).text_color(t.ansi2).child(`+${f.add}`)))
-        .when(f.del > 0, (e) => e.child(div().flex_none().text_size(11.5).text_color(t.ansi1).child(`−${f.del}`))),
-    );
+    // A 36px bar like the panels' headers, on chrome between hairlines.
+    return h_flex().w_full().h(SIZE.file).flex_none().px(12).gap(8).items_center().bg(t.chrome).border_t(1).border_b(1).border_color(t.border)
+      .cursor_pointer().hover((s) => s.bg(t.hover)).text_size(12.5)
+      .child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.dim))
+      .child(this.statusIcon(f.status, t))
+      .child(div().flex_none().font_medium().text_color(t.foreground).child(name))
+      .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(f.status === "R" && f.oldPath ? `${dir}  ← ${f.oldPath}` : dir))
+      .child(div().flex_1())
+      .child(h_flex().flex_none().gap(5).text_size(11)
+        .when(f.add > 0, (e) => e.child(div().text_color(t.ansi2).child(`+${f.add}`)))
+        .when(f.del > 0, (e) => e.child(div().text_color(t.ansi1).child(`−${f.del}`))));
   }
 
   // One handler for the whole list (rows can't hold their own): a header folds
@@ -167,13 +165,15 @@ export default class Diff extends View {
   lineRow(f, line, t, syn) {
     const lang = (f.lang ??= languageOf(f.path));
     const bar = line.block === "modified" ? t.ansi3 : line.block === "added" ? t.ansi2 : line.block === "removed" ? t.ansi1 : null;
-    const bg = line.kind === "+" ? t.ansi2 + "26" : line.kind === "-" ? t.ansi1 + "26" : null;
-    const strong = line.kind === "+" ? t.ansi2 + "55" : t.ansi1 + "55";
+    const bg = line.kind === "+" ? t.ansi2 + "1a" : line.kind === "-" ? t.ansi1 + "1a" : null;
+    const strong = line.kind === "+" ? t.ansi2 + "40" : t.ansi1 + "40";
+    const sign = line.kind === "+" ? ["+", t.ansi2] : line.kind === "-" ? ["−", t.ansi1] : [" ", t.dim];
     const parts = (line.parts ??= splitAt(tokenize(line.text, lang), line.changed));
     const number = line.kind === "-" ? line.old : line.new;
-    return h_flex().w_full().h(SIZE.line).flex_none().mx(8).cursor_pointer().font_family(this.mono).text_size(12.5).when(Boolean(bg), (e) => e.bg(bg))
+    return h_flex().w_full().h(SIZE.line).flex_none().items_center().cursor_pointer().font_family(this.mono).text_size(13).when(Boolean(bg), (e) => e.bg(bg))
       .child(div().w(3).h_full().flex_none().when(Boolean(bar), (e) => e.bg(bar)))
-      .child(div().w(52).flex_none().pr(14).text_right().text_color(line.kind === " " ? t.dim : t.muted).child(String(number)))
+      .child(div().w(48).flex_none().pr(10).text_right().text_size(11).text_color(t.dim).child(String(number)))
+      .child(div().w(16).flex_none().text_color(sign[1]).child(sign[0]))
       .child(h_flex().flex_none().whitespace_nowrap().children(parts.map((p) =>
         div().flex_none().text_color(p.kind ? syn[p.kind] ?? t.foreground : t.foreground)
           .when(p.changed, (e) => e.bg(strong).rounded(2)).child(p.text))));
@@ -181,9 +181,8 @@ export default class Diff extends View {
 
   // Zed's fold line between hunks: lines were skipped here.
   hunkRow(t) {
-    return h_flex().w_full().h(SIZE.hunk).flex_none().mx(8).items_center()
-      .child(div().w(55).flex_none().pr(14).text_right().font_family(this.mono).text_color(t.dim).child("⋯"))
-      .child(div().flex_1().h(1).bg(t.border));
+    return h_flex().w_full().h(SIZE.hunk).flex_none().items_center().bg(t.chrome).text_size(12).text_color(t.muted)
+      .child(div().w(51).flex_none().pr(10).text_right().font_family(this.mono).child("⋯"));
   }
 
   row(r, t, syn) {
@@ -199,23 +198,23 @@ export default class Diff extends View {
   header(t) {
     const add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
     const allFolded = this.files.length > 0 && this.files.every((f) => this.folded.has(f.path));
-    const bar = h_flex().h(40).flex_none().px(14).gap(10).items_center().border_b(1).border_color(t.border)
+    const bar = h_flex().h(36).flex_none().px(12).gap(8).items_center().bg(t.chrome).border_b(1).border_color(t.border)
       .child(svg(ICON(this.commit ? "git-branch" : "git-compare")).size(14).flex_none().text_color(t.muted))
-      .child(div().font_semibold().min_w(0).truncate().child(this.commit ? (this.meta?.subject ?? this.commit.slice(0, 7)) : "Uncommitted Changes"))
-      .child(div().flex_none().text_size(12).text_color(t.dim).child(`${this.files.length} ${this.files.length === 1 ? "file" : "files"}`))
+      .child(div().font_medium().min_w(0).truncate().child(this.commit ? (this.meta?.subject ?? this.commit.slice(0, 7)) : "Uncommitted Changes"))
+      .child(div().flex_none().text_size(11).text_color(t.dim).child(`${this.files.length} ${this.files.length === 1 ? "file" : "files"}`))
       .child(div().flex_1())
-      .child(div().flex_none().text_size(12).text_color(t.ansi2).child(`+${add}`))
-      .child(div().flex_none().text_size(12).text_color(t.ansi1).child(`−${del}`))
+      .child(div().flex_none().text_size(11).text_color(t.ansi2).child(`+${add}`))
+      .child(div().flex_none().text_size(11).text_color(t.ansi1).child(`−${del}`))
       .when(this.files.length > 0, (e) => e.child(
-        div().id("fold-all").flex_none().px(8).py(3).rounded(6).text_size(12).text_color(t.muted).cursor_pointer()
+        div().id("fold-all").flex_none().h(24).px(8).flex().items_center().rounded(6).text_size(12).font_medium().text_color(t.muted).cursor_pointer()
           .hover((s) => s.bg(t.hover).text_color(t.foreground))
           .on_click((_e, cx) => this.foldAll(cx)).child(allFolded ? "Expand all" : "Collapse all")));
     if (!this.commit || !this.meta) return bar;
     const m = this.meta;
     return v_flex().flex_none().child(bar).child(
-      v_flex().flex_none().px(16).py(10).gap(6).border_b(1).border_color(t.border)
+      v_flex().flex_none().px(12).py(10).gap(6).border_b(1).border_color(t.border)
         .child(h_flex().gap(10).items_center().text_size(12).text_color(t.muted)
-          .child(div().px(6).py(1).rounded(4).bg(t.raised).font_family(this.mono).child(m.short))
+          .child(div().px(6).py(1).rounded(3).bg(t.raised).font_family(this.mono).text_size(11).child(m.short))
           .child(div().child(m.author))
           .child(div().text_color(t.dim).child(ago(m.time))))
         .when(Boolean(m.body), (e) => e.child(div().text_size(12.5).text_color(t.muted).child(m.body))),
@@ -227,9 +226,9 @@ export default class Diff extends View {
     this.mono = settings().font_family ?? "JetBrains Mono";
     this.followFocus();
     const body = this.error
-      ? div().p(16).text_color(t.ansi1).child(this.error)
+      ? div().p(16).text_size(12).text_color(t.ansi1).child(this.error)
       : !this.files.length
-        ? div().p(16).text_color(t.dim).child(this.loading ? "Loading changes…" : this.commit ? "This commit changes no files" : "No uncommitted changes")
+        ? div().p(16).text_size(12).text_color(t.dim).child(this.loading ? "Loading changes…" : this.commit ? "This commit changes no files" : "No uncommitted changes")
         : div().flex_1().min_h(0).relative()
           .child(div().id("diff-x").size_full().overflow_x_scrollbar()
             .child(div().min_w(this.width).w_full().h_full().child(

@@ -34,7 +34,7 @@ function checksOf(rollup) {
   return "pass";
 }
 const PIPELINE = { success: "pass", failed: "fail", canceled: "fail", running: "pending", pending: "pending", created: "pending" };
-const ICON = (name) => `mods/workspace-chrome/${name}.svg`;
+const ICON = (name) => `mods/nix-head/icons/${name}.svg`;
 
 function ago(s) {
   const m = Math.floor((Date.now() / 1000 - s) / 60);
@@ -46,6 +46,7 @@ export default class Changes extends View {
     this.files = []; this.commits = []; this.branch = null; this.started = {}; this.tabs = {};
     this.prs = {}; // root\0branch -> { at, pr: {...} | null, tool }
     this.message = ""; this.handle = cx.focus_handle(); this.focusN = 0;
+    this.shown = null; this.foldedSections = new Set(); this.hovered = null;
     this.input = InputState.new({ placeholder: "Commit message" });
     this.input.on("change", (_e, cx) => {
       const had = Boolean(this.message.trim());
@@ -226,11 +227,11 @@ export default class Changes extends View {
     const entry = b?.name && this.root ? this.prs[`${this.root}\0${b.name}`] : null;
     if (!entry?.tool) return null;
     const pr = entry.pr, word = entry.tool === "gh" ? "PR" : "MR";
-    const button = (id, label, onClick) => div().id(id).px(8).py(3).rounded(6).text_size(12).text_color(t.muted).cursor_pointer()
-      .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(onClick).child(label);
-    const row = h_flex().h(34).px(12).gap(8).items_center().text_size(12).border_t(1).border_color(t.border);
+    const button = (id, label, onClick) => div().id(id).h(26).px(8).flex().items_center().flex_none().rounded(6).text_size(12).font_medium()
+      .text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.raised).text_color(t.foreground)).on_click(onClick).child(label);
+    const row = h_flex().h(32).flex_none().px(12).gap(8).items_center().text_size(12).border_t(1).border_color(t.border);
     if (!pr) {
-      return row.child(div().text_color(t.dim).child(b.upstream ? `No ${word} yet` : "Not pushed yet")).child(div().flex_1())
+      return row.child(div().text_size(11).text_color(t.dim).child(b.upstream ? `No ${word} yet` : "Not pushed yet")).child(div().flex_1())
         .when(!b.upstream || b.ahead > 0, (e) => e.child(button("push", b.upstream ? `Push ↑${b.ahead}` : "Push", (_e, cx) => this.push(cx))))
         .when(Boolean(b.upstream), (e) => e.child(button("create-pr", `Create ${word}`, (_e, cx) => this.createPr(entry.tool, cx))));
     }
@@ -238,7 +239,7 @@ export default class Changes extends View {
     const checks = { pass: ["✓", t.ansi2], fail: ["✗", t.ansi1], pending: ["●", t.ansi3] }[pr.checks];
     const review = pr.review === "APPROVED" ? ["approved", t.ansi2] : pr.review === "CHANGES_REQUESTED" ? ["changes requested", t.ansi1] : null;
     return row
-      .child(div().flex_none().px(6).py(1).rounded(4).bg(state[1] + "26").text_size(11).text_color(state[1]).child(state[0]))
+      .child(div().flex_none().text_size(11).font_medium().text_color(state[1]).child(state[0]))
       .child(div().id("pr-open").min_w(0).flex_1().truncate().cursor_pointer().text_color(t.foreground).hover((s) => s.text_color(t.accent))
         .on_click(() => exec("open", [pr.url]).catch(() => null)).child(`#${pr.number} ${pr.title}`))
       .when(Boolean(checks), (e) => e.child(div().flex_none().text_color(checks[1]).child(checks[0])))
@@ -267,6 +268,7 @@ export default class Changes extends View {
   }
 
   showFile(path, cx) {
+    this.shown = path;
     this.openDiff(null, "Uncommitted Changes", cx);
     setShared("nix-diff.focus", { n: `${Date.now()}-${++this.focusN}`, root: this.root, commit: null, path });
   }
@@ -313,110 +315,126 @@ export default class Changes extends View {
     cx.notify();
   }
 
+  // 14px, the input border at rest; staged: solid with a check; partly staged: a solid square.
   checkbox(state, t, onClick, id) {
-    return div().id(id).size(15).flex_none().rounded(4).border_1().cursor_pointer()
-      .border_color(state === "none" ? t.input ?? t.border : t.accent).when(state !== "none", (e) => e.bg(t.accent))
+    return div().id(id).size(14).flex_none().rounded(3).border_1().cursor_pointer()
+      .border_color(state === "all" ? t.solid : t.input ?? t.border).when(state === "all", (e) => e.bg(t.solid))
       .flex().items_center().justify_center()
       .on_click((_e, cx) => { cx.stop_propagation(); onClick(cx); })
-      .when(state === "all", (e) => e.child(svg(ICON("check")).size(11).text_color(t.accent_foreground ?? t.background)))
-      .when(state === "some", (e) => e.child(div().w(7).h(2).rounded(1).bg(t.accent_foreground ?? t.background)));
+      .when(state === "all", (e) => e.child(svg(ICON("check")).size(10).text_color(t.solid_foreground ?? t.background)))
+      .when(state === "some", (e) => e.child(div().size(6).rounded(1).bg(t.solid)));
   }
 
   statusIcon(status, t) {
-    const color = status === "A" ? t.ansi2 : status === "D" || status === "U" ? t.ansi1 : status === "R" ? t.ansi4 : t.ansi3;
-    return div().w(12).flex_none().text_size(11).font_medium().text_color(color).text_center().child(status);
+    const color = { A: t.ansi2, D: t.ansi1, R: t.ansi4, U: t.ansi5 }[status] ?? t.ansi3;
+    return div().w(10).flex_none().font_family(settings().font_family ?? "JetBrains Mono").text_size(11).font_medium()
+      .text_color(color).text_center().child(status);
   }
 
   fileRow(f, t) {
     const slash = f.path.lastIndexOf("/");
-    const dir = slash >= 0 ? f.path.slice(0, slash + 1) : "", name = f.path.slice(slash + 1);
-    return h_flex().id(`change-${f.path}`).h(26).flex_none().px(8).gap(8).items_center().rounded(6).cursor_pointer()
-      .hover((s) => s.bg(t.hover))
+    const dir = slash >= 0 ? f.path.slice(0, slash) : "", name = f.path.slice(slash + 1);
+    const on = this.shown === f.path;
+    return h_flex().id(`change-${f.path}`).h(26).flex_none().px(6).gap(8).items_center().rounded(6).cursor_pointer().text_size(12.5)
+      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((s) => s.bg(t.hover)))
       .on_click((_e, cx) => this.showFile(f.path, cx))
       .child(this.checkbox(f.staged, t, (cx) => this.toggleStage(f, cx), `stage-${f.path}`))
       .child(this.statusIcon(f.status, t))
-      .child(h_flex().flex_1().min_w(0).gap(6)
-        .child(div().flex_none().text_color(f.status === "D" ? t.muted : t.foreground).when(f.status === "D", (e) => e.line_through()).child(name))
-        .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(dir.replace(/\/$/, ""))))
-      .when(f.add > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi2).child(`+${f.add}`)))
-      .when(f.del > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.ansi1).child(`−${f.del}`)));
+      .child(h_flex().flex_1().min_w(0).gap(5).items_baseline()
+        .child(div().flex_none().max_w(180).truncate().text_color(f.status === "D" ? t.muted : t.foreground).when(f.status === "D", (e) => e.line_through()).child(name))
+        .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child(dir)))
+      .child(h_flex().flex_none().gap(5).text_size(11)
+        .when(f.add > 0, (e) => e.child(div().text_color(t.ansi2).child(`+${f.add}`)))
+        .when(f.del > 0, (e) => e.child(div().text_color(t.ansi1).child(`−${f.del}`))));
   }
 
+  // A section: its label and count; it folds from its chevron, and its box (shown on hover)
+  // stages or unstages the whole section.
   section(label, files, t) {
     if (!files.length) return [];
     const state = files.every((f) => f.staged === "all") ? "all" : files.some((f) => f.staged !== "none") ? "some" : "none";
     const toggle = (cx) => this.act(state === "all" ? ["reset", "-q", "--", ...files.map((f) => f.path)] : ["add", "--", ...files.map((f) => f.path)], cx);
+    const id = `section-${label}`, folded = this.foldedSections.has(label);
     return [
-      h_flex().h(26).flex_none().px(8).mt(4).gap(8).items_center().text_size(11).text_color(t.dim)
-        .child(this.checkbox(state, t, toggle, `stage-section-${label}`)).child(label),
-      ...files.map((f) => this.fileRow(f, t)),
+      h_flex().id(id).h(24).flex_none().px(6).gap(6).items_center().rounded(6).cursor_pointer().text_size(11).text_color(t.muted)
+        .on_hover((hovered, cx) => { this.hovered = hovered ? id : this.hovered === id ? null : this.hovered; cx.notify(); })
+        .on_click((_e, cx) => { folded ? this.foldedSections.delete(label) : this.foldedSections.add(label); cx.notify(); })
+        .child(svg(ICON(folded ? "chevron-right" : "chevron-down")).size(10).flex_none().text_color(t.dim))
+        .child(label).child(div().text_color(t.dim).child(String(files.length)))
+        .child(div().flex_1())
+        .when(this.hovered === id || state !== "none", (e) => e.child(this.checkbox(state, t, toggle, `stage-section-${label}`))),
+      ...(folded ? [] : files.map((f) => this.fileRow(f, t))),
     ];
   }
 
   commitRow(c, t) {
-    return h_flex().id(`commit-${c.sha}`).h(26).flex_none().px(8).gap(8).items_center().rounded(6).cursor_pointer()
+    return h_flex().id(`commit-${c.sha}`).h(26).flex_none().px(6).gap(8).items_center().rounded(6).cursor_pointer().text_size(12)
       .hover((s) => s.bg(t.hover))
       .on_click((_e, cx) => this.openDiff(c.sha, c.subject.length > 32 ? `${c.subject.slice(0, 31)}…` : c.subject, cx))
-      .child(div().size(6).flex_none().rounded(3).bg(c.session ? t.accent : t.border))
-      .child(div().flex_1().min_w(0).truncate().text_color(c.session ? t.foreground : t.muted).child(c.subject))
+      // Only this session's commits are marked.
+      .child(div().w(8).flex_none().flex().justify_center().when(Boolean(c.session), (e) => e.child(div().size(5).rounded(3).bg(t.accent))))
+      .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(c.subject))
       .child(div().flex_none().text_size(11).text_color(t.dim).child(ago(c.time)));
   }
 
   render(cx) {
     if (key() !== this.context) this.refresh(cx);
     const t = theme();
-    const tracked = this.files.filter((f) => !f.untracked), untracked = this.files.filter((f) => f.untracked);
+    const conflicts = this.files.filter((f) => !f.untracked && f.status === "U");
+    const tracked = this.files.filter((f) => !f.untracked && f.status !== "U"), untracked = this.files.filter((f) => f.untracked);
     const allStaged = this.files.length > 0 && this.files.every((f) => f.staged === "all");
     const enabled = Boolean(this.message.trim() && this.root && !this.busy && !this.loading && this.files.length);
     const mine = this.commits.filter((c) => c.session).length;
     const b = this.branch;
-    return v_flex().id("changes").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
-      .text_color(t.foreground).text_size(13).track_focus(this.handle)
+    const n = this.files.length;
+    const textButton = (id, label, onClick) => div().id(id).h(24).px(8).flex().items_center().rounded(6).text_size(12).font_medium()
+      .text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(onClick).child(label);
+    return v_flex().id("changes").size_full().min_h(0).bg(t.chrome).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_key_down((e, cx) => {
         if (e.key === "escape" && this.typing) { this.typing = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); }
       })
-      // Header: "12 Changes", the whole diff, Stage All.
-      .child(h_flex().h(36).flex_none().px(10).gap(8).items_center().border_b(1).border_color(t.border)
-        .child(div().font_semibold().child(this.files.length ? `${this.files.length} ${this.files.length === 1 ? "Change" : "Changes"}` : "No Changes"))
+      // Header: "Changes" and the count; on hover, the whole diff and Stage All.
+      .child(h_flex().id("changes-head").h(36).flex_none().px(12).gap(4).items_center().border_b(1).border_color(t.border)
+        .on_hover((hovered, cx) => { this.headHover = hovered; cx.notify(); })
+        .child(div().font_medium().child("Changes"))
         .child(div().flex_1())
-        .when(this.files.length > 0, (e) => e
-          .child(div().id("open-diff").h(24).px(8).flex().items_center().rounded(6).text_size(12).text_color(t.muted).cursor_pointer()
-            .hover((s) => s.bg(t.hover).text_color(t.foreground))
-            .on_click((_e, cx) => this.openDiff(null, "Uncommitted Changes", cx)).child("View Diff"))
-          .child(div().id("stage-all").h(24).px(8).flex().items_center().rounded(6).text_size(12).text_color(t.muted).cursor_pointer()
-            .hover((s) => s.bg(t.hover).text_color(t.foreground))
-            .on_click((_e, cx) => this.stageAll(cx)).child(allStaged ? "Unstage All" : "Stage All"))))
+        .when(!(this.headHover && n > 0), (e) => e.child(div().text_size(11).text_color(t.dim)
+          .child(this.root === null && !this.loading ? "Not a git repository" : n ? `${n} ${n === 1 ? "file" : "files"}` : "")))
+        .when(Boolean(this.headHover && n > 0), (e) => e
+          .child(textButton("open-diff", "View Diff", (_e, cx) => this.openDiff(null, "Uncommitted Changes", cx)))
+          .child(textButton("stage-all", allStaged ? "Unstage All" : "Stage All", (_e, cx) => this.stageAll(cx)))))
       // The files.
-      .child(v_flex().id("changes-list").flex_1().min_h(80).overflow_y_scrollbar().px(6).pb(6)
-        .children([...this.section("Tracked", tracked, t), ...this.section("Untracked", untracked, t)])
-        .when(!this.files.length, (e) => e.child(div().p(10).text_size(12).text_color(t.muted)
+      .child(v_flex().id("changes-list").flex_1().min_h(80).overflow_y_scrollbar().px(6).py(4)
+        .children([...this.section("Conflicts", conflicts, t), ...this.section("Tracked", tracked, t), ...this.section("Untracked", untracked, t)])
+        .when(!n, (e) => e.child(div().p(12).text_size(12).text_color(t.dim)
           .child(this.error || (this.loading ? "Loading changes…" : this.root ? "Nothing to commit" : "No folder")))))
       .when(Boolean(this.note), (e) => e.child(div().px(12).py(6).text_size(12).text_color(t.ansi1).child(this.note)))
-      // The branch's PR, then the branch and the commit box.
+      // The branch's PR or MR.
       .when(Boolean(this.prSection(t)), (e) => e.child(this.prSection(t)))
-      .child(v_flex().flex_none().border_t(1).border_color(t.border)
-        .when(Boolean(b?.name), (e) => e.child(h_flex().h(28).px(10).gap(7).items_center().text_size(12).text_color(t.muted)
-          .child(svg(ICON("git-branch")).size(13).flex_none().text_color(t.dim))
-          .child(div().min_w(0).truncate().child(b.upstream ? `${b.upstream.split("/")[0]}/${b.name}` : b.name))
+      // The commit box, then the branch and Commit.
+      .child(v_flex().flex_none().border_t(1).border_color(t.border).px(12).py(10)
+        .child(div().id("commit-message").h(60).px(10).py(8).flex().items_start().rounded(6).bg(t.background).border_1()
+          .border_color(this.typing ? t.ring ?? t.accent : t.border).cursor_text().text_size(12.5)
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(() => this.input.focus())
+          .child(Input.new(this.input).w_full().text_size(12.5).text_color(t.foreground)))
+        .child(h_flex().h(32).pt(8).gap(6).items_center().text_size(11).text_color(t.dim)
+          .when(Boolean(b?.name), (e) => e
+            .child(svg(ICON("git-branch")).size(12).flex_none().text_color(t.dim))
+            .child(div().min_w(0).truncate().child(b.upstream ? `${b.upstream.split("/")[0]}/${b.name}` : b.name))
+            .when(b.ahead > 0, (e) => e.child(div().flex_none().child(`↑${b.ahead}`)))
+            .when(b.behind > 0, (e) => e.child(div().flex_none().child(`↓${b.behind}`))))
           .child(div().flex_1())
-          .when(b.behind > 0, (e) => e.child(div().text_color(t.ansi1).child(`↓${b.behind}`)))
-          .when(b.ahead > 0, (e) => e.child(div().text_color(t.ansi2).child(`↑${b.ahead}`)))))
-        .child(v_flex().px(10).pb(10).gap(8)
-          .child(div().id("commit-message").h(30).px(10).flex().items_center().rounded(6).border_1().border_color(this.typing ? t.accent : t.border).cursor_text()
-            .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(13).text_color(t.foreground)))
-          .child(h_flex().gap(8).items_center()
-            .child(div().flex_1().text_size(11).text_color(t.dim)
-              .child(this.files.some((f) => f.staged !== "none") ? "Commits the staged changes" : this.files.length ? "Commits every change" : ""))
-            .child(div().id("commit").h(28).px(12).flex().items_center().rounded(6).bg(enabled ? t.solid : t.raised)
-              .text_color(enabled ? t.solid_foreground : t.dim).text_size(12).when(enabled, (e) => e.cursor_pointer())
-              .on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit")))))
-      // History: the session's commits marked.
-      .when(this.commits.length > 0, (e) => e.child(v_flex().flex_none().h(Math.min(260, 40 + this.commits.length * 28)).border_t(1).border_color(t.border)
-        .child(h_flex().h(32).flex_none().px(12).gap(8).items_center()
-          .child(div().text_size(11).text_color(t.dim).child("History"))
-          .when(mine > 0, (e) => e.child(div().px(6).py(1).rounded(4).bg(t.accent + "1a").text_size(11).text_color(t.accent)
-            .child(`${mine} this session`))))
-        .child(v_flex().id("changes-commits").flex_1().min_h(0).overflow_y_scrollbar().px(6).pb(6)
+          .child(div().id("commit").h(26).px(10).flex().flex_none().items_center().rounded(6).text_size(12).font_medium()
+            .bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).when(enabled, (e) => e.cursor_pointer())
+            .tooltip(this.files.some((f) => f.staged !== "none") ? "Commits the staged changes" : n ? "Commits every change" : "Nothing to commit")
+            .on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit"))))
+      // History: this session's commits marked.
+      .when(this.commits.length > 0, (e) => e.child(v_flex().flex_none().h(Math.min(260, 38 + this.commits.length * 26)).border_t(1).border_color(t.border)
+        .px(6).pt(4).pb(6)
+        .child(h_flex().h(28).flex_none().px(6).gap(8).items_center()
+          .child(div().text_size(12).font_medium().text_color(t.muted).child("History"))
+          .when(mine > 0, (e) => e.child(div().text_size(11).text_color(t.dim).child(`${mine} this session`))))
+        .child(v_flex().id("changes-commits").flex_1().min_h(0).overflow_y_scrollbar()
           .children(this.commits.map((c) => this.commitRow(c, t))))));
   }
 }

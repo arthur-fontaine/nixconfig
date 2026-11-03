@@ -166,16 +166,20 @@ export default class Files extends View {
     });
   }
 
+  // Icons from the nix set, as every nix-* mod draws them.
   rows(prefix, depth, out, t) {
     if (out.length >= TOTAL || depth > 40) return out;
     for (const entry of this.entries.get(prefix) ?? []) {
       if (out.length >= TOTAL) break;
       const path = prefix ? `${prefix}/${entry.name}` : entry.name, open = this.folders.has(path), mark = this.marks[`${this.root}/${path}`];
-      out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(6).cursor_pointer().hover(s => s.bg(t.hover))
-        .on_click((_e, cx) => entry.dir ? this.toggle(path, cx) : this.edit(path, cx))
-        .child(entry.dir ? svg(`mods/files/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
-        .child(svg(`mods/files/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
-        .child(div().flex_1().min_w(0).truncate().child(entry.name))
+      const on = this.opened === path;
+      out.push(h_flex().id(`file-${path}`).h(26).flex_none().pl(6 + depth * 16).pr(6).gap(6).items_center().rounded(6).cursor_pointer().text_size(12.5)
+        .when(on, s => s.bg(t.selected)).when(!on, s => s.hover(s => s.bg(t.hover)))
+        .on_click((_e, cx) => { if (!entry.dir) this.opened = path; entry.dir ? this.toggle(path, cx) : this.edit(path, cx); })
+        .child(entry.dir ? svg(`mods/nix-head/icons/chevron-${open ? "down" : "right"}.svg`).size(10).flex_none().text_color(t.dim) : div().w(10).flex_none())
+        .child(svg(`mods/nix-head/icons/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
+        // Dotfiles in dim.
+        .child(div().flex_1().min_w(0).truncate().text_color(entry.name.startsWith(".") ? t.dim : t.foreground).child(entry.name))
         .when(Boolean(mark), el => el.child(div().text_size(11).text_color(mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : t.blocked).child(mark))));
       if (entry.dir && open) this.rows(path, depth + 1, out, t);
     }
@@ -185,14 +189,17 @@ export default class Files extends View {
   render(cx) {
     if (key() !== this.context?.key) this.refresh(cx);
     const t = theme();
-    return v_flex().id("files").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
-      .child(h_flex().h(36).flex_none().px(10).gap(8).items_center().border_b(1).border_color(t.border)
-        .when(Boolean(this.file), el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
-        .child(div().font_semibold().child("Files"))
-        .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.file ?? this.root?.split(/[\\/]/).pop() ?? "")))
-      .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6).children(this.rows("", 0, [], t))
-        .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.muted).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
-        .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.muted).child("File list limited to 500 entries per folder and 5,000 total")))))
+    const branch = spaces().find((s) => s.active)?.branch;
+    return v_flex().id("files").size_full().min_h(0).bg(t.chrome).text_color(t.foreground).text_size(13)
+      .child(h_flex().h(36).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border)
+        .when(Boolean(this.file), el => el.child(div().id("files-back").size(20).flex_none().flex().items_center().justify_center().rounded(6).cursor_pointer()
+          .text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => { this.show(null); cx.notify(); })
+          .child(svg("mods/nix-head/icons/chevron-left.svg").size(12))))
+        .child(div().font_medium().child("Files"))
+        .child(div().flex_1().min_w(0).truncate().text_right().text_size(11).text_color(t.dim).child(this.file ?? branch ?? this.root?.split(/[\\/]/).pop() ?? "")))
+      .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().px(6).py(4).children(this.rows("", 0, [], t))
+        .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(12).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
+        .when(this.limited, el => el.child(div().p(12).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))
       .when(Boolean(this.file), el => el.child(this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(12).text_color(t.dim).child(this.fileError || "Loading file…")));
   }
 }
