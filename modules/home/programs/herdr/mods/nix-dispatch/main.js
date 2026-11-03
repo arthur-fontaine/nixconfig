@@ -13,6 +13,13 @@ const git = (on) => async (cwd, args) => {
   return { ok: r.code === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() };
 };
 
+// The path's end is what tells worktrees apart, so a long one loses its start: "…/org/repo/branch".
+const fit = (path, max) => {
+  const parts = path.split("/");
+  while (parts.length > 2 && `…/${parts.join("/")}`.length > max) parts.shift();
+  return parts.join("/") === path ? path : `…/${parts.join("/")}`;
+};
+
 export default class NewWorktree extends View {
   init(_props, cx) {
     const p = props() ?? {};
@@ -27,16 +34,25 @@ export default class NewWorktree extends View {
     this.handle = cx.focus_handle();
     this.branch.focus();
     cx.timer.after(300, () => this.branch.focus());
+    // knownAgents asks a login shell, which takes a while: the last answer shows at once,
+    // and the two lookups run side by side.
+    const saved = `agent:${this.on ?? ""}`;
+    try { this.agent = JSON.parse(localStorage.getItem(saved) ?? "null"); } catch {}
     cx.spawn(async (cx) => {
       try {
         const userHome = this.on ? (await exec("sh", ["-c", 'printf %s "$HOME"'], { on: this.on })).stdout.trim() : home();
         this.userHome = userHome;
         this.repo = this.folder ? await repoOf(git(this.on), this.folder, userHome) : null;
       } catch { this.repo = null; }
+      cx.notify();
+    });
+    cx.spawn(async (cx) => {
       try {
         // Pi when it's there, else the agent Herdr ranks first.
         const all = (await knownAgents({ on: this.on })).filter((a) => a.installed);
-        this.agent = all.find((a) => a.key === "pi") ?? all[0] ?? null;
+        const a = all.find((x) => x.key === "pi") ?? all[0] ?? null;
+        this.agent = a && { key: a.key, name: a.name, icon: a.icon, tint: a.tint, run: a.run };
+        localStorage.setItem(saved, JSON.stringify(this.agent));
       } catch {}
       if (!this.agent) this.start = "terminal";
       cx.notify();
@@ -82,7 +98,7 @@ export default class NewWorktree extends View {
     const a = this.agent;
     const where = r === undefined ? "…"
       : r === null ? `${tilde(this.folder) ?? "This folder"} isn't in a git repository.`
-      : `${r.name}/${name ? slug(name) : "…"}`;
+      : fit(`${tilde(r.root)}/${name ? slug(name) : "…"}`, 50);
     return v_flex().id("new-worktree").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .size_full().p(8).gap(6).bg(t.popover).text_size(13).text_color(t.foreground)
       .child(h_flex().h(30).px(8).gap(7).items_center().rounded(7).border_1().border_color(t.accent).bg(t.background)

@@ -348,7 +348,7 @@ export default class Sidebar extends View {
       .when(this.hovered === id, (e) => e
         .child(this.small(`new-wt-${r.key}`, "plus", "New worktree", () => {
           const first = r.items[0];
-          openOverlay({ mod: "nix-dispatch", kind: "popup", width: 280, height: 104, props: { space: first?.s.id, folder: first ? place(first.s, ps) : JSON.parse(r.key)[1], machine: r.on } });
+          openOverlay({ mod: "nix-dispatch", kind: "popup", width: 320, height: 104, props: { space: first?.s.id, folder: first ? place(first.s, ps) : JSON.parse(r.key)[1], machine: r.on } });
         }, t))
         .when(r.closed, (e) => e.child(this.small(`forget-${r.key}`, "x", "Hide from the list", (cx) => this.forget(r.key, cx), t))))
       .when(this.hovered !== id && folded && count > 0, (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(`${count}`)))

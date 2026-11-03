@@ -46,7 +46,7 @@ export default class Status extends View {
       if (pane && panes().some((p) => p.pane === pane)) run("pane.focus", { pane });
     } else if (c === "dispatch") {
       // A popup from + elsewhere; from a key the pointer could be anywhere, so centered here.
-      openOverlay({ mod: "nix-dispatch", kind: "dialog", width: 280, height: 104, props: { space: space?.id, folder: cwd, machine: on } });
+      openOverlay({ mod: "nix-dispatch", kind: "dialog", width: 320, height: 104, props: { space: space?.id, folder: cwd, machine: on } });
     } else if (c === "worktree" || c === "worktrees") {
       openOverlay({ mod: "nix-worktree", kind: "dialog", ...(c === "worktrees" ? { width: 560, height: 480 } : { width: 480, height: 300 }), props: { space: space?.id, folder: cwd, action: c === "worktrees" ? "open" : "new" } });
     } else if (c === "review") {

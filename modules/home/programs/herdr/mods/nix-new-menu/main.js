@@ -15,13 +15,18 @@ function shortcut(name) {
 
 export default class NewMenu extends View {
   init(_props, cx) {
-    this.agent = undefined;
     this.handle = cx.focus_handle();
     this.handle.focus();
+    // knownAgents asks a login shell, which takes a while: the last answer shows at once.
+    const on = this.space()?.machine;
+    const saved = `agent:${on ?? ""}`;
+    try { this.agent = JSON.parse(localStorage.getItem(saved) ?? "undefined"); } catch { this.agent = undefined; }
     cx.spawn(async (cx) => {
       try {
-        const all = (await knownAgents({ on: this.space()?.machine })).filter((a) => a.installed);
-        this.agent = all.find((a) => a.key === "pi") ?? all[0] ?? null;
+        const all = (await knownAgents({ on })).filter((a) => a.installed);
+        const a = all.find((x) => x.key === "pi") ?? all[0] ?? null;
+        this.agent = a && { key: a.key, name: a.name, icon: a.icon, tint: a.tint, run: a.run };
+        localStorage.setItem(saved, JSON.stringify(this.agent));
       } catch { this.agent = null; }
       cx.notify();
     });
