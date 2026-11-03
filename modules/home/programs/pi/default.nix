@@ -31,7 +31,8 @@ let
 
     # Pinned: Pi runs package code, so bump the commit after reading the diff.
     packages = [
-      "git:github.com/earendil-works/pi-claude-code@70abb65186592ca788b29b3db22c3160d629c41f"
+      # Patched (see piClaudeCode below), so a local path rather than git.
+      "${piClaudeCode}"
       # The ask_user_question tool. The remote-control extension answers it
       # from the Claude apps through the package's rpiv:ask-user:* events.
       "npm:@juicesharp/rpiv-ask-user-question@2.15.0"
@@ -70,6 +71,23 @@ let
       tar xzf ${npm "nanoid" "5.1.16" "sha256-0/2cvcnmyPlhepLmsGowjFamLHRPdI45PRAgOGbBs/g="} -C $out/node_modules/nanoid --strip-components=1
       patch -d $out -p1 < ${./patches/pi-subagents-fleet-refresh.patch}
     '';
+  # earendil-works/pi-claude-code with patches/pi-claude-code-caller-cache.patch: a caller's own
+  # prompt-cache breakpoints on user blocks reach the API (auto-mode places them where Claude
+  # Code's classifier does), and a model asked for by full id ("claude-sonnet-5") isn't routed
+  # through Claude Code's "sonnet" alias, which now means Sonnet 5.5. No runtime dependencies:
+  # its imports are Pi's own packages.
+  piClaudeCode = pkgs.runCommand "pi-claude-code-70abb65-patched" { } ''
+    cp -r ${
+      pkgs.fetchFromGitHub {
+        owner = "earendil-works";
+        repo = "pi-claude-code";
+        rev = "70abb65186592ca788b29b3db22c3160d629c41f";
+        hash = "sha256-9BHTz/IRf8jZczVYoXtypepBDmWJ9+5id6hwZUdeSV0=";
+      }
+    } $out
+    chmod -R u+w $out
+    patch -d $out -p1 < ${./patches/pi-claude-code-caller-cache.patch}
+  '';
   settingsJson = (pkgs.formats.json { }).generate "pi-settings.json" settings;
   settingsPath = "${config.home.homeDirectory}/.pi/agent/settings.json";
 

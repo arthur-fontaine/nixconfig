@@ -1,0 +1,102 @@
+diff --git a/src/claude-cli.ts b/src/claude-cli.ts
+index 6c0595e..2e8812b 100644
+--- a/src/claude-cli.ts
++++ b/src/claude-cli.ts
+@@ -629,6 +629,30 @@ function normalizeLeadingSystemCache(system: unknown): void {
+   }
+ }
+ 
++function hasCacheControl(blocks: unknown[]): boolean {
++  return blocks.some((block) => block !== null && typeof block === "object" && "cache_control" in block);
++}
++
++// The caller placed its own prompt-cache breakpoints on the user content (Claude Code's
++// auto-mode classifier does: the end of the history and the action under review). Claude
++// Code adds its own on the system prompt and its trailing environment message, which would
++// exceed the API's four, so keep one at the end of the system prompt and the caller's.
++export function keepCallerCacheBreakpoints(body: Buffer, canonicalContent: unknown[]): Buffer {
++  const payload = JSON.parse(body.toString("utf8")) as { messages?: NativeRequestMessage[]; system?: unknown };
++  normalizeLeadingSystemCache(payload.system);
++  for (const message of payload.messages ?? []) message.content = withoutCacheControl(message.content) as never;
++  const first = payload.messages?.find((message) => message.role === "user");
++  if (first && Array.isArray(first.content) && first.content.length >= canonicalContent.length) {
++    const offset = first.content.length - canonicalContent.length;
++    canonicalContent.forEach((block, index) => {
++      const marker = (block as Record<string, unknown>).cache_control;
++      const target = first.content[offset + index];
++      if (marker !== undefined && target && typeof target === "object") (target as Record<string, unknown>).cache_control = marker;
++    });
++  }
++  return Buffer.from(JSON.stringify(payload));
++}
++
+ export function rewriteInitialRequest(
+   body: Buffer,
+   prefix: unknown[] | undefined,
+@@ -898,10 +922,9 @@ class ClaudeProcess {
+       input.onEvent?.(event);
+     };
+     const canonicalInitialUser = input.frames.find((frame) => frame.type === "user")?.message.content ?? [];
+-    this.relay.beginTurn(
+-      deliver,
++    const rewrite =
+       input.initialUserPrefix || input.initialSystemMessages || input.nativeSystemInjections
+-        ? (body) =>
++        ? (body: Buffer) =>
+             rewriteInitialRequest(
+               body,
+               input.initialUserPrefix,
+@@ -909,7 +932,13 @@ class ClaudeProcess {
+               input.initialSystemMessages,
+               input.nativeSystemInjections,
+             )
+-        : undefined,
++        : undefined;
++    const callerCache = hasCacheControl(canonicalInitialUser);
++    this.relay.beginTurn(
++      deliver,
++      callerCache
++        ? (body) => keepCallerCacheBreakpoints(rewrite ? rewrite(body) : body, canonicalInitialUser)
++        : rewrite,
+       input.betas,
+     );
+ 
+diff --git a/src/model-catalog.ts b/src/model-catalog.ts
+index a174cad..d31573e 100644
+--- a/src/model-catalog.ts
++++ b/src/model-catalog.ts
+@@ -147,7 +147,9 @@ export const CLAUDE_CODE_MODELS: ClaudeCodeModel[] = FALLBACK_DISCOVERY.map(mode
+ 
+ export function nativeModel(model: string): string {
+   const direct = NATIVE_ROUTE_BY_ID.get(model);
+-  if (direct) return direct;
++  // An alias row ("sonnet") follows Claude Code's current model; a full id asked for by name
++  // ("claude-sonnet-5") must reach the API as that model.
++  if (direct && !(direct in ALIASES && model !== direct)) return direct;
+   if (model === "default") return model;
+   const canonical = canonicalRoute(model);
+   return model.endsWith("[1m]") ? `${canonical}[1m]` : canonical;
+diff --git a/src/transcript.ts b/src/transcript.ts
+index e0a824b..607e7aa 100644
+--- a/src/transcript.ts
++++ b/src/transcript.ts
+@@ -111,10 +111,18 @@ function imageBlock(block: ImageContent): Record<string, unknown> {
+   };
+ }
+ 
++// A caller's own prompt-cache breakpoint on a user text block, kept as is.
++function cacheControlOf(block: TextContent): { cache_control?: unknown } {
++  const marker = (block as TextContent & { cache_control?: unknown }).cache_control;
++  return marker === undefined ? {} : { cache_control: marker };
++}
++
+ function userContent(content: string | (TextContent | ImageContent)[]): unknown[] {
+   if (typeof content === "string") return content ? [{ type: "text", text: sanitizeSurrogates(content) }] : [];
+   return content.map((block) =>
+-    block.type === "text" ? { type: "text", text: sanitizeSurrogates(block.text) } : imageBlock(block),
++    block.type === "text"
++      ? { type: "text", text: sanitizeSurrogates(block.text), ...cacheControlOf(block) }
++      : imageBlock(block),
+   );
+ }
+ 
