@@ -169,6 +169,8 @@ export default class Editor extends View {
   mouseMove(e) {
     if (!this.nvim || !this.grid.mouse) return;
     const { grid, row, col, screen } = this.cell(e);
+    this.hover = { grid, row, col };
+    this.followLink(e.modifiers.platform);
     const at = screen ?? `${grid}/${row}:${col}`;
     if (at === this.last) return;
     this.last = at;
@@ -203,6 +205,27 @@ export default class Editor extends View {
     if (e.touch_phase === "ended") this.wheel = { x: 0, y: 0 };
   }
 
+  // Cmd held over a word: it is underlined and the pointer is a hand, as a link to its
+  // definition (Cmd+click goes there). Redrawn only when the word or Cmd changes.
+  followLink(cmd) {
+    const h = cmd && !this.dragging ? this.hover : null;
+    const w = h ? this.grid.wordAt(h.grid, h.row, h.col) : null;
+    const link = w && { grid: h.grid, row: h.row, ...w };
+    const key = link ? `${link.grid}/${link.row}:${link.start}-${link.end}` : "";
+    if (key === (this.linkKey ?? "")) return;
+    this.linkKey = key;
+    this.link = link;
+    this.cx.notify();
+  }
+
+  linkLine(m, t) {
+    const l = this.link, w = l && this.grid.grids.get(l.grid);
+    if (!w || w.float || w.hidden) return null;
+    const color = this.grid.style(this.grid.cellAt(l.grid, l.row, l.start)?.[1] ?? 0).fg ?? t.foreground;
+    return div().absolute().left(PAD.x + (w.col + l.start) * m.cw).top(PAD.y + (w.row + l.row) * m.lh).h(m.lh)
+      .line_height(`${m.lh}px`).whitespace_nowrap().text_color(color).underline().child(" ".repeat(l.end - l.start));
+  }
+
   // One element per run of a highlight, at its cell; a run's width is its cells' so
   // columns stay exact whatever the glyphs measure. `base` is the surface under the grid:
   // runs of that color draw no background of their own.
@@ -226,7 +249,8 @@ export default class Editor extends View {
           .text_color(s.sp ?? t.blocked).underline().when(s.undercurl, (e) => e.text_decoration_wavy()).whitespace_nowrap()
           .child(" ".repeat(run.cells))));
     });
-    return div().absolute().left(x).top(y).w(g.grids.get(id).cols * m.cw).h(m.lh).children(runs);
+    return div().absolute().left(x).top(y).w(g.grids.get(id).cols * m.cw).h(m.lh).children(runs)
+      .when(Boolean(this.link), (e) => e.cursor_pointer()).when(!this.link, (e) => e.cursor_text());
   }
 
   // A window grid where nvim put it on the screen, opaque: grid 1 under it keeps what other
@@ -447,17 +471,21 @@ export default class Editor extends View {
       .on_size_change((px, cx) => { this.px = px; this.resized(px); })
       .on_mouse_down("left", (e, cx) => this.mouseDown(e, cx))
       .on_mouse_move((e) => this.mouseMove(e))
+      .on_hover((hovered) => { if (!hovered) { this.hover = null; this.followLink(false); } })
+      .when(Boolean(this.link), (e) => e.cursor_pointer()).when(!this.link, (e) => e.cursor_text())
       .on_mouse_up("left", (e) => this.mouseUp(e))
       .on_scroll_wheel((e) => this.scroll(e))
       .when(Boolean(this.error), (e) => e.child(div().p(16).text_size(12).text_color(t.blocked).child(this.error)))
       .when(!this.error && !g.rows, (e) => e.child(div().p(16).text_size(12).text_color(t.dim).child("Starting Neovim…")))
       .children(g.windows().flatMap((w) => this.windowRows(w, m, t)))
       .children(g.floats().map((f) => this.floatFrame(f, m, t)))
+      .when(Boolean(this.link), (e) => e.child(this.linkLine(m, t)))
       .when(g.rows > 0 && Boolean(this.caret(m, t)), (e) => e.child(this.caret(m, t)))
       .when(Boolean(this.popup(m, t)), (e) => e.child(this.popup(m, t)))
       .when(Boolean(g.cmdline), (e) => e.child(this.cmdline(m, t)));
     return v_flex().id("nix-editor").size_full().min_h(0).bg(g.defaults.bg ?? t.background).text_color(t.foreground)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
+      .on_modifiers_changed((e) => this.followLink(e.modifiers.platform))
       .when(Boolean(strip), (e) => e.child(strip))
       .child(body).child(this.statusBar(t));
   }

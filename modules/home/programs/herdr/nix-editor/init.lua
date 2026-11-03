@@ -90,10 +90,17 @@ vim.diagnostic.config({
   update_in_insert = true,
   float = { border = "none", source = "if_many" },
 })
--- Colors from Herdr's theme, sent by the mod when it starts and whenever the theme
--- changes (_G.herdr_theme): nvim's background follows the appearance, and the surfaces
--- and the groups the design sets take the theme's colors. Kept, so a colorscheme reload
--- (switching `background` is one) applies them again.
+-- Code in Ayu, as Zed and Ghostty show it (Ayu Dark or Ayu Light after Herdr's appearance;
+-- the plugin is installed beside this file). Herdr's theme, sent by the mod when it starts
+-- and whenever it changes (_G.herdr_theme), gives the surfaces and the groups the design
+-- sets their colors. Kept, so loading the scheme again applies them again.
+local here = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
+vim.opt.runtimepath:append(here .. "/ayu")
+local loaded
+local function scheme(appearance)
+  loaded = appearance
+  pcall(vim.cmd.colorscheme, "ayu-" .. appearance)
+end
 local theme
 local function apply_theme()
   local hl = function(name, spec) vim.api.nvim_set_hl(0, name, spec) end
@@ -120,9 +127,9 @@ local function apply_theme()
 end
 _G.herdr_theme = function(colors)
   theme = colors
-  if vim.o.background ~= colors.appearance then vim.o.background = colors.appearance end
-  apply_theme()
+  if loaded ~= colors.appearance then scheme(colors.appearance) else apply_theme() end
 end
+scheme("dark")
 apply_theme()
 vim.api.nvim_create_autocmd("ColorScheme", { callback = apply_theme })
 

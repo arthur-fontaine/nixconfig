@@ -140,6 +140,8 @@ in
     "herdr-app/themes/nix-dark.json".source = ./themes/nix-dark.json;
     # nix-editor's backend: the config `nvim --embed` starts with.
     "herdr-app/nix-editor/init.lua".source = ./nix-editor/init.lua;
+    # Its code colors: Ayu, as in Zed and Ghostty (init.lua puts it on the runtimepath).
+    "herdr-app/nix-editor/ayu".source = pkgs.vimPlugins.neovim-ayu;
   };
 
   # The stdio launcher nix-editor reaches over 127.0.0.1:7741 (a mod can't start

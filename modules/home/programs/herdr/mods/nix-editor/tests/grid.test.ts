@@ -126,3 +126,13 @@ test("multigrid: windows are placed, floats float, the cursor names its grid", (
   g.apply([["win_close", [2]]]);
   assert.deepEqual(g.windows().map((w) => w.id), [1]);
 });
+
+test("the word under a cell: letters, digits, _ and $, not punctuation", () => {
+  const g = new Grid();
+  g.apply([["grid_resize", [1, 20, 1]], ["grid_line", [1, 0, 0, [["a"], ["."], ["$"], ["f"], ["o"], ["o"], ["_"], ["1"], ["("], [")"]], false]]]);
+  assert.deepEqual(g.wordAt(1, 0, 4), { start: 2, end: 8 });
+  assert.deepEqual(g.wordAt(1, 0, 0), { start: 0, end: 1 });
+  assert.equal(g.wordAt(1, 0, 1), null);
+  assert.equal(g.wordAt(1, 0, 15), null);
+  assert.deepEqual(g.cellAt(1, 0, 3), ["f", 0]);
+});

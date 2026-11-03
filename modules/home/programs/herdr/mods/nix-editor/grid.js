@@ -190,6 +190,22 @@ export class Grid {
   }
 
   // The windows to draw under the floats: grid 1, then each placed window grid.
+  // The cell [text, hl] at a grid's row and column, and the word (letters, digits, _ and $)
+  // around it: its first and past-last columns.
+  cellAt(id, row, col) {
+    return this.grids.get(id)?.lines?.[row]?.[col];
+  }
+
+  wordAt(id, row, col) {
+    const line = this.grids.get(id)?.lines?.[row];
+    const word = (c) => /^[\p{L}\p{N}_$]$/u.test(line?.[c]?.[0] ?? "");
+    if (!line || !word(col)) return null;
+    let start = col, end = col + 1;
+    while (start > 0 && word(start - 1)) start--;
+    while (end < line.length && word(end)) end++;
+    return { start, end };
+  }
+
   windows() {
     const out = [];
     for (const g of this.grids.values()) if (!g.float && !g.hidden && g.rows) out.push(g);
