@@ -108,7 +108,7 @@ export default class NewWorktree extends View {
         .child(this.error || (this.busy ? "Creating…" : where)))
       .child(h_flex().gap(2).items_center()
         .when(Boolean(a), (e) => e.child(this.option("start-agent", this.start === "agent",
-          a?.tint ? svg(a.icon).size(12).text_color(t.foreground) : image(a?.icon ?? "icons/pi.svg").size(12), a?.name ?? "", () => { this.start = "agent"; }, t)))
+          a?.key === "pi" ? div().size(14).flex_none().rounded(3).bg(t.raised).flex().items_center().justify_center().font_family("JetBrains Mono").font_bold().text_size(10).text_color(t.foreground).child("π") : a?.tint ? svg(a.icon).size(12).text_color(t.foreground) : image(a.icon).size(12), a?.name ?? "", () => { this.start = "agent"; }, t)))
         .child(this.option("start-terminal", this.start === "terminal", svg("mods/nix-head/icons/terminal.svg").size(12).text_color(t.muted), "Terminal", () => { this.start = "terminal"; }, t))
         .child(div().flex_1())
         .child(div().pr(2).text_size(11).text_color(t.dim).child(a ? "⇥ ↵" : "↵")));

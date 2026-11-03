@@ -196,7 +196,7 @@ export default class Files extends View {
           .text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => { this.show(null); cx.notify(); })
           .child(svg("mods/nix-head/icons/chevron-left.svg").size(12))))
         .child(div().font_medium().child("Files"))
-        .child(div().flex_1().min_w(0).truncate().text_right().text_size(11).text_color(t.dim).child(this.file ?? branch ?? this.root?.split(/[\\/]/).pop() ?? "")))
+        .child(div().flex_1().min_w(0).text_ellipsis_start().text_right().text_size(11).text_color(t.dim).child(this.file ?? branch ?? this.root?.split(/[\\/]/).pop() ?? "")))
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().px(6).py(4).children(this.rows("", 0, [], t))
         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(12).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
         .when(this.limited, el => el.child(div().p(12).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))

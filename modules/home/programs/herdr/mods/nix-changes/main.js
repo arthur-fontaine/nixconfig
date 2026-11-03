@@ -342,10 +342,10 @@ export default class Changes extends View {
       .child(this.statusIcon(f.status, t))
       .child(h_flex().flex_1().min_w(0).gap(5).items_baseline()
         .child(div().flex_none().max_w(180).truncate().text_color(f.status === "D" ? t.muted : t.foreground).when(f.status === "D", (e) => e.line_through()).child(name))
-        .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child(dir)))
-      .child(h_flex().flex_none().gap(5).text_size(11)
-        .when(f.add > 0, (e) => e.child(div().text_color(t.ansi2).child(`+${f.add}`)))
-        .when(f.del > 0, (e) => e.child(div().text_color(t.ansi1).child(`−${f.del}`))));
+        .child(div().flex_1().min_w(0).text_ellipsis_start().text_size(11).text_color(t.dim).child(dir)))
+      .child(h_flex().flex_none().gap(4).text_size(11)
+        .child(div().w(34).text_right().text_color(t.ansi2).child(f.add > 0 ? `+${f.add}` : ""))
+        .child(div().w(34).text_right().text_color(t.ansi1).child(f.del > 0 ? `−${f.del}` : "")));
   }
 
   // A section: its label and count; it folds from its chevron, and its box (shown on hover)

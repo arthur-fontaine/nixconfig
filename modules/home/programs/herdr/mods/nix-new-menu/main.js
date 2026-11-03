@@ -52,7 +52,7 @@ export default class NewMenu extends View {
 
   render() {
     const t = theme(), a = this.agent;
-    const pic = a ? (a.tint ? svg(a.icon).size(14).text_color(t.foreground) : image(a.icon).size(14)) : null;
+    const pic = a ? (a.key === "pi" ? div().size(14).flex_none().rounded(3).bg(t.raised).flex().items_center().justify_center().font_family("JetBrains Mono").font_bold().text_size(10).text_color(t.foreground).child("π") : a.tint ? svg(a.icon).size(14).text_color(t.foreground) : image(a.icon).size(14)) : null;
     return v_flex().id("new-menu").track_focus(this.handle).size_full().bg(t.popover).p(4).gap(1).text_size(12.5)
       .on_key_down((e) => {
         if (e.modifiers.control || e.modifiers.platform || e.modifiers.alt) return;
