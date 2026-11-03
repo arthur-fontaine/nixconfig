@@ -73,8 +73,8 @@ function items(p, git) {
 }
 
 function menuIcon(command) {
-  const name = command.endsWith(".close") ? "x" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.help" ? "terminal" : command === "app.theme" ? "settings" : command === "pane.split" ? "panel-right" : command === "pane.zoom" ? "square" : "terminal";
-  return `mods/workspace-chrome/${name}.svg`;
+  const name = command.endsWith(".close") ? "x" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.help" ? "terminal" : command === "app.theme" ? "settings" : command === "pane.split" ? "split-right" : command === "pane.zoom" ? "zoom" : "terminal";
+  return `mods/nix-head/icons/${name}.svg`;
 }
 
 // The key bound to a command, for the hint on the right.
@@ -118,9 +118,9 @@ export default class Menu extends View {
       .track_focus(this.handle)
       .w_full()
       .min_h(0)
-      .p(5)
+      .p(4)
       .bg(t.popover)
-      .text_size(12.8)
+      .text_size(12.5)
       .on_key_down((e, cx) => {
         if (e.key === "down") this.at = (this.at + 1) % list.length;
         else if (e.key === "up") this.at = (this.at + list.length - 1) % list.length;
@@ -132,20 +132,21 @@ export default class Menu extends View {
       .children(
         list.map((it, i) =>
           v_flex()
-            .when(i > 0 && (it[1].endsWith(".close") || it[1] === "app.help" || (it[1] === "app.theme" && list[i - 1][1] !== "app.theme")), el => el.child(div().mx(7).my(4).h(1).bg(t.border)))
+            .when(i > 0 && (it[1].endsWith(".close") || it[1] === "app.help" || (it[1] === "app.theme" && list[i - 1][1] !== "app.theme")), el => el.child(div().mx(8).my(4).h(1).bg(t.border)))
             .child(h_flex()
             .id(`mi-${i}`)
-            .h(31)
+            .h(28)
             .px(8)
-            .gap(9)
-            .rounded(7)
+            .gap(8)
+            .rounded(6)
             .items_center()
             .justify_between()
-            .text_color(t.foreground)
+            // Closing is the one destructive item: it says so in the needs-you red.
+            .text_color(it[1].endsWith(".close") ? t.blocked : t.foreground)
             .when(i === this.at, (el) => el.bg(t.selected))
             .hover((s) => s.bg(t.hover))
             .on_click((_e, cx) => this.choose(i, cx))
-            .child(svg(menuIcon(it[1])).size(14).flex_none().text_color(t.muted))
+            .child(svg(menuIcon(it[1])).size(14).flex_none().text_color(it[1].endsWith(".close") ? t.blocked : t.muted))
             .child(div().flex_1().child(it[0]))
             .child(div().text_size(11).text_color(t.dim).child(shortcut(it[1], it[2])))),
         ),

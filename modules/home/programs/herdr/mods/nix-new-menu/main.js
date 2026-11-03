@@ -44,23 +44,23 @@ export default class NewMenu extends View {
   }
 
   row(id, icon, label, hint, action, t) {
-    return h_flex().id(id).h(34).px(10).gap(10).rounded(7).items_center().flex_none().cursor_pointer()
-      .hover((s) => s.bg(t.selected)).on_click(() => action())
+    return h_flex().id(id).h(28).px(8).gap(8).rounded(6).items_center().flex_none().cursor_pointer()
+      .hover((s) => s.bg(t.hover)).on_click(() => action())
       .child(icon).child(div().flex_1().text_color(t.foreground).child(label))
       .child(div().text_size(11).text_color(t.dim).child(hint));
   }
 
   render() {
     const t = theme(), a = this.agent;
-    const pic = a ? (a.tint ? svg(a.icon).size(15).text_color(t.foreground) : image(a.icon).size(15)) : null;
-    return v_flex().id("new-menu").track_focus(this.handle).size_full().bg(t.popover).p(5).gap(1).text_size(13)
+    const pic = a ? (a.tint ? svg(a.icon).size(14).text_color(t.foreground) : image(a.icon).size(14)) : null;
+    return v_flex().id("new-menu").track_focus(this.handle).size_full().bg(t.popover).p(4).gap(1).text_size(12.5)
       .on_key_down((e) => {
         if (e.modifiers.control || e.modifiers.platform || e.modifiers.alt) return;
         if (e.key === "1" && a) this.start(a.run, a.name);
         else if (e.key === "2" || (e.key === "1" && a === null)) this.start(null);
       })
       .when(Boolean(a), (el) => el.child(this.row("start-agent", pic, a.name, "1", () => this.start(a.run, a.name), t)))
-      .when(a === undefined, (el) => el.child(div().h(34).px(10).flex().items_center().text_color(t.dim).child("…")))
-      .child(this.row("start-terminal", svg("icons/shell.svg").size(15).text_color(t.foreground), "Terminal", a === null ? "1" : shortcut("tab.new") || "2", () => this.start(null), t));
+      .when(a === undefined, (el) => el.child(div().h(28).px(8).flex().items_center().text_color(t.dim).child("…")))
+      .child(this.row("start-terminal", svg("mods/nix-head/icons/terminal.svg").size(14).text_color(t.muted), "Terminal", a === null ? "1" : shortcut("tab.new") || "2", () => this.start(null), t));
   }
 }

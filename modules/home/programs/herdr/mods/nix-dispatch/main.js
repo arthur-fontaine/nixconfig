@@ -101,15 +101,15 @@ export default class NewWorktree extends View {
       : fit(`${tilde(r.root)}/${name ? slug(name) : "…"}`, 50);
     return v_flex().id("new-worktree").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .size_full().p(10).gap(8).bg(t.popover).text_size(13).text_color(t.foreground)
-      .child(h_flex().h(30).px(8).gap(7).items_center().rounded(6).border_1().border_color(t.accent).bg(t.background)
-        .child(svg("mods/workspace-chrome/git-branch.svg").size(13).flex_none().text_color(t.muted))
+      .child(h_flex().h(30).px(8).gap(7).items_center().rounded(6).border_1().border_color(t.ring ?? t.accent).bg(t.background)
+        .child(svg("mods/nix-head/icons/git-branch.svg").size(13).flex_none().text_color(t.muted))
         .child(Input.new(this.branch).flex_1().h_full().text_size(13)))
       .child(div().h(20).px(2).flex().items_center().text_size(11).text_color(r === null || this.error ? t.blocked : t.dim).truncate()
         .child(this.error || (this.busy ? "Creating…" : where)))
       .child(h_flex().gap(2).items_center()
         .when(Boolean(a), (e) => e.child(this.option("start-agent", this.start === "agent",
           a?.tint ? svg(a.icon).size(12).text_color(t.foreground) : image(a?.icon ?? "icons/pi.svg").size(12), a?.name ?? "", () => { this.start = "agent"; }, t)))
-        .child(this.option("start-terminal", this.start === "terminal", svg("icons/shell.svg").size(12).text_color(t.foreground), "Terminal", () => { this.start = "terminal"; }, t))
+        .child(this.option("start-terminal", this.start === "terminal", svg("mods/nix-head/icons/terminal.svg").size(12).text_color(t.muted), "Terminal", () => { this.start = "terminal"; }, t))
         .child(div().flex_1())
         .child(div().pr(2).text_size(11).text_color(t.dim).child(a ? "⇥ ↵" : "↵")));
   }
