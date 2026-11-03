@@ -54,6 +54,7 @@ let
     nix-tabs = { };
     nix-status = { };
     nix-dispatch = { shared = [ "repo.js" ]; };
+    nix-pane = { };
   };
   modFiles = lib.listToAttrs (lib.concatLists (lib.mapAttrsToList (mod: o: [
     { name = "herdr-app/mods/${mod}/main.js"; value.source = if o == { } then ./mods/${mod}/main.js else bundle mod o; }
