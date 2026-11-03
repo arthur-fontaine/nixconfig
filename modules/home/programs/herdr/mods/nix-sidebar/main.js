@@ -282,7 +282,7 @@ export default class Sidebar extends View {
       .child(this.picture(lead, t, 13))
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(on ? t.foreground : t.muted).child(label))
       .when(this.hovered === id, (e) => e.child(this.small(`close-${tab.id}`, "x", "Close", () => run("tab.close", { id: tab.id }), t)))
-      .when(this.hovered !== id && Boolean(time) && tab.status !== "idle", (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(ago(time))))
+      .when(this.hovered !== id && Boolean(time) && tab.status !== "idle", (e) => e.child(div().flex_none().text_size(11).text_color(on ? t.muted : t.dim).child(ago(time))))
       .when(Boolean(this.status(t, tab.status)), (e) => e.child(this.status(t, tab.status))));
   }
 

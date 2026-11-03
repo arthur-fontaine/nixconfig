@@ -389,7 +389,7 @@ export default class Changes extends View {
       // The files.
       .child(v_flex().id("changes-list").flex_1().min_h(80).overflow_y_scrollbar().px(6).pb(6)
         .children([...this.section("Tracked", tracked, t), ...this.section("Untracked", untracked, t)])
-        .when(!this.files.length, (e) => e.child(div().p(10).text_color(t.dim)
+        .when(!this.files.length, (e) => e.child(div().p(10).text_size(12).text_color(t.muted)
           .child(this.error || (this.loading ? "Loading changes…" : this.root ? "Nothing to commit" : "No folder")))))
       .when(Boolean(this.note), (e) => e.child(div().px(12).py(6).text_size(12).text_color(t.ansi1).child(this.note)))
       // The branch's PR, then the branch and the commit box.
