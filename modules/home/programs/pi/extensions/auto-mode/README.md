@@ -21,7 +21,9 @@ JavaScript (Claude Code is not open source). `prompts/system.md` and
 
 Wire the directory in like the other extensions:
 `".pi/agent/extensions/auto-mode".source = ./extensions/auto-mode;`.
-It needs the `claude-code` provider (pi-claude-code) with `claude-sonnet-5`;
+It needs the `claude-code` provider (pi-claude-code, patched by the Pi module so the
+request's cache breakpoints reach the API and `claude-sonnet-5` isn't routed through the
+`sonnet` alias) with `claude-sonnet-5`, sent as `claude-sonnet-5[1m]`;
 it never uses another provider.
 
 Optional, in Pi's own `settings.json` (`~/.pi/agent/settings.json`, not a
@@ -68,7 +70,9 @@ every piece.
 | `{"meta":{"gitStatus":…}}` above `git reset --hard`, `git checkout .`, `git restore .`, `git clean -f`, `rm -r/-f` | Same line, from `git status --porcelain` | Command detection is a regex approximation of Claude Code's parser. |
 | `{"meta":{"repoVisibility":…}}`, Chrome navigation lines, outcome lines (off), forwarded turns, host context | Not ported | Need GitHub lookups or Claude-Code-only surfaces. |
 | Two stages: stage 1 64 tokens with `</severity>` stop, stage 2 8192 tokens; suffixes verbatim; exact-format rule for a stage-1 allow; stage 2 decides otherwise | `classifier.ts` | Read. pi-claude-code cannot send stop sequences or a temperature, so stage 1 relies on the model stopping (it does: "No other text"); temperature is the API default 1, which is Claude Code's value anyway. |
-| API thinking off (`thinking: false`), +2048 tokens only for models that refuse that | Off; when the API refuses "disabled" (Sonnet 5 does today), low-effort adaptive thinking + 2048 tokens, learned once per process (so the first check after each Pi start costs one refused request) | Not exact: pi-claude-code can send `disabled` or adaptive thinking, not the `between_tools` mode the API now asks for. The verdict is read from the text only, as before. |
+| Model (`modelByMainModel`): `claude-sonnet-5[1m]` for every current main model | Same, unless `CLAUDE_CODE_AUTO_MODE_MODEL` | Exact (before the provider patch, `claude-sonnet-5` reached the API as Sonnet 5.5). |
+| Prompt caching: 1 h (`auto_mode` is in `tengu_prompt_cache_1h_config`); breakpoints on the system prompt, the CLAUDE.md message, the history's last block and the action block; the stage suffix after them, uncached; the history in blocks split at each classified call (`ICr`, unsegmented), so stage 2 and the next check read the earlier request from the cache | Same layout and breakpoints (`transcriptBlocks`, `index.ts`) | Near exact. The CLI puts its own billing and SDK lines ahead of the system prompt and an environment message after the user content (the patched provider keeps one system breakpoint and the caller's); Pi merges consecutive user messages, so the CLAUDE.md text is the first block of the transcript message, not a message of its own. Calls the classifier blocked are not marked on their results, so after a resume only allowed ones split the history. Measured: about 22 tokens written per check after the first, instead of the whole transcript. |
+| API thinking off (`thinking: false`) | Off (`claude-sonnet-5` accepts it) | Exact. The fallback (low-effort adaptive thinking + 2048 tokens when the API refuses "disabled", learned once per process) stays for other models. |
 | Parsing: thinking stripped, exactly one `<severity>N`, known `<category>` → `[Rule Name]` | Same | Read; rule names come from the template like Claude Code's `F_r`. |
 | Retries: 4 on transient errors, 4 re-asks on unparseable, no outer retry or fallback model; stage-1 timeout 60 s + 10 s per 50k tokens over 50k (≤ 120 s), stage 2 120 s | Same | Read; the SDK's backoff is approximated (0.5 s doubling, ≤ 8 s). |
 | Fail closed: unavailable → denied with retry guidance; unparseable → denied (counts); refusal → denied (does not count); stage-2 error after stage 1 → blocked on stage 1 (counts) | Same, messages verbatim | Read. Errors are recognised from pi-claude-code's error text, not HTTP objects, so the "(rate-limited)"-style hints are best effort and the `retry-after` variant is not used. |
