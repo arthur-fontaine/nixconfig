@@ -87,7 +87,8 @@ let
     "cmd-shift-b" = "nix-status.worktrees";
     "cmd-shift-r" = "nix-status.review";
     "cmd-shift-o" = "nix-status.editor";
-    "cmd-f" = "nix-sidebar.filter"; # the sidebar is always shown too
+    # ⇧ as in "find in the project"; ⌘F stays find-in-file for the editor.
+    "cmd-shift-f" = "nix-sidebar.filter";
   };
   shared = {
     layout = "nix";

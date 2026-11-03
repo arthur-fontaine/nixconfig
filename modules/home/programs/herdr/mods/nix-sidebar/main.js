@@ -547,7 +547,7 @@ export default class Sidebar extends View {
       // The filter, in the app's one field vocabulary (background + hairline, ring on focus),
       // its box on the tree rows' edges (px 6); text at the size of the rows it filters.
       .child(h_flex().flex_none().px(6).pb(8).gap(8).items_center()
-        .child(h_flex().id("filter").flex_1().h(28).pl(10).pr(8).gap(7).items_center().rounded(6).bg(t.background)
+        .child(h_flex().id("filter").tooltip("Filter ⌘⇧F").flex_1().h(28).pl(10).pr(8).gap(7).items_center().rounded(6).bg(t.background)
           .border_1().border_color(this.typing ? (t.ring ?? t.accent) : t.border)
           .when(!this.typing, (e) => e.hover((x) => x.border_color(t.input)))
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
