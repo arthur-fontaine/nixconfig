@@ -9,11 +9,15 @@ export interface Reply {
 	error?: string;
 }
 
+// A text block of the transcript message; `cache` puts a prompt-cache breakpoint after it.
+export type Block = { text: string; cache?: boolean };
+
 export interface Request {
 	system: string;
-	// Leading user messages (the CLAUDE.md one), then the transcript message.
+	// Leading user messages (the CLAUDE.md one), then the transcript message's blocks, the
+	// stage's suffix last and uncached, so stage 2 reads stage 1's cache (Claude Code's CCr).
 	leading: string[];
-	transcript: string;
+	transcript: Block[];
 	maxTokens: number;
 	stopSequence: string;
 	signal: AbortSignal;
@@ -150,7 +154,7 @@ async function runStage(complete: Complete, o: StageOptions): Promise<Reply> {
 export interface ClassifyOptions {
 	system: string;
 	leading: string[];
-	transcript: string;
+	transcript: Block[];
 	thresholds: Thresholds | null;
 	tokens: number;
 	signal: AbortSignal;
@@ -189,7 +193,7 @@ export async function classify(complete: Complete, o: ClassifyOptions): Promise<
 	const stage1 = await runStage(complete, {
 		request: {
 			...base,
-			transcript: o.transcript + (severity ? SUFFIX.severity1 : SUFFIX.block1),
+			transcript: [...o.transcript, { text: severity ? SUFFIX.severity1 : SUFFIX.block1 }],
 			maxTokens: 64,
 			stopSequence: severity ? "</severity>" : "</block>",
 		},
@@ -223,7 +227,7 @@ export async function classify(complete: Complete, o: ClassifyOptions): Promise<
 	const stage1Refused = stage1.stop === "error";
 
 	const stage2 = await runStage(complete, {
-		request: { ...base, transcript: o.transcript + (severity ? SUFFIX.severity2 : SUFFIX.block2), maxTokens: 8192, stopSequence: "" },
+		request: { ...base, transcript: [...o.transcript, { text: severity ? SUFFIX.severity2 : SUFFIX.block2 }], maxTokens: 8192, stopSequence: "" },
 		parsed: (r) => (severity ? parseSeverity(r) !== null : r.stop === "stop" && parseBlock(r.text) !== null),
 		signal: o.signal,
 		attemptMs: Math.max(STAGE2_ATTEMPT_MS, timeout),

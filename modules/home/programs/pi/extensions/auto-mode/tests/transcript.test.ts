@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { callLine, defang, indent, line, metaLine, project, SUMMARY_PREFIX, transcriptLines, type Entry } from "../transcript.ts";
+import { callLine, defang, indent, line, metaLine, project, SUMMARY_PREFIX, transcriptBlocks, transcriptLines, type Entry } from "../transcript.ts";
 
 const user = (text: string): Entry => ({ type: "message", message: { role: "user", content: [{ type: "text", text }] } });
 const calls = (...c: { id: string; name: string; arguments: Record<string, unknown> }[]): Entry => ({
@@ -61,4 +61,24 @@ test("question answers and compaction summaries are labeled as Claude Code label
 	];
 	const lines = transcriptLines(entries, { toolCallId: "z", toolName: "bash", input: {} });
 	assert.deepEqual(lines, [line("user", `${SUMMARY_PREFIX}\n  did things`), line("user", "[User answered AskUserQuestion]:   Yes, push")]);
+});
+
+test("the history splits as Claude Code's request blocks: each classified call alone", () => {
+	const entries = [
+		user("go"),
+		calls({ id: "b1", name: "bash", arguments: { command: "echo 1" } }, { id: "r1", name: "read", arguments: { path: "x" } }),
+		calls({ id: "b2", name: "bash", arguments: { command: "echo 2" } }),
+		user("next"),
+		calls({ id: "b3", name: "bash", arguments: { command: "echo 3" } }),
+	];
+	const pending = { toolCallId: "b3", toolName: "bash", input: { command: "echo 3" } };
+	assert.deepEqual(transcriptBlocks(entries, pending, new Set()), ['{"user":"  go"}\n{"Bash":"echo 1"}\n{"Bash":"echo 2"}\n{"user":"  next"}\n']);
+	assert.deepEqual(transcriptBlocks(entries, pending, new Set(["b1", "b2"])), [
+		'{"user":"  go"}\n',
+		'{"Bash":"echo 1"}\n',
+		'{"Bash":"echo 2"}\n',
+		'{"user":"  next"}\n',
+	]);
+	// A classified call's block is its own check's action block, byte for byte.
+	assert.equal(transcriptBlocks(entries, pending, new Set(["b2"]))[1], callLine("bash", { command: "echo 2" }));
 });

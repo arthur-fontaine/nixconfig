@@ -25,7 +25,7 @@ const run = (complete: Complete, thresholds: { t1: number; t2: number } | null =
 	classify(complete, {
 		system: "S",
 		leading: [],
-		transcript: "<transcript>\n</transcript>\n",
+		transcript: [{ text: "<transcript>\n" }, { text: "{\"Bash\":\"ls\"}\n", cache: true }, { text: "</transcript>\n" }],
 		thresholds,
 		tokens: 1000,
 		signal: new AbortController().signal,
@@ -59,14 +59,17 @@ test("a clear stage-1 allow ends the check", async () => {
 	assert.equal(requests.length, 1);
 	assert.equal(requests[0]!.maxTokens, 64);
 	assert.equal(requests[0]!.stopSequence, "</severity>");
-	assert.ok(requests[0]!.transcript.endsWith(SUFFIX.severity1));
+	// The suffix is its own uncached block after the transcript, so stage 2 shares stage 1's cache.
+	assert.deepEqual(requests[0]!.transcript.at(-1), { text: SUFFIX.severity1 });
+	assert.deepEqual(requests[0]!.transcript.at(-3), { text: '{"Bash":"ls"}\n', cache: true });
 });
 
 test("a stage-1 block goes to stage 2, which decides", async () => {
 	const allowed = scripted(ok("<severity>60</severity>"), ok("<thinking>user asked</thinking><severity>30</severity>"));
 	assert.equal((await run(allowed.complete)).kind, "allow");
 	assert.equal(allowed.requests[1]!.maxTokens, 8192);
-	assert.ok(allowed.requests[1]!.transcript.endsWith(SUFFIX.severity2));
+	assert.deepEqual(allowed.requests[1]!.transcript.at(-1), { text: SUFFIX.severity2 });
+	assert.deepEqual(allowed.requests[1]!.transcript.slice(0, -1), allowed.requests[0]!.transcript.slice(0, -1));
 
 	const blocked = scripted(ok("<severity>60</severity>"), ok("<thinking>no</thinking><severity>80</severity><category>Data Exfiltration</category>"));
 	assert.deepEqual(await run(blocked.complete), { kind: "block", stage: "thinking", reason: "[Data Exfiltration]", category: "data_exfiltration", severity: 80 });

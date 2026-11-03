@@ -12,7 +12,7 @@ import {
 	loadProjectContextFiles,
 	type ToolCallEventResult,
 } from "@earendil-works/pi-coding-agent";
-import { classify, type Complete, type Stop, type Verdict } from "./classifier.ts";
+import { type Block, classify, type Complete, type Stop, type Verdict } from "./classifier.ts";
 import { allowed, blocked, type Denials, fresh, limitPrompt, overLimit } from "./denials.ts";
 import { fastPath } from "./fastpath.ts";
 import * as msg from "./messages.ts";
@@ -20,13 +20,17 @@ import { destroysWork, parsePorcelain } from "./meta.ts";
 import { allowedIn, withVerdict } from "./note.ts";
 import { buildSystemPrompt, claudeMdMessage, loadTemplates, type Rules, thresholdsFor, userIdentity } from "./prompt.ts";
 import { noteRenderer } from "./render.ts";
-import { callLine, claudeName, defang, type Entry, indent, metaLine, project, transcriptLines } from "./transcript.ts";
+import { callLine, claudeName, defang, type Entry, indent, metaLine, project, transcriptBlocks } from "./transcript.ts";
 
 const STATUS_KEY = "auto-mode";
 // Only the Claude subscription: the classifier never moves to another provider's billing.
 const PROVIDER = "claude-code";
-// tengu_auto_mode_config.modelByMainModel sends every current main model to Sonnet 5.
-const DEFAULT_MODEL = "claude-sonnet-5";
+// tengu_auto_mode_config.modelByMainModel sends every current main model to Sonnet 5, with
+// the 1M context window.
+const DEFAULT_MODEL = "claude-sonnet-5[1m]";
+// Claude Code's classifier caches for an hour (auto_mode is in tengu_prompt_cache_1h_config).
+const CACHE = { type: "ephemeral", ttl: "1h" } as const;
+type Usage = { read: number; write: number; input: number; output: number };
 
 const run = promisify(execFile);
 
@@ -90,6 +94,8 @@ export default function (pi: ExtensionAPI) {
 	// Calls the classifier allowed, for their rows' "Allowed by auto mode". Also kept apart from
 	// the result's details because background-tools draws a detached call from its own record.
 	const allowedCalls = new Set<string>();
+	// Calls the classifier has seen, which stand alone in later transcripts (transcriptBlocks).
+	const classifiedCalls = new Set<string>();
 
 	function render(ctx: ExtensionContext) {
 		if (!ctx.hasUI) return;
@@ -111,9 +117,15 @@ export default function (pi: ExtensionAPI) {
 	// tokens Claude Code gives such models; learned from the first refusal, then kept.
 	const thinkingRequired = new Set<string>();
 
-	function complete(ctx: ExtensionContext, model: NonNullable<ReturnType<ExtensionContext["modelRegistry"]["find"]>>): Complete {
+	function complete(ctx: ExtensionContext, model: NonNullable<ReturnType<ExtensionContext["modelRegistry"]["find"]>>, usage: Usage[]): Complete {
+		// pi-claude-code (patched) passes a text block's cache_control through to the API.
+		const text = ({ text, cache }: Block) => ({ type: "text" as const, text, ...(cache && { cache_control: CACHE }) });
 		return async (r) => {
-			const messages = [...r.leading, r.transcript].map((text) => ({ role: "user" as const, content: [{ type: "text" as const, text }], timestamp: Date.now() }));
+			const messages = [...r.leading.map((t) => [{ text: t, cache: true }]), r.transcript].map((blocks) => ({
+				role: "user" as const,
+				content: blocks.map(text),
+				timestamp: Date.now(),
+			}));
 			const send = () => {
 				const thinking = thinkingRequired.has(model.id);
 				const options = { maxTokens: r.maxTokens + (thinking ? 2048 : 0), signal: r.signal, ...(thinking && { reasoning: "minimal" as const }) };
@@ -124,10 +136,11 @@ export default function (pi: ExtensionAPI) {
 				thinkingRequired.add(model.id);
 				reply = await send();
 			}
-			const text = reply.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join("");
+			usage.push({ read: reply.usage.cacheRead, write: reply.usage.cacheWrite, input: reply.usage.input, output: reply.usage.output });
+			const out = reply.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join("");
 			const known: Stop[] = ["stop", "length", "toolUse", "aborted"];
 			const stop = known.find((s) => s === reply.stopReason) ?? "error";
-			return { text, stop, ...(reply.errorMessage !== undefined && { error: reply.errorMessage }) };
+			return { text: out, stop, ...(reply.errorMessage !== undefined && { error: reply.errorMessage }) };
 		};
 	}
 
@@ -135,23 +148,38 @@ export default function (pi: ExtensionAPI) {
 		event: { toolCallId: string; parentToolCallId?: string; toolName: string },
 		input: Record<string, unknown>,
 		ctx: ExtensionContext,
-	): Promise<{ verdict: Verdict; model: string }> {
+	): Promise<{ verdict: Verdict; model: string; usage: Usage[] }> {
 		const id = process.env.CLAUDE_CODE_AUTO_MODE_MODEL || DEFAULT_MODEL;
-		const model = ctx.modelRegistry.find(PROVIDER, id);
-		if (!model || !ctx.modelRegistry.hasConfiguredAuth(model)) {
-			return { verdict: { kind: "unavailable", reason: `No ${PROVIDER}/${id} model with credentials in Pi`, status: "" }, model: id };
+		// Pi registers Claude Code's models without their [1m] variants; the provider passes the
+		// suffix on to Claude Code.
+		const base = ctx.modelRegistry.find(PROVIDER, id.replace(/\[1m\]$/, ""));
+		const usage: Usage[] = [];
+		if (!base || !ctx.modelRegistry.hasConfiguredAuth(base)) {
+			return { verdict: { kind: "unavailable", reason: `No ${PROVIDER}/${id} model with credentials in Pi`, status: "" }, model: id, usage };
 		}
+		const model = { ...base, id };
 		const action = callLine(event.toolName, input);
-		if (!action) return { verdict: { kind: "allow", reason: "Tool declares no classifier-relevant input", stage: "fast" }, model: id };
+		if (!action) return { verdict: { kind: "allow", reason: "Tool declares no classifier-relevant input", stage: "fast" }, model: id, usage };
 		const entries = ctx.sessionManager.buildContextEntries() as unknown as Entry[];
-		const history = transcriptLines(entries, { ...event, input }).join("");
+		// Claude Code's layout (mxe, CCr): the history's last block and the action carry cache
+		// breakpoints; a git-status meta line sits between them, uncached.
+		const history: Block[] = transcriptBlocks(entries, { ...event, input }, classifiedCalls).map((text) => ({ text }));
+		if (history.length) history.at(-1)!.cache = true;
 		const meta = event.toolName === "bash" && typeof input.command === "string" ? await gitStatusLine(input.command, ctx.cwd) : "";
-		const transcript = `<transcript>\n${history}${meta}${action}</transcript>\n`;
+		const transcript: Block[] = [
+			{ text: "<transcript>\n" },
+			...history,
+			...(meta ? [{ text: meta }] : []),
+			{ text: action, cache: true },
+			{ text: "</transcript>\n" },
+		];
+		if (!event.parentToolCallId) classifiedCalls.add(event.toolCallId);
 		const thresholds = thresholdsFor(model.id);
 		const prompt = systemPrompt(thresholds !== null);
 		const leading = [claudeMd(ctx.cwd)].filter((m): m is string => m !== undefined);
-		const estimate = Math.round((prompt.length + leading.join("").length + transcript.length) / 4);
-		const verdict = await classify(complete(ctx, model), {
+		const chars = transcript.reduce((n, b) => n + b.text.length, 0);
+		const estimate = Math.round((prompt.length + leading.join("").length + chars) / 4);
+		const verdict = await classify(complete(ctx, model, usage), {
 			system: prompt,
 			leading,
 			transcript,
@@ -159,7 +187,7 @@ export default function (pi: ExtensionAPI) {
 			tokens: Math.max(estimate, ctx.getContextUsage()?.tokens ?? 0),
 			signal: ctx.signal ?? new AbortController().signal,
 		});
-		return { verdict, model: model.id };
+		return { verdict, model: model.id, usage };
 	}
 
 	// `reason` is what Claude Code gives the apps for the escalation; `text` is the terminal's wording.
@@ -193,11 +221,11 @@ export default function (pi: ExtensionAPI) {
 	): Promise<ToolCallEventResult | undefined> {
 		checking++;
 		render(ctx);
-		let outcome: { verdict: Verdict; model: string };
+		let outcome: { verdict: Verdict; model: string; usage: Usage[] };
 		const started = Date.now();
 		try {
 			outcome = await judge(event, input, ctx);
-			debug({ tool: event.toolName, toolCallId: event.toolCallId, ms: Date.now() - started, model: outcome.model, verdict: outcome.verdict });
+			debug({ tool: event.toolName, toolCallId: event.toolCallId, ms: Date.now() - started, model: outcome.model, verdict: outcome.verdict, usage: outcome.usage });
 		} finally {
 			checking--;
 			render(ctx);
@@ -250,11 +278,17 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// Blocked calls leave no mark on their results, so after a resume only the allowed ones
+	// stand alone in the transcript again, and the first check reads less from the cache.
 	function restore(ctx: ExtensionContext) {
 		allowedCalls.clear();
+		classifiedCalls.clear();
 		for (const entry of ctx.sessionManager.getBranch()) {
 			const message = entry.type === "message" ? entry.message : undefined;
-			if (message?.role === "toolResult" && allowedIn(message.details)) allowedCalls.add(message.toolCallId);
+			if (message?.role === "toolResult" && allowedIn(message.details)) {
+				allowedCalls.add(message.toolCallId);
+				classifiedCalls.add(message.toolCallId);
+			}
 		}
 	}
 

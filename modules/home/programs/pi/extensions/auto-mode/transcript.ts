@@ -118,36 +118,59 @@ export interface Pending {
 	input: Record<string, unknown>;
 }
 
+type HistoryLine = { text: string; callId?: string };
+
 // The history up to the call under review. Calls made earlier in the same response are
 // kept as context, as Claude Code's same-turn siblings; for a nested call (a codemode
 // script's) the history runs through the calling tool.
-export function transcriptLines(entries: Entry[], pending: Pending): string[] {
+function history(entries: Entry[], pending: Pending): HistoryLine[] {
 	const stopAt = pending.parentToolCallId ?? pending.toolCallId;
-	const lines: string[] = [];
+	const lines: HistoryLine[] = [];
 	for (const entry of entries) {
 		if (entry.type === "compaction" || entry.type === "branch_summary") {
-			if (entry.summary?.trim()) lines.push(line("user", `${SUMMARY_PREFIX}\n${indent(entry.summary)}`));
+			if (entry.summary?.trim()) lines.push({ text: line("user", `${SUMMARY_PREFIX}\n${indent(entry.summary)}`) });
 			continue;
 		}
 		const message = entry.message;
 		if (entry.type !== "message" || !message) continue;
 		if (message.role === "user") {
 			const text = textOf(message.content);
-			if (text.trim()) lines.push(line("user", indent(text)));
+			if (text.trim()) lines.push({ text: line("user", indent(text)) });
 		} else if (message.role === "assistant" && Array.isArray(message.content)) {
 			for (const block of message.content) {
 				if (block.type !== "toolCall" || !block.name) continue;
 				if (block.id === pending.toolCallId) return lines;
 				if (shownInTranscript(block.name)) {
 					const text = callLine(block.name, block.arguments ?? {});
-					if (text) lines.push(text);
+					if (text) lines.push({ text, ...(block.id && { callId: block.id }) });
 				}
 				if (block.id === stopAt) return lines;
 			}
 		} else if (message.role === "toolResult" && message.toolName === "ask_user_question" && !message.isError) {
 			const answer = textOf(message.content);
-			if (answer.trim()) lines.push(line("user", `[User answered AskUserQuestion]: ${indent(answer)}`));
+			if (answer.trim()) lines.push({ text: line("user", `[User answered AskUserQuestion]: ${indent(answer)}`) });
 		}
 	}
 	return lines;
+}
+
+export function transcriptLines(entries: Entry[], pending: Pending): string[] {
+	return history(entries, pending).map((l) => l.text);
+}
+
+// The history as Claude Code's request blocks (ICr, unsegmented): lines run together, and
+// each call that was itself classified stands alone. That call's block is byte for byte the
+// action block of its own check, whose cache breakpoint the next check then reads through.
+export function transcriptBlocks(entries: Entry[], pending: Pending, classified: ReadonlySet<string>): string[] {
+	const blocks: string[] = [];
+	let run = "";
+	for (const l of history(entries, pending)) {
+		if (l.callId && classified.has(l.callId)) {
+			if (run) blocks.push(run);
+			run = "";
+			blocks.push(l.text);
+		} else run += l.text;
+	}
+	if (run) blocks.push(run);
+	return blocks;
 }
