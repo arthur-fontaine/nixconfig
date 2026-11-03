@@ -34,6 +34,29 @@ function repoName(common) {
   const dir = common.replace(/\/+$/, "");
   return base(dir).startsWith(".") ? base(dir.slice(0, dir.lastIndexOf("/"))) : base(dir).replace(/\.git$/, "");
 }
+// The repo's own folder from its common git dir, as segments.
+function repoPath(common) {
+  const dir = common.replace(/\/+$/, "");
+  const root = base(dir).startsWith(".") ? dir.slice(0, dir.lastIndexOf("/")) : dir.replace(/\.git$/, "");
+  return root.split("/").filter(Boolean);
+}
+// Names that tell repos apart: a name shared by several repos takes parent folders
+// until each is unique (ddd-ts/monorepo, application/monorepo).
+function distinctNames(commons) {
+  const paths = new Map(commons.map((c) => [c, repoPath(c)]));
+  const depth = new Map(commons.map((c) => [c, 1]));
+  const name = (c) => paths.get(c).slice(-depth.get(c)).join("/");
+  for (let changed = true; changed;) {
+    changed = false;
+    const seen = new Map();
+    for (const c of commons) seen.set(name(c), [...(seen.get(name(c)) ?? []), c]);
+    for (const group of seen.values()) {
+      if (group.length < 2) continue;
+      for (const c of group) if (depth.get(c) < paths.get(c).length) { depth.set(c, depth.get(c) + 1); changed = true; }
+    }
+  }
+  return new Map(commons.map((c) => [c, name(c)]));
+}
 function ago(ms) {
   const m = Math.floor((Date.now() - ms) / 60000);
   return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
@@ -184,6 +207,13 @@ export default class Sidebar extends View {
       repos.get(g.repo).items.push({ s, g });
     }
     for (const r of this.repos) if (!repos.has(r.key)) repos.set(r.key, { key: r.key, name: r.name, on: r.on, items: [], closed: true });
+    // Each machine's repos are told apart among themselves.
+    for (const on of new Set([...repos.values()].map((r) => r.on))) {
+      const mine = [...repos.values()].filter((r) => r.on === on);
+      const names = distinctNames(mine.map((r) => JSON.parse(r.key)[1]));
+      for (const r of mine) r.name = names.get(JSON.parse(r.key)[1]);
+    }
+    this.names = new Map([...repos.values()].map((r) => [r.key, r.name]));
     const inside = (p, dir) => p === dir || p.startsWith(dir + "/");
     for (const r of repos.values()) {
       const at = r.items.map(({ s }) => place(s, ps));
@@ -255,12 +285,13 @@ export default class Sidebar extends View {
       const tab = space?.tabs.find((x) => x.id === a.tab);
       const { lead, label } = tab ? this.tabInfo(tab, ps) : { lead: null, label: a.title };
       const g = space ? info(space) : null;
-      const where = g ? [g.name, g.branch && g.branch !== g.name ? g.branch : null].filter(Boolean).join(" / ") : space?.name ?? "";
-      return h_flex().id(`need-${a.address}`).h(36).px(10).gap(8).items_center().rounded(6).cursor_pointer()
+      const repo = g ? this.names?.get(g.repo) ?? g.name : null;
+      const where = g ? [repo, g.branch && g.branch !== g.name ? g.branch : null].filter(Boolean).join(" / ") : space?.name ?? "";
+      return h_flex().id(`need-${a.address}`).h(40).px(10).gap(8).items_center().rounded(6).cursor_pointer()
         .hover((s) => s.bg(t.hover))
         .on_click(() => run("agent.focus", { terminal: a.address }))
         .child(this.picture(lead ?? { program: a.program, app: a.app }, t, 14, true))
-        .child(v_flex().flex_1().min_w(0).gap(3)
+        .child(v_flex().flex_1().min_w(0)
           .child(div().truncate().text_size(12.5).font_medium().text_color(t.foreground).child(label))
           .child(div().truncate().text_size(11).text_color(t.dim).child(where)))
         .child(this.status(t, a.status));
