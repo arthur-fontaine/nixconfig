@@ -20,5 +20,11 @@ manual) and Pi's `intercom`. Herdr's own view is `herdr-app ls`.
   Report with hc send $HC_TERMINAL_ID when done or stuck."` It shows under you in
   Herdr's sidebar. Pi only.
 - **Cost**: every worker spends the person's Claude quota. One worker per independent
-  task; ask before running more than three at once, and stop the ones that are done.
+  task; ask (`ask_user_question`) before running more than three at once, and stop the ones that are done.
+- **Ask the person with `ask_user_question`**, never with a question at the end of your
+  text: a choice between options, a go-ahead (stopping chats, running more workers, a
+  risky step), anything only they can decide. Herdr shows the chat as waiting for them,
+  which a question in prose never does. Group what you need into one call, and give
+  the options you'd pick from with your recommendation first. Decide alone what is
+  clearly yours to decide.
 - **Report** in a few lines: who is doing what, what needs the person, what you did.
