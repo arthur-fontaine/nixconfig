@@ -1,5 +1,6 @@
 // The + popover, in two levels. Level 1 picks where: a worktree of the project already open, one
-// git knows but nothing has open, or a new one named here. Level 2 picks what, in that worktree: a
+// git knows but nothing has open, a branch without a worktree yet (local, or only on origin), or
+// a new one named here. Level 2 picks what, in that worktree: a
 // new Pi session, a terminal, or one of its past Pi sessions to resume (an open one is focused).
 // Typing on level 1 also searches the sessions of every worktree of the project.
 // Props: { repo?, name?, folder?, machine?, space?, level?, path?, branch?, worktrees? } (level 2 opens on `space`, or `path`;
@@ -7,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { run, props, closeOverlay, theme, spaces, panes, exec, home, knownAgents, keys, window, shared } from "herdr";
-import { repoOf, createWorktree, defaultBranch, slug } from "../_lib/repo.js";
+import { repoOf, createWorktree, defaultBranch, remoteOnly, slug } from "../_lib/repo.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 const HEIGHT = 404;
@@ -68,6 +69,21 @@ function shortcut(action) {
   return b.keys.trim().split("-").map((p) => mod[p.toLowerCase()] ?? p.toUpperCase()).join("");
 }
 
+// Branches with no checkout, local or only on origin (as last fetched: nothing is fetched to
+// open the popover), together by last commit, newest first.
+async function branchesOf(cwd, on, trees) {
+  const refs = await exec("git", ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)%09%(committerdate:unix)", "refs/heads"], { cwd, on }).catch(() => null);
+  const checked = new Set(trees.map((w) => w.branch).filter(Boolean));
+  const local = [];
+  for (const line of (refs?.stdout ?? "").split("\n")) {
+    const [branch, at] = line.split("\t");
+    if (branch && !checked.has(branch)) local.push({ branch, at: (Number(at) || 0) * 1000, remote: false });
+  }
+  const taken = new Set([...checked, ...local.map((b) => b.branch)]);
+  const remote = (await remoteOnly(git(on), cwd, taken, 400)).map((b) => ({ ...b, at: b.at * 1000 }));
+  return [...local, ...remote].sort((a, b) => b.at - a.at);
+}
+
 // A repo's checkouts with their branch's last commit, newest first (the sidebar's loadTrees).
 async function checkouts(cwd, on) {
   const list = await exec("git", ["worktree", "list", "--porcelain"], { cwd, on }).catch(() => null);
@@ -94,6 +110,7 @@ export default class New extends View {
     this.folder = p.folder || (this.space0 ? place(this.space0, ps) : null) || (p.repo ? JSON.parse(p.repo)[1] : null);
     this.name = p.name ?? null;
     this.trees = p.worktrees ?? undefined;
+    this.branches = []; // branches without a checkout, once read
     this.repo = undefined; this.from = null; this.userHome = null;
     this.query = ""; this.sel = null; this.busy = false; this.error = "";
     // Sessions by worktree path: undefined while read, then newest first.
@@ -131,6 +148,8 @@ export default class New extends View {
       if (this.here) this.loadSessions(this.here.path, cx);
       if (!this.repo) return;
       if (this.trees === undefined) { this.trees = await checkouts(this.repo.main, this.on); cx.notify(); }
+      this.branches = await branchesOf(this.repo.main, this.on, this.trees).catch(() => []);
+      cx.notify();
       this.from = await defaultBranch(git(this.on), this.repo.main).catch(() => null);
       cx.notify();
       // Level 1's search reaches every worktree's sessions: read them after the list shows.
@@ -211,7 +230,9 @@ export default class New extends View {
     // Outside git, the space itself is the one place to start something.
     if (this.repo === null && this.space0) open.push({ kind: "open", space: this.space0, branch: this.space0.name, path: this.folder, at: 0 });
     const match = (r) => !q || r.branch.toLowerCase().includes(q);
-    const exact = trees.some((w) => (w.branch ?? "") === this.query);
+    const exact = trees.some((w) => (w.branch ?? "") === this.query) || this.branches.some((b) => b.branch === this.query);
+    // A few recent ones on their own; every match (up to 30) while typing.
+    const branches = this.branches.filter(match).slice(0, q ? 30 : 8).map((b) => ({ kind: "branch", ...b }));
     const create = this.repo && this.query && slug(this.query) && !exact ? [{ kind: "create", name: this.query }] : [];
     const sessions = [];
     if (q) {
@@ -219,7 +240,7 @@ export default class New extends View {
         if (s.label.toLowerCase().includes(q)) sessions.push({ kind: "session", ...s, branch: w.branch ?? base(w.path) });
       sessions.sort((a, b) => b.at - a.at).splice(20);
     }
-    return { create, open: open.filter(match), idle: idle.filter(match), sessions };
+    return { create, open: open.filter(match), idle: idle.filter(match), branches, sessions };
   }
 
   // Level 2: the two actions, then the worktree's sessions (40, or every match while typing).
@@ -234,7 +255,7 @@ export default class New extends View {
   items() {
     if (this.here) { const m = this.model2(); return [...m.actions, ...(m.sessions ?? [])]; }
     const m = this.model1();
-    return [...m.create, ...m.open, ...m.idle, ...m.sessions];
+    return [...m.create, ...m.open, ...m.idle, ...m.branches, ...m.sessions];
   }
 
   // The row ↵ acts on: the one moved to, else the space this was opened for, else the first.
@@ -314,13 +335,15 @@ export default class New extends View {
       this.enter({ space: null, path: target.path, branch: target.branch }, cx);
       return this.follow(target.path, cx);
     }
-    this.busy = true; this.error = ""; cx.notify();
+    // A new branch (create), or one that has no worktree yet (branch): a worktree for it.
+    const name = target.kind === "branch" ? target.branch : target.name;
+    this.busy = name; this.error = ""; cx.notify();
     cx.spawn(async (cx) => {
       try {
-        const { path } = await createWorktree(git(this.on), this.repo, target.name);
+        const { path } = await createWorktree(git(this.on), this.repo, name);
         run("space.new", { folder: path, machine: this.on });
         this.busy = false;
-        this.enter({ space: null, path, branch: target.name }, cx);
+        this.enter({ space: null, path, branch: name }, cx);
         this.follow(path, cx);
         return;
       } catch (e) { this.error = String(e.message ?? e); }
@@ -362,7 +385,7 @@ export default class New extends View {
   }
 
   row(r, on, t) {
-    const el = this.shell(r.kind === "create" ? "create" : r.kind === "session" ? `s-${r.file}` : `row-${r.path ?? r.kind}`, on, t)
+    const el = this.shell(r.kind === "create" ? "create" : r.kind === "session" ? `s-${r.file}` : r.kind === "branch" ? `b-${r.branch}` : `row-${r.path ?? r.kind}`, on, t)
       .on_click((_e, cx) => this.go(cx, r));
     const hint = (text) => div().flex_none().text_size(11).text_color(t.dim).child(text);
     if (r.kind === "create") {
@@ -373,7 +396,7 @@ export default class New extends View {
         .child(svg(ICON("plus")).size(13).flex_none().text_color(t.muted))
         .child(v_flex().flex_1().min_w(0)
           .child(h_flex().text_size(12.5).text_color(t.foreground).child("Create worktree ").child(div().font_medium().truncate().child(r.name)))
-          .child(div().text_size(11).text_color(this.error ? t.blocked : t.dim).text_ellipsis_start().child(this.busy ? "Creating…" : sub)))
+          .child(div().text_size(11).text_color(this.error ? t.blocked : t.dim).text_ellipsis_start().child(this.busy === r.name ? "Creating…" : sub)))
         .child(hint("↵"));
     }
     if (r.kind === "pi")
@@ -391,6 +414,14 @@ export default class New extends View {
         .child(h_flex().w(24).flex_none().justify_end().text_size(11).text_color(t.dim)
           .child(open ? (this.status(t, open.status) ?? div()) : div().child(ago(r.at))));
     }
+    if (r.kind === "branch") {
+      const busy = this.busy === r.branch;
+      return el.h(30).text_size(12.5).tooltip(busy ? "Creating its worktree…" : r.remote ? `origin/${r.branch}: a worktree tracking it` : `${r.branch}: a worktree for it`)
+        .child(svg(ICON("git-branch")).size(13).flex_none().text_color(t.dim))
+        .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(r.branch))
+        .when(r.remote && !busy, (e) => e.child(hint("origin")))
+        .child(hint(busy ? "Creating…" : r.at ? ago(r.at) : ""));
+    }
     const right = r.kind === "open" ? this.status(t, r.space.status) : r.at ? hint(ago(r.at)) : null;
     return el.h(30).text_size(12.5).text_color(t.foreground).tooltip(r.path ?? "")
       .child(svg(ICON("git-branch")).size(13).flex_none().text_color(t.muted))
@@ -405,7 +436,7 @@ export default class New extends View {
   rows(t) {
     const list = this.items(), cur = this.current(list);
     // The models are rebuilt per call, so rows are matched by what they stand for.
-    const key = (r) => r && `${r.kind}:${r.file ?? r.path ?? r.space?.id ?? r.name ?? ""}`;
+    const key = (r) => r && `${r.kind}:${r.file ?? r.path ?? r.space?.id ?? r.name ?? r.branch ?? ""}`;
     const rows = [];
     const add = (r) => rows.push(this.row(r, key(r) === key(cur), t));
     if (this.here) {
@@ -424,6 +455,8 @@ export default class New extends View {
     m.create.forEach(add);
     if (m.open.length) { rows.push(this.label(this.query ? "Matching" : "Open", t)); m.open.forEach(add); }
     if (m.idle.length) { rows.push(this.label(this.query && !m.open.length ? "Matching" : "Worktrees", t)); m.idle.forEach(add); }
+    if (m.branches.length) { rows.push(this.label("Branches without a worktree", t)); m.branches.forEach(add); }
+    if (this.error && !m.create.length) rows.push(this.note(this.error, t.blocked, t));
     if (m.sessions.length) { rows.push(this.label("Sessions", t)); m.sessions.forEach(add); }
     if (this.repo === null) rows.push(this.note(`${this.folder ?? "This folder"} isn't in a git repository`, t.blocked, t));
     else if (!list.length) rows.push(this.note(`No worktree named ${this.query}`, t.dim, t));
