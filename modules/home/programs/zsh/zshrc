@@ -8,6 +8,10 @@ fi
 # Set the zsh config directory
 export ZSHRCD=~/.config/zsh/zshrc.d
 
+# ez-compinit runs compinit at the first prompt, from a dump it rebuilds once a day: a
+# shell that only runs a command (zsh -lic) never pays for completions.
+zstyle ':plugin:ez-compinit' 'use-cache' yes
+
 # Activate Antidote
 source /opt/homebrew/opt/antidote/share/antidote/antidote.zsh
 
@@ -16,7 +20,8 @@ source /opt/homebrew/opt/antidote/share/antidote/antidote.zsh
 () {
   local plugins=~/.config/zsh/zsh_plugins.zsh line stale=0
   [[ -s $plugins ]] || stale=1
-  for line in ${(M)${(f)"$(<$plugins 2>/dev/null)"}:#*fpath+=*}; do
+  # $(<file) is read by zsh itself; with a redirection added it runs cat.
+  (( stale )) || for line in ${(M)${(f)"$(<$plugins)"}:#*fpath+=*}; do
     [[ -d ${(e)${${line#*\"}%%\"*}} ]] || { stale=1; break }
   done
   (( stale )) && antidote bundle < ~/.config/zsh/zsh_plugins.txt >| $plugins

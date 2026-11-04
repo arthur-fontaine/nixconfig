@@ -2,6 +2,7 @@
 {
   imports = [
     ./xcode.nix
+    ./zsh.nix
     ./defaults/appearance.nix
     ./defaults/archives.nix
     ./defaults/dock.nix
