@@ -78,7 +78,10 @@ let
   # Claude Code's updater rewrites its binary (ENOEXEC) is tried again; a rewritten request keeps
   # at most the API's four cache breakpoints. With patches/pi-claude-code-status-cache.patch,
   # Pi's startup no longer waits for six `claude auth status` (seconds each): they share
-  # one, and the last logged-in answer is kept in ~/.pi/agent/cache. No runtime dependencies:
+  # one, and the last logged-in answer is kept in ~/.pi/agent/cache. With
+  # patches/pi-claude-code-keep-thinking.patch, the signed thinking of earlier turns reaches
+  # the API again: Claude Code dropped it from every replayed turn, so the model re-planned
+  # from scratch at each tool round (the looping chats). No runtime dependencies:
   # its imports are Pi's own packages.
   piClaudeCode = pkgs.runCommand "pi-claude-code-70abb65-patched" { } ''
     cp -r ${
@@ -92,6 +95,7 @@ let
     chmod -R u+w $out
     patch -d $out -p1 < ${./patches/pi-claude-code-caller-cache.patch}
     patch -d $out -p1 < ${./patches/pi-claude-code-status-cache.patch}
+    patch -d $out -p1 < ${./patches/pi-claude-code-keep-thinking.patch}
   '';
   # nedleeds/pi-compact-tools 0.16.7 with patches/pi-compact-tools-claude-bash.patch: bash
   # titles leave the folding of long commands to syntax-highlighting, and an opened command

@@ -1,0 +1,107 @@
+--- a/src/claude-cli.ts
++++ b/src/claude-cli.ts
+@@ -777,6 +777,48 @@
+   return Buffer.from(JSON.stringify(payload));
+ }
+ 
++type Block = { type?: string; id?: unknown; text?: unknown };
++const isThinking = (block: Block) => block?.type === "thinking" || block?.type === "redacted_thinking";
++
++// What identifies an assistant turn in both Pi's frames and Claude Code's request: its tool
++// calls' ids, else its text.
++function turnKey(content: unknown): string | undefined {
++  if (!Array.isArray(content)) return undefined;
++  const blocks = content as Block[];
++  const ids = blocks.filter((b) => b?.type === "tool_use").map((b) => String(b.id));
++  if (ids.length) return `tools:${ids.join(",")}`;
++  const text = blocks.filter((b) => b?.type === "text").map((b) => String(b.text ?? "")).join("").trim();
++  return text ? `text:${text}` : undefined;
++}
++
++/**
++ * Claude Code leaves out the signed thinking of the assistant turns Pi replays to it (Claude's
++ * thinking reaches Pi with an empty text and only its signature), so the model saw none of its
++ * earlier reasoning and planned from scratch at every tool round. The thinking blocks Pi kept
++ * are put back at the head of their turn; the request asks the API to keep all thinking.
++ */
++export function restoreThinking(body: Buffer, frames: NativeFrame[]): Buffer {
++  const kept = new Map<string, unknown[]>();
++  for (const frame of frames) {
++    if (frame.type !== "assistant") continue;
++    const thinking = (frame.message.content as Block[]).filter(isThinking);
++    const key = turnKey(frame.message.content);
++    if (thinking.length && key) kept.set(key, thinking);
++  }
++  if (!kept.size) return body;
++  const payload = JSON.parse(body.toString("utf8")) as { messages?: NativeRequestMessage[] };
++  let changed = false;
++  for (const message of payload.messages ?? []) {
++    if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
++    if ((message.content as Block[]).some(isThinking)) continue;
++    const thinking = kept.get(turnKey(message.content) ?? "");
++    if (!thinking) continue;
++    message.content = [...structuredClone(thinking), ...message.content];
++    changed = true;
++  }
++  return changed ? Buffer.from(JSON.stringify(payload)) : body;
++}
++
+ export function rewriteInitialRequest(
+   body: Buffer,
+   prefix: unknown[] | undefined,
+@@ -1059,11 +1101,14 @@
+             )
+         : undefined;
+     const callerCache = hasCacheControl(canonicalInitialUser);
++    const history = input.frames;
+     this.relay.beginTurn(
+       deliver,
+-      callerCache
+-        ? (body) => keepCallerCacheBreakpoints(rewrite ? rewrite(body) : body, canonicalInitialUser)
+-        : rewrite,
++      (body) => {
++        let out = restoreThinking(body, history);
++        if (rewrite) out = rewrite(out);
++        return callerCache ? keepCallerCacheBreakpoints(out, canonicalInitialUser) : out;
++      },
+       input.betas,
+     );
+ 
+--- a/tests/claude-cli.test.ts
++++ b/tests/claude-cli.test.ts
+@@ -7,6 +7,7 @@
+   cachedClaudeProcessCount,
+   closeClaudeProcesses,
+   discoverClaudeModels,
++  restoreThinking,
+   rewriteInitialRequest,
+   runClaudeRequest,
+ } from "../src/claude-cli.ts";
+@@ -382,4 +383,27 @@
+     await closeClaudeProcesses();
+     await rm(root, { recursive: true, force: true });
+   }
++});
++
++test("puts back the signed thinking Claude Code leaves out of replayed turns", () => {
++  const thinking = { type: "thinking", thinking: "", signature: "sig" };
++  const frames = [
++    { type: "user" as const, message: { role: "user" as const, content: [{ type: "text", text: "go" }] } },
++    { type: "assistant" as const, message: { role: "assistant" as const, content: [thinking, { type: "tool_use", id: "t1", name: "bash", input: {} }] } },
++    { type: "assistant" as const, message: { role: "assistant" as const, content: [{ type: "text", text: "plain" }] } },
++  ];
++  const body = Buffer.from(JSON.stringify({
++    messages: [
++      { role: "user", content: [{ type: "text", text: "go" }] },
++      { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "mcp__pi__bash", input: {} }] },
++      { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }] },
++      { role: "assistant", content: [{ type: "text", text: "plain" }] },
++    ],
++  }));
++  const out = JSON.parse(restoreThinking(body, frames).toString("utf8"));
++  assert.deepEqual(out.messages[1].content.map((b: { type: string }) => b.type), ["thinking", "tool_use"]);
++  assert.deepEqual(out.messages[1].content[0], thinking);
++  assert.deepEqual(out.messages[3].content, [{ type: "text", text: "plain" }]);
++  // Nothing to restore: the very same body.
++  assert.equal(restoreThinking(body, frames.slice(0, 1)), body);
+ });
