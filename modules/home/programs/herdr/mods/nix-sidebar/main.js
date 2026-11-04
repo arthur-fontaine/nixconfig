@@ -60,9 +60,12 @@ function distinctNames(commons) {
 // The orchestrators: a Pi chat per worktree, and one per project, that steers the others
 // with hc (role prompts in ~/.pi/agent/orchestrator/). A click opens one, or starts it the
 // first time; nothing else here depends on them.
-const ORCHESTRATOR = "Orchestrator";
-const orchestratorArgv = (scope) => ["pi", "--name", ORCHESTRATOR, "--append-system-prompt", `${home()}/.pi/agent/orchestrator/${scope}.md`];
-const isOrchestrator = (tab) => tab.named && tab.name === ORCHESTRATOR;
+// Each is named after what it orchestrates ("records-access · orchestrator", "monorepo ·
+// project orchestrator"): the tab, Pi's session, and what workers and other orchestrators see
+// in hc and intercom. Tabs from before, named plain "Orchestrator", still count.
+const orchestratorName = (scope, label) => `${label} · ${scope === "project" ? "project orchestrator" : "orchestrator"}`;
+const orchestratorArgv = (scope, label) => ["pi", "--name", orchestratorName(scope, label), "--append-system-prompt", `${home()}/.pi/agent/orchestrator/${scope}.md`];
+const isOrchestrator = (tab) => tab.named && /^Orchestrator$| · (project )?orchestrator$/.test(tab.name ?? "");
 // Repo key → the space its project orchestrator lives in.
 const projectSpaces = () => shared("nix.orchestrators") ?? {};
 function ago(ms) {
@@ -411,7 +414,7 @@ export default class Sidebar extends View {
     const status = this.urgent(list);
     const rows = [this.hoverable(id, h_flex().h(28).pl(24).pr(10).gap(7).items_center().rounded(6).cursor_pointer()
       .hover((x) => x.bg(t.hover)).tooltip(c.path)
-      .on_click(() => run("space.new", { folder: c.path, machine: r.on ?? "", tab: ORCHESTRATOR, argv: orchestratorArgv("worktree") }))
+      .on_click(() => run("space.new", { folder: c.path, machine: r.on ?? "", tab: orchestratorName("worktree", base(c.path)), argv: orchestratorArgv("worktree", base(c.path)) }))
       .child(div().id(`fold-${fkey}`).w(12).h(14).flex_none().flex().items_center().justify_center().text_color(t.dim)
         .on_click((_e, cx) => { cx.stop_propagation(); this.toggle(this.folded, "folded", fkey, cx); })
         .child(svg(ICON(folded ? "chevron-right" : "chevron-down")).size(10)))
@@ -446,7 +449,7 @@ export default class Sidebar extends View {
     run("space.select", { id: s.id });
     const tab = (s.tabs ?? []).find(isOrchestrator);
     if (tab) run("tab.select", { id: tab.id });
-    else run("tab.new", { space: s.id, name: ORCHESTRATOR, folder, argv: orchestratorArgv("worktree") });
+    else run("tab.new", { space: s.id, name: orchestratorName("worktree", base(folder)), folder, argv: orchestratorArgv("worktree", base(folder)) });
   }
 
   // A project's click: its orchestrator lives in a space of its own, at the repo's root.
@@ -459,7 +462,7 @@ export default class Sidebar extends View {
     }
     const before = new Set(spaces().map((s) => s.id));
     const root = "/" + repoPath(JSON.parse(r.key)[1]).join("/");
-    run("space.new", { name: `${r.name} project`, folder: root, tab: ORCHESTRATOR, argv: orchestratorArgv("project"), machine: r.on ?? "" });
+    run("space.new", { name: `${r.name} project`, folder: root, tab: orchestratorName("project", r.name), argv: orchestratorArgv("project", r.name), machine: r.on ?? "" });
     const record = (tries) => {
       const made = spaces().find((x) => !before.has(x.id));
       if (made) { setShared("nix.orchestrators", { ...projectSpaces(), [r.key]: made.id }); cx.notify(); }
