@@ -14,10 +14,15 @@ const STATUS = 24; // px, the strip under the grid
 const TABS = 32; // px, the tab strip over it, with two files or more
 const PAD = { x: 8, y: 8 }; // px around the grid
 const BLINK = 530; // ms the caret is shown, then hidden, as macOS's insertion point
-// Scrolling slides: a window's content starts where it was and eases to where nvim put it,
-// its offset shrinking by e^(-dt/SLIDE) each frame (about 150 ms to settle), as Neovide does.
+// Scrolling: the wheel and trackpad move a window's content at once, by the pixel, ahead of
+// nvim (`pred`); each line nvim then scrolls is taken back from that offset, so nothing jumps.
+// A scroll nvim makes on its own (the caret leaving the screen) slides from where the
+// content was, its offset (`anim`) shrinking by e^(-dt/SLIDE) each frame, as Neovide does.
 const SLIDE = 45;
 const FRAME = 8;
+// Rows nvim draws under the editor's bottom edge, clipped: what the content uncovers when it
+// moves up ahead of nvim. scrolloff (init.lua) keeps the caret above them.
+const EXTRA = 2;
 const FLOAT = { x: 8, y: 6, gap: 4 }; // a float's padding, and its distance from the line it's about
 // Cmd chords the editor keeps; any other Cmd chord stays Herdr's (new tab, palette…).
 const OWN_CMD = new Set(["s", "z", "a", "c", "x", "v", "f", "/", "[", "]", "\\", "left", "right", "up", "down", "backspace", "d", "p"]);
@@ -55,7 +60,9 @@ export default class Editor extends View {
     // after each key, click or move (this.wake), as macOS text fields do.
     this.blink = true;
     this.woke = Date.now();
-    this.slides = new Map(); // window grid → { off (px, + = content drawn lower), above, below }
+    // Window grid → { pred, anim (px, + = content drawn lower), pending (lines asked of nvim,
+    // + = down), above, below (rows that left, to fill what the offset uncovers) }.
+    this.slides = new Map();
     this.sliding = false;
     cx.timer.every(BLINK, () => {
       const focused = this.handle.is_focused();
@@ -94,7 +101,7 @@ export default class Editor extends View {
     // A window drag reports many sizes: nvim hears the last one. (No Task.cancel(): it
     // crashes Herdr's script runtime under load; a later size just makes this one stale.)
     const n = (this.resizes = (this.resizes ?? 0) + 1);
-    this.cx.timer.after(80, () => { if (n === this.resizes) this.nvim?.resize(cols, rows); }, { owner: this });
+    this.cx.timer.after(80, () => { if (n === this.resizes) this.nvim?.resize(cols, rows + EXTRA); }, { owner: this });
   }
 
   start() {
@@ -120,7 +127,7 @@ export default class Editor extends View {
     exec("git", ["rev-parse", "--show-toplevel"], { cwd: dirname(this.file) }).catch(() => null)
       .then((top) => {
         if (top?.code === 0) this.root = top.stdout.trim();
-        return startNvim({ home: home(), appHome: appHome(), file: this.file, cwd: dirname(this.file), width: this.size.cols, height: this.size.rows, onRedraw, onNotify });
+        return startNvim({ home: home(), appHome: appHome(), file: this.file, cwd: dirname(this.file), width: this.size.cols, height: this.size.rows + EXTRA, onRedraw, onNotify });
       })
       .then((nvim) => {
         this.nvim = nvim;
@@ -132,17 +139,31 @@ export default class Editor extends View {
 
   // nvim scrolled whole windows: their content slides from where it was. The rows that left
   // are kept to fill the space the slide uncovers, as many as a window can show.
+  slideOf(id) {
+    let s = this.slides.get(id);
+    if (!s) { s = { pred: 0, anim: 0, pending: 0, above: [], below: [] }; this.slides.set(id, s); }
+    return s;
+  }
+
   slide(scrolls) {
     const { lh } = this.metrics();
+    let animate = false;
     for (const { id, rows, lines } of scrolls) {
       const g = this.grid.grids.get(id);
       if (!g) continue;
-      const s = this.slides.get(id) ?? { off: 0, above: [], below: [] };
-      if (rows > 0) { if (s.off < 0) { s.off = 0; s.below = []; } s.above = [...s.above, ...lines].slice(-g.rows); }
-      else { if (s.off > 0) { s.off = 0; s.above = []; } s.below = [...lines, ...s.below].slice(0, g.rows); }
-      s.off = Math.max(-g.rows * lh, Math.min(g.rows * lh, s.off + rows * lh));
-      this.slides.set(id, s);
+      const s = this.slideOf(id);
+      if (rows > 0) { if (s.pred + s.anim < 0) s.below = []; s.above = [...s.above, ...lines].slice(-g.rows); }
+      else { if (s.pred + s.anim > 0) s.above = []; s.below = [...lines, ...s.below].slice(0, g.rows); }
+      // Lines the wheel asked for: the content is already there, the offset gives them back.
+      const asked = Math.sign(s.pending) === Math.sign(rows) ? Math.sign(rows) * Math.min(Math.abs(s.pending), Math.abs(rows)) : 0;
+      s.pending -= asked;
+      s.pred += asked * lh;
+      if (rows !== asked) { s.anim = Math.max(-g.rows * lh, Math.min(g.rows * lh, s.anim + (rows - asked) * lh)); animate = true; }
     }
+    if (animate) this.animate();
+  }
+
+  animate() {
     if (this.sliding) return;
     this.sliding = true;
     this.frameAt = Date.now();
@@ -152,12 +173,14 @@ export default class Editor extends View {
   step() {
     const now = Date.now(), k = Math.exp(-(now - this.frameAt) / SLIDE);
     this.frameAt = now;
+    let moving = false;
     for (const [id, s] of this.slides) {
-      s.off *= k;
-      if (Math.abs(s.off) < 0.5) this.slides.delete(id);
+      s.anim *= k;
+      if (Math.abs(s.anim) < 0.5) s.anim = 0; else moving = true;
+      if (!s.anim && Math.abs(s.pred) < 0.5 && !s.pending) this.slides.delete(id);
     }
     this.cx.notify();
-    if (this.slides.size) this.cx.timer.after(FRAME, () => this.step(), { owner: this });
+    if (moving) this.cx.timer.after(FRAME, () => this.step(), { owner: this });
     else this.sliding = false;
   }
 
@@ -256,9 +279,20 @@ export default class Editor extends View {
     const { grid, row, col } = this.cell(e);
     this.wheel.y += e.delta.y;
     this.wheel.x += e.delta.x;
+    // The content follows the fingers now; nvim scrolls a line for each line height. Past
+    // the file's ends nvim doesn't, and the content gives at most a line before it stops.
+    const w = this.grid.grids.get(grid);
+    if (w && !w.float && grid !== 1 && e.delta.y) {
+      const s = this.slideOf(grid);
+      s.pred = Math.max(-lh * (Math.abs(s.pending) + 1), Math.min(lh * (Math.abs(s.pending) + 1), s.pred + e.delta.y));
+      this.cx.notify();
+    }
     while (Math.abs(this.wheel.y) >= lh) {
       const up = this.wheel.y > 0;
+      const s = this.slides.get(grid);
+      if (s && Math.abs(s.pending) >= 3) { this.wheel.y = 0; break; }
       this.nvim.inputMouse("wheel", up ? "up" : "down", this.mods(e.modifiers), grid, row, col);
+      if (s) s.pending += up ? -1 : 1;
       this.wheel.y += up ? -lh : lh;
     }
     while (Math.abs(this.wheel.x) >= cw * 4) {
@@ -266,7 +300,12 @@ export default class Editor extends View {
       this.nvim.inputMouse("wheel", left ? "left" : "right", this.mods(e.modifiers), grid, row, col);
       this.wheel.x += left ? -cw * 4 : cw * 4;
     }
-    if (e.touch_phase === "ended") this.wheel = { x: 0, y: 0 };
+    if (e.touch_phase === "ended") {
+      this.wheel = { x: 0, y: 0 };
+      // The fingers are off: what is left of the offset eases back.
+      for (const s of this.slides.values()) { s.anim += s.pred; s.pred = 0; s.pending = 0; }
+      this.animate();
+    }
   }
 
   // Cmd held over a word: it is underlined and the pointer is a hand, as a link to its
@@ -326,8 +365,9 @@ export default class Editor extends View {
   windowRows(w, m, t) {
     const base = this.grid.defaults.bg, g = this.grid;
     const opaque = (e) => e.when(w.id !== 1 && Boolean(base), (e) => e.bg(base));
-    const s = this.slides.get(w.id);
-    if (!s) return Array.from({ length: w.rows }, (_, r) => opaque(this.row(w.id, r, PAD.x + w.col * m.cw, PAD.y + (w.row + r) * m.lh, base, m, t)));
+    const sl = this.slides.get(w.id);
+    const s = sl && { ...sl, off: sl.pred + sl.anim };
+    if (!s || !s.off) return Array.from({ length: w.rows }, (_, r) => opaque(this.row(w.id, r, PAD.x + w.col * m.cw, PAD.y + (w.row + r) * m.lh, base, m, t)));
     // Sliding: the window clips its rows, drawn `off` px from their place, and the rows that
     // left fill the space uncovered above (scrolling down) or below (scrolling up).
     const line = (runs, y) => opaque(this.rowOf(runs, w.cols, 0, y, base, m, t));
@@ -373,7 +413,7 @@ export default class Editor extends View {
     if (!cg || row >= cg.rows || col >= cg.cols || cg.hidden) return null;
     let x, y;
     if (cg.float) { const r = this.placeFloat(cg, m); x = r.x + FLOAT.x + col * m.cw; y = r.y + FLOAT.y + row * m.lh; }
-    else { x = PAD.x + (cg.col + col) * m.cw; y = PAD.y + (cg.row + row) * m.lh + (this.slides.get(grid)?.off ?? 0); }
+    else { x = PAD.x + (cg.col + col) * m.cw; y = PAD.y + (cg.row + row) * m.lh + ((this.slides.get(grid)?.pred ?? 0) + (this.slides.get(grid)?.anim ?? 0)); }
     const { shape, percentage } = g.cursorShape();
     // A bar between two characters, over neither: centred on the cells' boundary. Steady and
     // dimmed while the editor doesn't have the keyboard.
