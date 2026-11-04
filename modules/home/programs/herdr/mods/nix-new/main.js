@@ -381,7 +381,7 @@ export default class New extends View {
 
   shell(id, on, t) {
     return h_flex().id(id).flex_none().px(8).gap(8).items_center().rounded(6).cursor_pointer()
-      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((s) => s.bg(t.hover)));
+      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)));
   }
 
   row(r, on, t) {
@@ -470,7 +470,7 @@ export default class New extends View {
     let head = h_flex().h(32).flex_none().px(12).gap(6).items_center().text_size(12.5).font_medium();
     if (this.here) {
       head = head.when(Boolean(this.repo), (e) => e.child(div().id("up").ml(-6).size(24).flex_none().flex().items_center().justify_center().rounded(6)
-          .text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground)).cursor_pointer().tooltip("Worktrees")
+          .text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground)).active((s) => s.bg(t.selected)).cursor_pointer().tooltip("Worktrees")
           .on_click((_e, cx) => this.up(cx)).child(svg(ICON("chevron-left")).size(13))))
         .child(svg(ICON("git-branch")).size(13).flex_none().text_color(t.muted))
         .child(div().min_w(0).truncate().child(this.here.branch ?? base(this.here.path)))

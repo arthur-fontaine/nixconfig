@@ -38,7 +38,7 @@ export default class Pane extends View {
       .justify_center()
       .rounded(6)
       .text_color(t.dim)
-      .hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .hover((s) => s.bg(t.hover).text_color(t.foreground)).active((s) => s.bg(t.selected))
       .on_click((_e, cx) => {
         cx.stop_propagation();
         run(command, args);
@@ -67,7 +67,7 @@ export default class Pane extends View {
       .border_b(1)
       .border_color(t.border)
       .text_size(12)
-      .on_hover((hovered, cx) => { this.hovered = hovered; cx.notify(); })
+      .on_hover((hovered, cx) => { if (hovered !== this.hovered) { this.hovered = hovered; cx.notify(); } })
       .on_click(() => run("pane.focus", { pane }))
       .when(Boolean(pic), (el) => el.child(pic))
       .child(div().flex_none().truncate().max_w(260).text_color(p.focused ? t.foreground : t.muted).child(name))

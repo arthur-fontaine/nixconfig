@@ -27,6 +27,7 @@ const ICON = (name) => `mods/nix-head/icons/${name}.svg`;
 const SIZE = { file: 36, gap: 6, hunk: 24, line: 20, note: 28, end: 10 };
 const UNTRACKED_MAX = 200;
 // Cmd chords the diff's text keeps while it has the caret; the others stay Herdr's.
+const BLINK = 530;
 const OWN_CMD = new Set(["s", "z", "a", "c", "x", "v", "left", "right", "up", "down", "backspace"]);
 
 const ago = (s) => {
@@ -49,6 +50,14 @@ export default class Diff extends View {
     this.visible = { start: 0, end: 0 }; this.pointer = null;
     this.editable = !this.commit && !this.on && Boolean(this.root) && typeof startNvim === "function";
     if (this.editable) this.startEditor();
+    // The caret blinks as in the editor: steady for a moment after each key, click or move.
+    this.blink = true; this.woke = Date.now();
+    if (this.editable) cx.timer.every(BLINK, () => {
+      if (!this.editing) return;
+      const focused = this.handle.is_focused();
+      const blink = !focused || Date.now() - this.woke < BLINK ? true : !this.blink;
+      if (blink !== this.blink || focused !== this.focused) { this.blink = blink; this.focused = focused; this.cx.notify(); }
+    }, { owner: this });
     this.load(cx);
     // A commit never changes; the working tree does.
     if (!this.commit && !this.on && this.root) this.watch(cx);
@@ -95,6 +104,7 @@ export default class Diff extends View {
     const rel = this.rel(msg?.file);
     if (!rel) return;
     this.caret = { ...msg, rel };
+    this.woke = Date.now(); this.blink = true;
     const i = this.rows.findIndex((r) => r.type === "line" && r.line.kind !== "-" && r.line.new === msg.line && this.view[r.file]?.path === rel);
     if (i >= 0 && (i < this.visible.start || i >= this.visible.end - 1)) this.scroll.scroll_to_item(i, "center");
     this.cx.notify();
@@ -119,6 +129,7 @@ export default class Diff extends View {
   // clipboard through ⌘C/⌘X/⌘V. Esc leaves the text (a selection first).
   key(e, cx) {
     if (!this.editing || !this.nvim) return;
+    this.woke = Date.now();
     const m = e.modifiers;
     if (e.key === "escape" && !m.platform && !this.caret?.sel) { cx.stop_propagation(); return this.stopEditing(); }
     if (m.platform && !OWN_CMD.has(e.key)) return;
@@ -249,7 +260,7 @@ export default class Diff extends View {
     const name = f.path.slice(slash + 1), dir = slash >= 0 ? f.path.slice(0, slash) : "";
     // A 36px bar like the panels' headers, on chrome between hairlines.
     return h_flex().w_full().h(SIZE.file).flex_none().px(12).gap(8).items_center().bg(t.chrome).border_t(1).border_b(1).border_color(t.border)
-      .cursor_pointer().hover((s) => s.bg(t.hover)).text_size(12.5)
+      .cursor_pointer().hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)).text_size(12.5)
       .child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.dim))
       .child(this.statusIcon(f.status, t))
       .child(div().flex_none().font_medium().text_color(t.foreground).child(name))
@@ -290,12 +301,15 @@ export default class Diff extends View {
     const here = editable && this.editing === f.path && this.caret?.rel === f.path ? this.caret : null;
     const sel = here ? selectedCols(here.sel, line.new, line.text.length) : null;
     const caret = here && here.line === line.new ? here.col : null;
+    const showCaret = caret !== null && (this.blink || this.focused === false);
     const text = h_flex().flex_none().relative().whitespace_nowrap()
       .when(Boolean(sel), (e) => e.child(div().absolute().top(1).bottom(1).left(sel[0] * CELL).w((sel[1] - sel[0]) * CELL).bg(t.selection ?? t.accent + "40")))
       .children(parts.map((p) =>
         div().flex_none().text_color(p.kind ? syn[p.kind] ?? t.foreground : t.foreground)
           .when(p.changed, (e) => e.bg(strong).rounded(2)).child(p.text)))
-      .when(caret !== null, (e) => e.child(div().absolute().top(1).bottom(1).left(caret * CELL - 1).w(2).bg(t.accent)));
+      // Centred on the boundary between two characters, over neither.
+      .when(showCaret, (e) => e.child(div().absolute().top(2).bottom(2).left(caret * CELL - 0.75).w(1.5).rounded(1)
+        .bg(this.focused === false ? t.dim : t.accent)));
     return h_flex().w_full().h(SIZE.line).flex_none().items_center().font_family(this.mono).text_size(13).when(Boolean(bg), (e) => e.bg(bg))
       .when(editable, (e) => e.cursor_text()).when(!f.live && f.status !== "D", (e) => e.cursor_pointer())
       // The line the caret is on stands out a little, as in the editor.
@@ -337,7 +351,7 @@ export default class Diff extends View {
       .child(div().flex_none().text_size(11).text_color(t.ansi1).child(`−${del}`))
       .when(this.files.length > 0, (e) => e.child(
         div().id("fold-all").flex_none().h(24).px(8).flex().items_center().rounded(6).text_size(12).font_medium().text_color(t.muted).cursor_pointer()
-          .hover((s) => s.bg(t.hover).text_color(t.foreground))
+          .hover((s) => s.bg(t.hover).text_color(t.foreground)).active((s) => s.bg(t.selected))
           .on_click((_e, cx) => this.foldAll(cx)).child(allFolded ? "Expand all" : "Collapse all")));
     if (!this.commit || !this.meta) return bar;
     const m = this.meta;

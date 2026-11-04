@@ -160,7 +160,7 @@ export default class Files extends View {
     const changed = dir && !mark && this.markedDirs.has(path);
     const color = { A: t.ansi2, D: t.ansi1, U: t.ansi5 }[mark] ?? t.ansi3;
     return h_flex().id(`file-${path}`).h(26).flex_none().pl(6).pr(8).items_center().rounded(6).cursor_pointer().text_size(12.5)
-      .when(on, (s) => s.bg(t.selected)).when(!on, (s) => s.hover((s) => s.bg(t.hover)))
+      .when(on, (s) => s.bg(t.selected)).when(!on, (s) => s.hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)))
       .on_click((e, cx) => { if (!dir) this.opened = path; dir ? this.toggle(path, cx) : this.edit(path, e.modifiers.alt); })
       .children(Array.from({ length: depth }, () => div().w(16).h_full().flex_none().child(div().ml(11).w(1).h_full().bg(t.border))))
       .child(div().w(10).mr(6).flex_none().flex().items_center().justify_center()
@@ -230,7 +230,7 @@ export default class Files extends View {
         .child(div().flex_none().font_medium().child("Files"))
         .child(div().ml(6).flex_1().min_w(0).text_ellipsis_start().text_size(11).text_color(t.dim).child(this.file ?? branch ?? this.root?.split(/[\\/]/).pop() ?? ""))
         .when(!this.file, el => el.child(div().id("changed-only").size(24).flex_none().flex().items_center().justify_center().rounded(6).cursor_pointer()
-          .when(only, (e) => e.bg(t.selected).text_color(t.foreground)).when(!only, (e) => e.text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground)))
+          .when(only, (e) => e.bg(t.selected).text_color(t.foreground)).when(!only, (e) => e.text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground)).active((s) => s.bg(t.selected)))
           .tooltip("Changed files only")
           .on_click((_e, cx) => { this.changedOnly = !only; localStorage.setItem("changedOnly", this.changedOnly ? "1" : "0"); cx.notify(); })
           .child(svg("mods/nix-head/icons/git-compare.svg").size(14)))))

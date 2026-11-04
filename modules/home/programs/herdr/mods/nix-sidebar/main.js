@@ -333,17 +333,21 @@ export default class Sidebar extends View {
     return p.tint ? svg(p.icon).size(size).flex_none().text_color(strong ? t.foreground : t.muted) : image(p.icon).w(size).h(size).flex_none();
   }
 
+  // A row whose actions show on hover. The repaint a hover asks for reuses the last model
+  // (spaces, git, workers): only the rows are built again, so the actions show at once.
   hoverable(id, el) {
     return el.id(id).on_hover((on, cx) => {
-      if (on) this.hovered = id;
-      else if (this.hovered === id) this.hovered = null;
+      const next = on ? id : this.hovered === id ? null : this.hovered;
+      if (next === this.hovered) return;
+      this.hovered = next;
+      this.hoverOnly = true;
       cx.notify();
     });
   }
 
   small(id, icon, tip, onClick, t) {
     return div().id(id).size(20).flex_none().rounded(6).flex().items_center().justify_center().text_color(t.dim)
-      .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip)
+      .hover((s) => s.bg(t.hover).text_color(t.foreground)).active((s) => s.bg(t.selected)).tooltip(tip)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); onClick(cx); })
       .child(svg(ICON(icon)).size(12));
@@ -362,7 +366,7 @@ export default class Sidebar extends View {
       const repo = g ? this.names?.get(g.repo) ?? g.name : null;
       const where = g ? [repo, g.branch && g.branch !== g.name ? g.branch : null].filter(Boolean).join(" / ") : space?.name ?? "";
       return h_flex().id(`need-${a.address}`).h(40).px(10).gap(8).items_center().rounded(6).cursor_pointer()
-        .hover((s) => s.bg(t.hover))
+        .hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected))
         .on_click(() => run("agent.focus", { terminal: a.address }))
         .child(this.picture(lead ?? { program: a.program, app: a.app }, t, 14, true))
         .child(v_flex().flex_1().min_w(0)
@@ -389,7 +393,7 @@ export default class Sidebar extends View {
   workerRow(x, pl, t) {
     const status = ["working", "blocked", "done"].includes(x.status) ? x.status : null;
     return h_flex().id(`worker-${x.address}`).h(26).pl(pl).pr(10).gap(8).items_center().rounded(6).cursor_pointer()
-      .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground))
+      .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground)).active((e) => e.bg(t.selected))
       .tooltip(`Peek at ${x.name ?? x.address}`)
       .on_click(() => run("terminal.peek", { terminal: x.address }))
       // hc leaves `agent` empty for a worker it started: Pi is known by its command too.
@@ -413,9 +417,10 @@ export default class Sidebar extends View {
     if (this.filter && !this.matches(title) && !list.some((x) => this.matches(x.name ?? ""))) return [];
     const status = this.urgent(list);
     const rows = [this.hoverable(id, h_flex().h(28).pl(24).pr(10).gap(7).items_center().rounded(6).cursor_pointer()
-      .hover((x) => x.bg(t.hover)).tooltip(c.path)
+      .hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)).tooltip(c.path)
       .on_click(() => run("space.new", { folder: c.path, machine: r.on ?? "", tab: orchestratorName("worktree", base(c.path)), argv: orchestratorArgv("worktree", base(c.path)) }))
       .child(div().id(`fold-${fkey}`).w(12).h(14).flex_none().flex().items_center().justify_center().text_color(t.dim)
+        .rounded(3).hover((x) => x.text_color(t.foreground).bg(t.hover))
         .on_click((_e, cx) => { cx.stop_propagation(); this.toggle(this.folded, "folded", fkey, cx); })
         .child(svg(ICON(folded ? "chevron-right" : "chevron-down")).size(10)))
       .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(t.muted).child(title))
@@ -480,7 +485,7 @@ export default class Sidebar extends View {
     const id = `tab-${tab.id}`, on = s.active && tab.active;
     const time = tab.status === "working" ? tab.working_since : tab.changed_at;
     return this.hoverable(id, h_flex().h(28).pl(40).pr(10).gap(8).items_center().rounded(6).cursor_pointer()
-      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)))
+      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
       .on_click(() => { run("space.select", { id: s.id }); run("tab.select", { id: tab.id }); })
       .child(this.picture(lead, t, 14, on))
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(on ? t.foreground : t.muted).child(label))
@@ -504,10 +509,11 @@ export default class Sidebar extends View {
     const on = s.active && (folded || !tabs.length || Boolean(orchestrator?.active));
     const status = folded ? s.status : orchestrator?.status;
     const rows = [this.hoverable(id, h_flex().h(28).pl(24).pr(10).gap(7).items_center().rounded(6).cursor_pointer()
-      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)))
+      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
       .on_click(() => this.openOrchestrator(s, place(s, ps), g?.top))
       .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 260, props: { tab: "space", target: { id: s.id } } }))
       .child(div().id(`fold-${s.id}`).w(12).h(14).flex_none().flex().items_center().justify_center().text_color(t.dim)
+        .rounded(3).hover((x) => x.text_color(t.foreground).bg(t.hover))
         .on_click((_e, cx) => { cx.stop_propagation(); this.toggle(this.folded, "folded", s.id, cx); })
         .child(svg(ICON(folded ? "chevron-right" : "chevron-down")).size(10)))
       .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(s.active ? t.foreground : t.muted).child(title))
@@ -538,7 +544,7 @@ export default class Sidebar extends View {
     const fold = (cx) => r.closed ? this.toggle(this.folded, "folded", `open:${r.key}`, cx) : this.toggle(this.folded, "folded", r.key, cx);
     const on = Boolean(r.project?.active);
     const head = this.hoverable(id, h_flex().h(28).px(10).gap(8).items_center().rounded(6).cursor_pointer()
-      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)))
+      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
       .on_click((_e, cx) => this.openProject(r, cx))
       .child(div().id(`fold-${r.key}`).flex_none().text_color(t.muted).hover((x) => x.text_color(t.foreground)).tooltip(folded ? "Unfold" : "Fold")
         .on_click((_e, cx) => { cx.stop_propagation(); fold(cx); })
@@ -568,7 +574,7 @@ export default class Sidebar extends View {
     // One selected row, as for a worktree: the folder's only when no tab row shows.
     const lone = s.active && (this.folded.has(s.id) || !(s.tabs ?? []).some((x) => !x.settled));
     rows[0] = this.hoverable(`space-${s.id}`, h_flex().h(28).px(10).gap(8).items_center().rounded(6).cursor_pointer()
-      .when(lone, (e) => e.bg(t.selected)).when(!lone, (e) => e.hover((x) => x.bg(t.hover)))
+      .when(lone, (e) => e.bg(t.selected)).when(!lone, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
       .on_click(() => run("space.select", { id: s.id }))
       .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 260, props: { tab: "space", target: { id: s.id } } }))
       .child(svg(ICON("folder")).size(14).flex_none().text_color(t.muted))
@@ -584,7 +590,7 @@ export default class Sidebar extends View {
     const marks = [...open.flatMap((r) => r.items.map((it) => ({ ...it, r }))), ...folders];
     return v_flex().size_full().bg(t.chrome).pt(6).gap(4).items_center()
       .children(marks.map(({ s, r }) => h_flex().id(`rail-${s.id}`).size(30).rounded(6).items_center().justify_center().relative()
-        .when(s.active, (e) => e.bg(t.selected)).when(!s.active, (e) => e.hover((x) => x.bg(t.hover)))
+        .when(s.active, (e) => e.bg(t.selected)).when(!s.active, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
         .on_click(() => run("space.select", { id: s.id }))
         .child(div().size(18).rounded(3).bg(s.active ? t.background : t.raised).flex().items_center().justify_center()
           .text_size(10).font_medium().text_color(s.active ? t.foreground : t.muted).child([...(r?.name ?? s.name)][0]?.toUpperCase() ?? "?"))
@@ -594,7 +600,9 @@ export default class Sidebar extends View {
   render() {
     const t = theme();
     if (narrow()) return this.rail(t);
-    const { open, closed, folders, ps } = this.model();
+    const m = this.hoverOnly && this.lastModel ? this.lastModel : this.model();
+    this.lastModel = m; this.hoverOnly = false;
+    const { open, closed, folders, ps } = m;
     this.first = null; this.firstAny = null;
     const order = [];
     const info = (s) => this.git[where(s, ps)] ?? null;
@@ -605,6 +613,7 @@ export default class Sidebar extends View {
     const rest = closed.flatMap((r) => this.repoBlock(r, ps, t, order));
     setAgentOrder(order);
     const remote = machines().filter((m) => m.name && m.layout === "loading");
+    const need = this.needsYou(t, ps, info);
     const filled = Boolean(this.input.value());
     return v_flex().size_full().min_h(0).bg(t.chrome).text_color(t.foreground)
       // The filter, in the app's one field vocabulary (background + hairline, ring on focus),
@@ -618,7 +627,7 @@ export default class Sidebar extends View {
           .child(svg(ICON("search")).size(13).flex_none().text_color(this.typing || filled ? t.muted : t.dim))
           .child(Input.new(this.input).flex_1().h_full().text_size(13).text_color(t.foreground))
           .when(filled, (e) => e.child(div().id("filter-clear").size(16).flex_none().rounded(4).flex().items_center().justify_center()
-            .text_color(t.dim).hover((x) => x.bg(t.hover).text_color(t.foreground)).tooltip("Clear")
+            .text_color(t.dim).hover((x) => x.bg(t.hover).text_color(t.foreground)).active((x) => x.bg(t.selected)).tooltip("Clear")
             .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
             .on_click((_e, cx) => { this.clearFilter(cx); this.input.focus(); })
             .child(svg(ICON("x")).size(10)))))
@@ -630,7 +639,7 @@ export default class Sidebar extends View {
           }))
           .child(svg(ICON("folder-plus")).size(14))))
       .child(v_flex().id("sidebar-tree").flex_1().min_h(0).px(6).overflow_y_scrollbar()
-        .when(Boolean(this.needsYou(t, ps, info)), (e) => e.child(this.needsYou(t, ps, info)))
+        .when(Boolean(need), (e) => e.child(need))
         .child(v_flex().children(body))
         .when(rest.length > 0, (e) => e.child(v_flex().pt(6).mt(4).border_t(1).border_color(t.border).children(rest)))
         .when(remote.length > 0, (e) => e.child(div().px(16).py(6).text_size(11).text_color(t.dim).child(`Loading ${remote.map((m) => m.name).join(", ")}…`)))

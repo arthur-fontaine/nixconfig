@@ -144,7 +144,7 @@ export default class Menu extends View {
             // Closing is the one destructive item: it says so in the needs-you red.
             .text_color(it[1].endsWith(".close") ? t.blocked : t.foreground)
             .when(i === this.at, (el) => el.bg(t.selected))
-            .hover((s) => s.bg(t.hover))
+            .hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected))
             .on_click((_e, cx) => this.choose(i, cx))
             .child(svg(menuIcon(it[1])).size(14).flex_none().text_color(it[1].endsWith(".close") ? t.blocked : t.muted))
             .child(div().flex_1().child(it[0]))

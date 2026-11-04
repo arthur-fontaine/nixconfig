@@ -260,7 +260,7 @@ export default class Worktree extends View {
         .rounded(7)
         .cursor_pointer()
         .when(on, (el) => el.bg(t.selected))
-        .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
+        .when(!on, (el) => el.hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)))
         .on_click((_e, cx) => this.open(c, cx))
         .child(
           h_flex()
@@ -342,7 +342,7 @@ export default class Worktree extends View {
       .when(remove && this.dirty, (el) => el.child(div().text_color(t.blocked).child("It has uncommitted changes: they will be lost.")))
       .when(remove && this.unpushed.length > 0, (el) => el.child(div().text_color(t.blocked).child(`Submodule ${this.unpushed.join(", ")} has commits that aren't pushed anywhere: they will be lost.`)))
       .when(remove && Boolean(r?.linked && this.branch), (el) => el.child(
-        h_flex().id("delete-branch").gap(8).items_center().cursor_pointer()
+        h_flex().id("delete-branch").gap(8).items_center().cursor_pointer().hover((x) => x.opacity(0.85))
           .on_click((_e, cx) => { this.deleteBranch = !this.deleteBranch; cx.notify(); })
           .child(div().size(15).flex_none().rounded(4).border_1().border_color(this.deleteBranch ? t.accent : t.input).when(this.deleteBranch, (e) => e.bg(t.accent))
             .flex().items_center().justify_center().when(this.deleteBranch, (e) => e.child(div().text_size(10).text_color(t.accent_foreground ?? t.background).child("✓"))))

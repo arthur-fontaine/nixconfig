@@ -13,6 +13,7 @@ import { startNvim } from "./nvim.js";
 const STATUS = 24; // px, the strip under the grid
 const TABS = 32; // px, the tab strip over it, with two files or more
 const PAD = { x: 8, y: 8 }; // px around the grid
+const BLINK = 530; // ms the caret is shown, then hidden, as macOS's insertion point
 const FLOAT = { x: 8, y: 6, gap: 4 }; // a float's padding, and its distance from the line it's about
 // Cmd chords the editor keeps; any other Cmd chord stays Herdr's (new tab, palette…).
 const OWN_CMD = new Set(["s", "z", "a", "c", "x", "v", "f", "/", "[", "]", "\\", "left", "right", "up", "down", "backspace", "d", "p"]);
@@ -46,6 +47,20 @@ export default class Editor extends View {
     this.handle = cx.focus_handle();
     this.cx = cx;
     cx.timer.after(50, () => this.handle.focus(), { owner: this });
+    // The caret blinks while the editor has the keyboard, and shows steadily for a moment
+    // after each key, click or move (this.wake), as macOS text fields do.
+    this.blink = true;
+    this.woke = Date.now();
+    cx.timer.every(BLINK, () => {
+      const focused = this.handle.is_focused();
+      const blink = !focused || Date.now() - this.woke < BLINK ? true : !this.blink;
+      if (blink !== this.blink || focused !== this.focused) { this.blink = blink; this.focused = focused; this.cx.notify(); }
+    }, { owner: this });
+  }
+
+  wake() {
+    this.woke = Date.now();
+    if (!this.blink) { this.blink = true; this.cx.notify(); }
   }
 
   close() {
@@ -81,7 +96,12 @@ export default class Editor extends View {
     // async function makes once it returns, and the connection's live as long as the view
     // (nvim.js). Plain promise chains, with `this.cx` (init's, which outlives an await).
     const notify = () => this.cx.notify();
-    const onRedraw = (events) => { if (this.grid.apply(events)) notify(); };
+    const onRedraw = (events) => {
+      if (!this.grid.apply(events)) return;
+      const c = this.grid.cursor, at = `${c.grid}:${c.row}:${c.col}`;
+      if (at !== this.caretAt) { this.caretAt = at; this.woke = Date.now(); this.blink = true; }
+      notify();
+    };
     const onNotify = (name, args) => {
       if (name === "herdr_status") { this.status = args?.[0] ?? null; this.followTabs(); notify(); }
       if (name === "nvim_closed") { this.nvim = null; this.error = "Neovim exited"; notify(); }
@@ -103,6 +123,7 @@ export default class Editor extends View {
   // since a headless Neovim has none.
   key(e, cx) {
     if (!this.nvim) return;
+    this.wake();
     const m = e.modifiers;
     if (m.platform && !OWN_CMD.has(e.key)) return; // Herdr's own shortcut
     cx.stop_propagation();
@@ -150,6 +171,7 @@ export default class Editor extends View {
 
   mouseDown(e, cx) {
     this.handle.focus();
+    this.wake();
     if (!this.nvim || !this.grid.mouse) return;
     const { grid, row, col, screen } = this.cell(e);
     this.dragging = true;
@@ -298,7 +320,12 @@ export default class Editor extends View {
     if (cg.float) { const r = this.placeFloat(cg, m); x = r.x + FLOAT.x + col * m.cw; y = r.y + FLOAT.y + row * m.lh; }
     else { x = PAD.x + (cg.col + col) * m.cw; y = PAD.y + (cg.row + row) * m.lh; }
     const { shape, percentage } = g.cursorShape();
-    if (shape === "vertical") return div().absolute().left(x).top(y).w(2).h(m.lh).bg(t.accent);
+    // A bar between two characters, over neither: centred on the cells' boundary. Steady and
+    // dimmed while the editor doesn't have the keyboard.
+    if (shape === "vertical") {
+      if (this.focused !== false && !this.blink) return null;
+      return div().absolute().left(x - 0.75).top(y + 1).w(1.5).h(m.lh - 2).rounded(1).bg(this.focused === false ? t.dim : t.accent);
+    }
     if (shape === "horizontal") {
       const h = Math.max(2, Math.round((m.lh * (percentage || 20)) / 100));
       return div().absolute().left(x).top(y + m.lh - h).w(m.cw).h(h).bg(t.accent);
@@ -447,14 +474,14 @@ export default class Editor extends View {
         const on = x.current;
         const dir = twice.has(names[i]) ? basename(dirname(x.file)) : null;
         return h_flex().id(`editor-tab-${i}`).h_full().flex_none().pl(12).pr(6).gap(6).items_center().border_r(1).border_color(t.border)
-          .cursor_pointer().text_size(12).when(on, (e) => e.bg(bg)).when(!on, (e) => e.hover((e) => e.bg(t.hover)))
+          .cursor_pointer().text_size(12).when(on, (e) => e.bg(bg)).when(!on, (e) => e.hover((e) => e.bg(t.hover)).active((e) => e.bg(t.selected)))
           .on_click(() => { this.nvim?.notify("nvim_command", `tabnext ${i + 1}`); this.handle.focus(); })
           .when(x.modified, (e) => e.child(div().size(6).rounded(3).flex_none().bg(t.dim)))
           .child(div().flex_none().whitespace_nowrap().text_color(on ? t.foreground : t.muted).child(names[i]))
           .when(Boolean(dir), (e) => e.child(div().flex_none().whitespace_nowrap().text_color(t.dim).child(dir)))
           .when(x.splits > 1, (e) => e.child(svg("mods/nix-head/icons/split-right.svg").size(12).flex_none().text_color(t.dim)))
           .child(div().id(`editor-tab-close-${i}`).size(18).flex_none().flex().items_center().justify_center().rounded(4)
-            .text_color(t.dim).hover((e) => e.bg(t.hover).text_color(t.foreground))
+            .text_color(t.dim).hover((e) => e.bg(t.hover).text_color(t.foreground)).active((e) => e.bg(t.selected))
             .tooltip(x.modified ? "Close (⌥-click: discard the changes)" : "Close")
             .on_click((e, cx) => { cx.stop_propagation(); this.closeTab(i + 1, e.modifiers.alt); })
             .child(svg("mods/nix-head/icons/x.svg").size(12)));

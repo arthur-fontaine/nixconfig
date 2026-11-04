@@ -319,6 +319,7 @@ export default class Changes extends View {
   checkbox(state, t, onClick, id) {
     return div().id(id).size(14).flex_none().rounded(3).border_1().cursor_pointer()
       .border_color(state === "all" ? t.solid : t.input ?? t.border).when(state === "all", (e) => e.bg(t.solid))
+      .when(state !== "all", (e) => e.hover((x) => x.border_color(t.muted)).active((x) => x.bg(t.hover)))
       .flex().items_center().justify_center()
       .on_click((_e, cx) => { cx.stop_propagation(); onClick(cx); })
       .when(state === "all", (e) => e.child(svg(ICON("check")).size(10).text_color(t.solid_foreground ?? t.background)))
@@ -338,8 +339,11 @@ export default class Changes extends View {
     // The box's column is kept at rest, so nothing shifts when it shows.
     const box = this.hovered === id || f.staged !== "none";
     return h_flex().id(id).h(26).flex_none().px(6).gap(8).items_center().rounded(6).cursor_pointer().text_size(12.5)
-      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((s) => s.bg(t.hover)))
-      .on_hover((hovered, cx) => { this.hovered = hovered ? id : this.hovered === id ? null : this.hovered; cx.notify(); })
+      .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)))
+      .on_hover((hovered, cx) => {
+        const next = hovered ? id : this.hovered === id ? null : this.hovered;
+        if (next !== this.hovered) { this.hovered = next; cx.notify(); }
+      })
       .on_click((_e, cx) => this.showFile(f.path, cx))
       .child(box ? this.checkbox(f.staged, t, (cx) => this.toggleStage(f, cx), `stage-${f.path}`) : div().size(14).flex_none())
       .child(this.statusIcon(f.status, t))
@@ -353,7 +357,7 @@ export default class Changes extends View {
 
   commitRow(c, t) {
     return h_flex().id(`commit-${c.sha}`).h(26).flex_none().px(6).gap(8).items_center().rounded(6).cursor_pointer().text_size(12)
-      .hover((s) => s.bg(t.hover))
+      .hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected))
       .on_click((_e, cx) => this.openDiff(c.sha, c.subject.length > 32 ? `${c.subject.slice(0, 31)}…` : c.subject, cx))
       // Only this session's commits are marked.
       .child(div().w(8).flex_none().flex().justify_center().when(Boolean(c.session), (e) => e.child(div().size(5).rounded(3).bg(t.accent))))
@@ -377,7 +381,7 @@ export default class Changes extends View {
     const cap = Math.max(120, (this.height ?? 600) / 2);
     const listH = Math.min(n * 26 + 8, 8 + 26 * Math.floor((cap - 8) / 26));
     const textButton = (id, label, onClick) => div().id(id).h(24).px(8).flex().flex_none().items_center().rounded(6).text_size(12).font_medium()
-      .text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(onClick).child(label);
+      .text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).active((s) => s.bg(t.selected)).on_click(onClick).child(label);
     const empty = this.error || (this.loading && !this.root ? "Loading changes…" : this.root ? "Nothing to commit" : "No folder");
     return v_flex().id("changes").size_full().min_h(0).bg(t.chrome).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_size_change((size, cx) => { if (size.height !== this.height) { this.height = size.height; cx.notify(); } })
@@ -386,7 +390,7 @@ export default class Changes extends View {
       })
       // Header: "Changes", the totals, the whole diff; Stage all on hover.
       .child(h_flex().id("changes-head").h(36).flex_none().px(12).gap(4).items_center().border_b(1).border_color(t.border)
-        .on_hover((hovered, cx) => { this.headHover = hovered; cx.notify(); })
+        .on_hover((hovered, cx) => { if (hovered !== this.headHover) { this.headHover = hovered; cx.notify(); } })
         .child(div().flex_none().font_medium().child("Changes"))
         .child(div().ml(6).min_w(0).truncate().text_size(11).text_color(t.dim)
           .child(this.root === null && !this.loading ? "Not a git repository" : n ? `${n} · +${add} −${del}` : ""))
@@ -402,10 +406,12 @@ export default class Changes extends View {
       .when(n > 0, (e) => e.child(h_flex().flex_none().border_t(1).border_color(t.border).px(12).py(8).gap(8).items_center()
         .child(div().id("commit-message").flex_1().min_w(0).h(30).px(10).flex().items_center().rounded(6).bg(t.background).border_1()
           .border_color(this.typing ? t.ring ?? t.accent : t.border).cursor_text().text_size(12.5)
+          .when(!this.typing, (e) => e.hover((x) => x.border_color(t.input ?? t.muted)))
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(() => this.input.focus())
           .child(Input.new(this.input).w_full().text_size(12.5).text_color(t.foreground)))
         .child(div().id("commit").h(26).px(10).flex().flex_none().items_center().rounded(6).text_size(12).font_medium()
-          .bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).when(enabled, (e) => e.cursor_pointer())
+          .bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim)
+          .when(enabled, (e) => e.cursor_pointer().hover((x) => x.opacity(0.88)).active((x) => x.opacity(0.75)))
           .tooltip(files.some((f) => f.staged !== "none") ? "Commits the staged changes" : "Commits every change")
           .on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit"))))
       // The branch's PR or MR.

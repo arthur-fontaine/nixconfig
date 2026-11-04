@@ -236,7 +236,7 @@ export default class Info extends View {
   // A key figure tile: label, figure + qualifier, optional bar, sub-line; a click opens its detail.
   tile(t, key, label, figure, qualifier, barEl, sub) {
     return h_flex().id(`tile-${key}`).px(16).py(10).gap(10).items_center().border_b(1).border_color(t.border)
-      .cursor_pointer().hover((e) => e.bg(t.hover))
+      .cursor_pointer().hover((e) => e.bg(t.hover)).active((e) => e.bg(t.selected))
       .on_click((_e, cx) => this.open(key, cx))
       .child(v_flex().flex_1().min_w(0).gap(3)
         .child(div().text_size(12).font_medium().text_color(t.muted).line_height("16px").child(label))
@@ -266,7 +266,7 @@ export default class Info extends View {
       .when(prose, (e) => e.text_size(12.5)).when(!prose, (e) => e.font_family(MONO).text_size(12))
       .when(path, (e) => e.text_ellipsis_start()).when(!path, (e) => e.truncate()).child(c.arg || c.name);
     return h_flex().id(`call-${c.id}`).h(big ? 32 : 28).flex_none().px(big ? 6 : 16).when(big, (e) => e.mx(10).rounded(6)).gap(big ? 10 : 8).items_center()
-      .when(on, (e) => e.bg(t.selected)).when(!on && c.running, (e) => e.bg(t.hover)).when(!on && !c.running, (e) => e.hover((x) => x.bg(t.hover)))
+      .when(on, (e) => e.bg(t.selected)).when(!on && c.running, (e) => e.bg(t.hover)).when(!on && !c.running, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
       .when(Boolean(c.full || c.arg) && !on, (e) => e.tooltip(c.full || c.arg))
       .cursor_pointer().on_click((_e, cx) => this.select(c.id, cx))
       .child(svg(ICON(icon)).size(big ? 13 : 14).flex_none().text_color(t.dim))
@@ -330,7 +330,7 @@ export default class Info extends View {
       ? h_flex().gap(5).items_center().text_color(t.working).child(this.spinner(t)).child(`running ${infoDuration(now - (c.started ?? now))}`)
       : div().text_color(c.error ? t.blocked : t.dim).child(c.error ? `failed · ${took}` : took);
     const button = (id, child, tip, action) => div().id(id).h(24).px(8).flex_none().flex().items_center().gap(6).rounded(6).cursor_pointer()
-      .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground)).tooltip(tip).on_click(action).child(child);
+      .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground)).active((e) => e.bg(t.selected)).tooltip(tip).on_click(action).child(child);
     const args = c.args ?? {};
     const sections = [];
     if (c.kind === "bash" && typeof args.command === "string") {
@@ -510,7 +510,7 @@ export default class Info extends View {
         const chip = (k) => {
           const on = this.kind === k.key;
           return div().id(`kind-${k.key}`).h(22).px(8).flex_none().flex().items_center().rounded(6).cursor_pointer().text_size(12)
-            .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted).when(!on, (e) => e.hover((x) => x.bg(t.hover)))
+            .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
             .on_click((_e, cx) => { this.kind = k.key; this.all = false; cx.notify(); }).child(k.label);
         };
         const list = history.length ? this.toolList(t, [], history, now, true) : [div().px(16).py(12).text_size(12).text_color(t.dim).child("None")];
@@ -535,7 +535,7 @@ export default class Info extends View {
             .child(num(`${r.files} file${r.files > 1 ? "s" : ""}`, t.dim, 56))
             .child(num(`+${r.added}`, t.ansi2, 52)).child(num(r.removed ? `−${r.removed}` : "", t.ansi1, 52))),
           this.section(t, "Files", String(files.length)),
-          ...files.map((x) => h_flex().id(`file-${x.path}`).h(28).flex_none().px(16).gap(8).items_center().cursor_pointer().hover((e) => e.bg(t.hover))
+          ...files.map((x) => h_flex().id(`file-${x.path}`).h(28).flex_none().px(16).gap(8).items_center().cursor_pointer().hover((e) => e.bg(t.hover)).active((e) => e.bg(t.selected))
             .on_click((e) => openInEditor(HERDR, x.path, { side: e.modifiers.alt }))
             .child(div().flex_1().min_w(0).text_ellipsis_start().font_family(MONO).text_size(12).text_color(t.foreground).child(x.rel))
             .child(num(`+${x.added}`, t.ansi2, 44)).child(num(x.removed ? `−${x.removed}` : "", t.ansi1, 44))),
@@ -559,7 +559,7 @@ export default class Info extends View {
     const meta = this.detail === "lines" && this.session ? `from edits · ${f.lines.files} files` : name;
     const header = h_flex().h(36).flex_none().px(16).gap(6).items_center().border_b(1).border_color(t.border)
       .when(Boolean(this.detail), (e) => e.child(div().id("info-back").ml(-8).size(24).flex_none().flex().items_center().justify_center().rounded(6)
-        .text_color(t.dim).cursor_pointer().hover((x) => x.bg(t.hover).text_color(t.foreground)).tooltip("Back")
+        .text_color(t.dim).cursor_pointer().hover((x) => x.bg(t.hover).text_color(t.foreground)).active((x) => x.bg(t.selected)).tooltip("Back")
         .on_click((_e, cx) => this.back(cx)).child(svg(ICON("chevron-left")).size(13))))
       .child(div().flex_none().text_size(13).font_medium().text_color(t.foreground).child(this.detail ? LABELS[this.detail] : "Info"))
       .when(Boolean(meta), (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(meta)));

@@ -32,7 +32,7 @@ export default class Head extends View {
   button(id, icon, tip, action, size = 28) {
     const t = theme();
     return div().id(id).size(size).flex_none().relative().flex().items_center().justify_center().rounded(6).text_color(t.dim)
-      .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip)
+      .hover((s) => s.bg(t.hover).text_color(t.foreground)).active((s) => s.bg(t.selected)).tooltip(tip)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(action)
       .child(svg(ICON(icon)).size(14));
   }
