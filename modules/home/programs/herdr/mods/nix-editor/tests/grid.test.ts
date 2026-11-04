@@ -136,3 +136,21 @@ test("the word under a cell: letters, digits, _ and $, not punctuation", () => {
   assert.equal(g.wordAt(1, 0, 15), null);
   assert.deepEqual(g.cellAt(1, 0, 3), ["f", 0]);
 });
+
+test("a whole-window scroll keeps the rows it pushed out, for the view's slide", () => {
+  const g = new Grid();
+  g.apply([["grid_resize", [2, 3, 4]]]);
+  for (let r = 0; r < 4; r++) g.apply([["grid_line", [2, r, 0, [[String(r), 0, 3]]]]]);
+  g.apply([["grid_scroll", [2, 0, 4, 0, 3, 1, 0]]]);
+  g.apply([["grid_scroll", [2, 0, 4, 0, 3, -2, 0]]]);
+  const [down, up] = g.takeScrolls();
+  assert.equal(down.rows, 1);
+  assert.deepEqual(down.lines.map((l) => l.map((c) => c[0]).join("")), ["000"]);
+  assert.equal(up.rows, -2);
+  // (nvim hasn't drawn the row the first scroll uncovered: it still shows "333".)
+  assert.deepEqual(up.lines.map((l) => l.map((c) => c[0]).join("")), ["333", "333"]);
+  assert.deepEqual(g.takeScrolls(), []);
+  // Part of a window (a region) or the screen grid: nothing to slide.
+  g.apply([["grid_scroll", [2, 1, 4, 0, 3, 1, 0]]]);
+  assert.deepEqual(g.takeScrolls(), []);
+});

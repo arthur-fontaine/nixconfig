@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CELL, columnAt, editableFiles, liveFile, selectedCols, TEXT_X } from "../edit.js";
+import { CELL, columnAt, cutAt, editableFiles, liveFile, selectedCols, TEXT_X } from "../edit.js";
 
 test("Neovim's hunks become the model's, changed words and blocks marked", () => {
   const f = liveFile({ path: "a.ts", status: "M" }, {
@@ -44,4 +44,12 @@ test("binary and deleted files stay read-only; a rename is compared to its old n
     { path: "/r/a.ts", root: "/r", base: "a.ts" },
     { path: "/r/d.ts", root: "/r", base: "old/d.ts" },
   ]);
+});
+
+test("a line's parts are cut where the caret and the selection fall", () => {
+  const parts = [{ text: "const ", kind: "keyword" }, { text: "12", kind: "number", changed: false }, { text: "00", kind: "number", changed: true }];
+  assert.deepEqual(cutAt(parts, [7, null]).map((p) => [p.text, p.col, p.kind]), [["const ", 0, "keyword"], ["1", 6, "number"], ["2", 7, "number"], ["00", 8, "number"]]);
+  // A cut at a part's edge cuts nothing.
+  assert.deepEqual(cutAt(parts, [6, 8]).map((p) => p.text), ["const ", "12", "00"]);
+  assert.deepEqual(cutAt([], [0]), []);
 });

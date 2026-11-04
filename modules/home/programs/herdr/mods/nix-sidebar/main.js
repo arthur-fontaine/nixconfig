@@ -345,9 +345,11 @@ export default class Sidebar extends View {
     });
   }
 
+  // A row's action. The row under it is already on the hover or selected color, so the
+  // button answers a step above both: the input border's color, half then mostly opaque.
   small(id, icon, tip, onClick, t) {
     return div().id(id).size(20).flex_none().rounded(6).flex().items_center().justify_center().text_color(t.dim)
-      .hover((s) => s.bg(t.hover).text_color(t.foreground)).active((s) => s.bg(t.selected)).tooltip(tip)
+      .hover((s) => s.bg(t.input + "80").text_color(t.foreground)).active((s) => s.bg(t.input + "b3")).tooltip(tip)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); onClick(cx); })
       .child(svg(ICON(icon)).size(12));
@@ -420,7 +422,7 @@ export default class Sidebar extends View {
       .hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)).tooltip(c.path)
       .on_click(() => run("space.new", { folder: c.path, machine: r.on ?? "", tab: orchestratorName("worktree", base(c.path)), argv: orchestratorArgv("worktree", base(c.path)) }))
       .child(div().id(`fold-${fkey}`).w(12).h(14).flex_none().flex().items_center().justify_center().text_color(t.dim)
-        .rounded(3).hover((x) => x.text_color(t.foreground).bg(t.hover))
+        .rounded(3).hover((x) => x.text_color(t.foreground).bg(t.input + "80")).active((x) => x.bg(t.input + "b3"))
         .on_click((_e, cx) => { cx.stop_propagation(); this.toggle(this.folded, "folded", fkey, cx); })
         .child(svg(ICON(folded ? "chevron-right" : "chevron-down")).size(10)))
       .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(t.muted).child(title))
@@ -513,7 +515,7 @@ export default class Sidebar extends View {
       .on_click(() => this.openOrchestrator(s, place(s, ps), g?.top))
       .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 260, props: { tab: "space", target: { id: s.id } } }))
       .child(div().id(`fold-${s.id}`).w(12).h(14).flex_none().flex().items_center().justify_center().text_color(t.dim)
-        .rounded(3).hover((x) => x.text_color(t.foreground).bg(t.hover))
+        .rounded(3).hover((x) => x.text_color(t.foreground).bg(t.input + "80")).active((x) => x.bg(t.input + "b3"))
         .on_click((_e, cx) => { cx.stop_propagation(); this.toggle(this.folded, "folded", s.id, cx); })
         .child(svg(ICON(folded ? "chevron-right" : "chevron-down")).size(10)))
       .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(s.active ? t.foreground : t.muted).child(title))
@@ -546,7 +548,8 @@ export default class Sidebar extends View {
     const head = this.hoverable(id, h_flex().h(28).px(10).gap(8).items_center().rounded(6).cursor_pointer()
       .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
       .on_click((_e, cx) => this.openProject(r, cx))
-      .child(div().id(`fold-${r.key}`).flex_none().text_color(t.muted).hover((x) => x.text_color(t.foreground)).tooltip(folded ? "Unfold" : "Fold")
+      .child(div().id(`fold-${r.key}`).size(20).ml(-3).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.muted)
+        .hover((x) => x.bg(t.input + "80").text_color(t.foreground)).active((x) => x.bg(t.input + "b3")).tooltip(folded ? "Unfold" : "Fold")
         .on_click((_e, cx) => { cx.stop_propagation(); fold(cx); })
         .child(svg(ICON(this.hovered === id ? (folded ? "chevron-right" : "chevron-down") : "folder")).size(14)))
       .child(div().flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(r.closed ? t.muted : t.foreground).child(r.name))

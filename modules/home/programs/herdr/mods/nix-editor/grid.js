@@ -25,6 +25,10 @@ export class Grid {
     this.message = null; // { kind, text, error } from ext_messages, the latest one
     this.cmdline = null; // { lead, text, pos } from ext_cmdline
     this.flushed = false;
+    // Whole-window scrolls since the view last took them (takeScrolls): { id, rows, lines },
+    // `lines` the rows that left the window, top first, for the view to draw while it
+    // slides the window's content to its new place.
+    this.scrolls = [];
   }
 
   // The screen: grid 1's size.
@@ -94,7 +98,11 @@ export class Grid {
         // [grid, top, bot, left, right, rows, cols]: the region [top, bot) × [left, right)
         // moves up by `rows` (down when negative); what it uncovers is redrawn by nvim.
         const [id, top, bot, left, right, rows] = args;
-        const lines = this.grid(id).lines;
+        const g = this.grid(id), lines = g.lines;
+        if (id !== 1 && top === 0 && bot === g.rows && left === 0 && right === g.cols && Math.abs(rows) < g.rows) {
+          const gone = rows > 0 ? lines.slice(0, rows) : lines.slice(bot + rows, bot);
+          this.scrolls.push({ id, rows, lines: gone.map((l) => l.slice()) });
+        }
         const copy = (to, from) => { for (let c = left; c < right; c++) lines[to][c] = lines[from][c]; };
         if (rows > 0) for (let r = top; r < bot - rows; r++) copy(r, r + rows);
         else for (let r = bot - 1; r >= top - rows; r--) copy(r, r + rows);
@@ -189,6 +197,24 @@ export class Grid {
     }
   }
 
+  takeScrolls() {
+    const out = this.scrolls;
+    this.scrolls = [];
+    return out;
+  }
+
+  // A row of cells (a grid's, or one kept by a scroll) as runs of one highlight.
+  runsOf(line) {
+    const out = [];
+    for (let c = 0; c < (line?.length ?? 0); c++) {
+      const [text, hl] = line[c];
+      const last = out[out.length - 1];
+      if (last && last.hl === hl) { last.cells++; last.text += text; }
+      else out.push({ col: c, cells: 1, text, hl });
+    }
+    return out;
+  }
+
   // The windows to draw under the floats: grid 1, then each placed window grid.
   // The cell [text, hl] at a grid's row and column, and the word (letters, digits, _ and $)
   // around it: its first and past-last columns.
@@ -247,15 +273,7 @@ export class Grid {
   // A grid row as runs of one highlight: [{ col, cells, text, hl }]. A double-width
   // character is followed by an empty cell, which only adds to the run's width.
   runs(id, row) {
-    const line = this.grids.get(id)?.lines[row] ?? [];
-    const out = [];
-    for (let c = 0; c < line.length; c++) {
-      const [text, hl] = line[c];
-      const last = out[out.length - 1];
-      if (last && last.hl === hl) { last.cells++; last.text += text; }
-      else out.push({ col: c, cells: 1, text, hl });
-    }
-    return out;
+    return this.runsOf(this.grids.get(id)?.lines[row] ?? []);
   }
 
   // The cursor's shape in the current mode: "block", "vertical" or "horizontal", and how

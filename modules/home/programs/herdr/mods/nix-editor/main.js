@@ -14,6 +14,10 @@ const STATUS = 24; // px, the strip under the grid
 const TABS = 32; // px, the tab strip over it, with two files or more
 const PAD = { x: 8, y: 8 }; // px around the grid
 const BLINK = 530; // ms the caret is shown, then hidden, as macOS's insertion point
+// Scrolling slides: a window's content starts where it was and eases to where nvim put it,
+// its offset shrinking by e^(-dt/SLIDE) each frame (about 150 ms to settle), as Neovide does.
+const SLIDE = 45;
+const FRAME = 8;
 const FLOAT = { x: 8, y: 6, gap: 4 }; // a float's padding, and its distance from the line it's about
 // Cmd chords the editor keeps; any other Cmd chord stays Herdr's (new tab, palette…).
 const OWN_CMD = new Set(["s", "z", "a", "c", "x", "v", "f", "/", "[", "]", "\\", "left", "right", "up", "down", "backspace", "d", "p"]);
@@ -51,6 +55,8 @@ export default class Editor extends View {
     // after each key, click or move (this.wake), as macOS text fields do.
     this.blink = true;
     this.woke = Date.now();
+    this.slides = new Map(); // window grid → { off (px, + = content drawn lower), above, below }
+    this.sliding = false;
     cx.timer.every(BLINK, () => {
       const focused = this.handle.is_focused();
       const blink = !focused || Date.now() - this.woke < BLINK ? true : !this.blink;
@@ -68,11 +74,14 @@ export default class Editor extends View {
     this.nvim = null;
   }
 
-  // The layout's terminal font; each cell is the font's advance (JetBrains Mono: 0.6em).
+  // The layout's terminal font; each cell is the font's advance as laid out (measured, see
+  // render), 0.6em (JetBrains Mono's) until then.
   metrics() {
     const s = settings();
     const size = Number(s.font_size) || 12;
-    return { mono: s.font_family ?? "JetBrains Mono", size, cw: size * 0.6, lh: Math.round(size * 1.45) };
+    const mono = s.font_family ?? "JetBrains Mono";
+    const cw = this.advance?.key === `${mono}/${size}` ? this.advance.cw : size * 0.6;
+    return { mono, size, cw, lh: Math.round(size * 1.45) };
   }
 
   resized(px) {
@@ -98,6 +107,8 @@ export default class Editor extends View {
     const notify = () => this.cx.notify();
     const onRedraw = (events) => {
       if (!this.grid.apply(events)) return;
+      const scrolls = this.grid.takeScrolls();
+      if (scrolls.length) this.slide(scrolls);
       const c = this.grid.cursor, at = `${c.grid}:${c.row}:${c.col}`;
       if (at !== this.caretAt) { this.caretAt = at; this.woke = Date.now(); this.blink = true; }
       notify();
@@ -117,6 +128,37 @@ export default class Editor extends View {
         else if (this.line) nvim.notify("nvim_win_set_cursor", 0, [this.line, 0]);
       }, (e) => { this.error = `Couldn't start Neovim: ${e?.message ?? e}`; })
       .then(() => { this.starting = false; notify(); });
+  }
+
+  // nvim scrolled whole windows: their content slides from where it was. The rows that left
+  // are kept to fill the space the slide uncovers, as many as a window can show.
+  slide(scrolls) {
+    const { lh } = this.metrics();
+    for (const { id, rows, lines } of scrolls) {
+      const g = this.grid.grids.get(id);
+      if (!g) continue;
+      const s = this.slides.get(id) ?? { off: 0, above: [], below: [] };
+      if (rows > 0) { if (s.off < 0) { s.off = 0; s.below = []; } s.above = [...s.above, ...lines].slice(-g.rows); }
+      else { if (s.off > 0) { s.off = 0; s.above = []; } s.below = [...lines, ...s.below].slice(0, g.rows); }
+      s.off = Math.max(-g.rows * lh, Math.min(g.rows * lh, s.off + rows * lh));
+      this.slides.set(id, s);
+    }
+    if (this.sliding) return;
+    this.sliding = true;
+    this.frameAt = Date.now();
+    this.cx.timer.after(FRAME, () => this.step(), { owner: this });
+  }
+
+  step() {
+    const now = Date.now(), k = Math.exp(-(now - this.frameAt) / SLIDE);
+    this.frameAt = now;
+    for (const [id, s] of this.slides) {
+      s.off *= k;
+      if (Math.abs(s.off) < 0.5) this.slides.delete(id);
+    }
+    this.cx.notify();
+    if (this.slides.size) this.cx.timer.after(FRAME, () => this.step(), { owner: this });
+    else this.sliding = false;
   }
 
   // Keys, as Neovim notation. Clipboard chords go through the system clipboard here,
@@ -252,8 +294,12 @@ export default class Editor extends View {
   // columns stay exact whatever the glyphs measure. `base` is the surface under the grid:
   // runs of that color draw no background of their own.
   row(id, r, x, y, base, m, t) {
+    return this.rowOf(this.grid.runs(id, r), this.grid.grids.get(id).cols, x, y, base, m, t);
+  }
+
+  rowOf(cells, cols, x, y, base, m, t) {
     const g = this.grid;
-    const runs = g.runs(id, r).map((run) => {
+    const runs = cells.map((run) => {
       const s = g.style(run.hl);
       const blank = !run.text.trim();
       return div().absolute().left(run.col * m.cw).top(0).w(run.cells * m.cw).h(m.lh).flex_none().overflow_hidden()
@@ -271,16 +317,25 @@ export default class Editor extends View {
           .text_color(s.sp ?? t.blocked).underline().when(s.undercurl, (e) => e.text_decoration_wavy()).whitespace_nowrap()
           .child(" ".repeat(run.cells))));
     });
-    return div().absolute().left(x).top(y).w(g.grids.get(id).cols * m.cw).h(m.lh).children(runs)
+    return div().absolute().left(x).top(y).w(cols * m.cw).h(m.lh).children(runs)
       .when(Boolean(this.link), (e) => e.cursor_pointer()).when(!this.link, (e) => e.cursor_text());
   }
 
   // A window grid where nvim put it on the screen, opaque: grid 1 under it keeps what other
   // tab pages drew there (a split's separator).
   windowRows(w, m, t) {
-    const base = this.grid.defaults.bg;
-    return Array.from({ length: w.rows }, (_, r) => this.row(w.id, r, PAD.x + w.col * m.cw, PAD.y + (w.row + r) * m.lh, base, m, t)
-      .when(w.id !== 1 && Boolean(base), (e) => e.bg(base)));
+    const base = this.grid.defaults.bg, g = this.grid;
+    const opaque = (e) => e.when(w.id !== 1 && Boolean(base), (e) => e.bg(base));
+    const s = this.slides.get(w.id);
+    if (!s) return Array.from({ length: w.rows }, (_, r) => opaque(this.row(w.id, r, PAD.x + w.col * m.cw, PAD.y + (w.row + r) * m.lh, base, m, t)));
+    // Sliding: the window clips its rows, drawn `off` px from their place, and the rows that
+    // left fill the space uncovered above (scrolling down) or below (scrolling up).
+    const line = (runs, y) => opaque(this.rowOf(runs, w.cols, 0, y, base, m, t));
+    const rows = Array.from({ length: w.rows }, (_, r) => line(g.runs(w.id, r), r * m.lh + s.off));
+    const n = Math.ceil(Math.abs(s.off) / m.lh);
+    if (s.off > 0) for (let k = 1; k <= Math.min(n, s.above.length); k++) rows.push(line(g.runsOf(s.above[s.above.length - k]), s.off - k * m.lh));
+    else for (let k = 0; k < Math.min(n, s.below.length); k++) rows.push(line(g.runsOf(s.below[k]), (w.rows + k) * m.lh + s.off));
+    return [div().absolute().left(PAD.x + w.col * m.cw).top(PAD.y + w.row * m.lh).w(w.cols * m.cw).h(w.rows * m.lh).overflow_hidden().children(rows)];
   }
 
   // Where a float is drawn: in a padded frame 4px under the line it's about (the line above
@@ -318,7 +373,7 @@ export default class Editor extends View {
     if (!cg || row >= cg.rows || col >= cg.cols || cg.hidden) return null;
     let x, y;
     if (cg.float) { const r = this.placeFloat(cg, m); x = r.x + FLOAT.x + col * m.cw; y = r.y + FLOAT.y + row * m.lh; }
-    else { x = PAD.x + (cg.col + col) * m.cw; y = PAD.y + (cg.row + row) * m.lh; }
+    else { x = PAD.x + (cg.col + col) * m.cw; y = PAD.y + (cg.row + row) * m.lh + (this.slides.get(grid)?.off ?? 0); }
     const { shape, percentage } = g.cursorShape();
     // A bar between two characters, over neither: centred on the cells' boundary. Steady and
     // dimmed while the editor doesn't have the keyboard.
@@ -481,7 +536,7 @@ export default class Editor extends View {
           .when(Boolean(dir), (e) => e.child(div().flex_none().whitespace_nowrap().text_color(t.dim).child(dir)))
           .when(x.splits > 1, (e) => e.child(svg("mods/nix-head/icons/split-right.svg").size(12).flex_none().text_color(t.dim)))
           .child(div().id(`editor-tab-close-${i}`).size(18).flex_none().flex().items_center().justify_center().rounded(4)
-            .text_color(t.dim).hover((e) => e.bg(t.hover).text_color(t.foreground)).active((e) => e.bg(t.selected))
+            .text_color(t.dim).hover((e) => e.bg(t.input + "80").text_color(t.foreground)).active((e) => e.bg(t.input + "b3"))
             .tooltip(x.modified ? "Close (⌥-click: discard the changes)" : "Close")
             .on_click((e, cx) => { cx.stop_propagation(); this.closeTab(i + 1, e.modifiers.alt); })
             .child(svg("mods/nix-head/icons/x.svg").size(12)));
@@ -510,7 +565,18 @@ export default class Editor extends View {
       .when(g.rows > 0 && Boolean(this.caret(m, t)), (e) => e.child(this.caret(m, t)))
       .when(Boolean(this.popup(m, t)), (e) => e.child(this.popup(m, t)))
       .when(Boolean(g.cmdline), (e) => e.child(this.cmdline(m, t)));
-    return v_flex().id("nix-editor").size_full().min_h(0).bg(g.defaults.bg ?? t.background).text_color(t.foreground)
+    // 100 cells laid out where nobody sees them: the font's real advance, so a character
+    // drawn inside a run sits where its cell is (a caret between two never covers one).
+    const measure = div().absolute().top(0).left(0).invisible().whitespace_nowrap().font_family(m.mono).text_size(m.size)
+      .on_size_change((px) => {
+        const cw = px.width / 100, key = `${m.mono}/${m.size}`;
+        if (px.width > 0 && (this.advance?.key !== key || Math.abs(this.advance.cw - cw) > 0.01)) {
+          this.advance = { key, cw };
+          if (this.px) { this.size = null; this.resized(this.px); }
+          this.cx.notify();
+        }
+      }).child("0".repeat(100));
+    return v_flex().id("nix-editor").size_full().min_h(0).relative().child(measure).bg(g.defaults.bg ?? t.background).text_color(t.foreground)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .on_modifiers_changed((e) => this.followLink(e.modifiers.platform))
       .when(Boolean(strip), (e) => e.child(strip))

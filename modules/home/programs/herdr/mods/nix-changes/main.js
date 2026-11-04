@@ -228,7 +228,7 @@ export default class Changes extends View {
     if (!entry?.tool) return null;
     const pr = entry.pr, word = entry.tool === "gh" ? "PR" : "MR";
     const button = (id, label, onClick) => div().id(id).h(26).px(8).flex().items_center().flex_none().rounded(6).text_size(12).font_medium()
-      .text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.raised).text_color(t.foreground)).on_click(onClick).child(label);
+      .text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.raised).text_color(t.foreground)).active((s) => s.bg(t.selected)).on_click(onClick).child(label);
     const row = h_flex().h(32).flex_none().px(12).gap(8).items_center().text_size(12).border_t(1).border_color(t.border);
     if (!pr) {
       return row.child(div().text_size(11).text_color(t.dim).child(b.upstream ? `No ${word} yet` : "Not pushed yet")).child(div().flex_1())
@@ -240,7 +240,7 @@ export default class Changes extends View {
     const review = pr.review === "APPROVED" ? ["approved", t.ansi2] : pr.review === "CHANGES_REQUESTED" ? ["changes requested", t.ansi1] : null;
     return row
       .child(div().flex_none().text_size(11).font_medium().text_color(state[1]).child(state[0]))
-      .child(div().id("pr-open").min_w(0).flex_1().truncate().cursor_pointer().text_color(t.foreground).hover((s) => s.text_color(t.accent))
+      .child(div().id("pr-open").min_w(0).flex_1().truncate().cursor_pointer().text_color(t.foreground).hover((s) => s.text_color(t.accent).underline()).active((s) => s.opacity(0.7))
         .on_click(() => exec("open", [pr.url]).catch(() => null)).child(`#${pr.number} ${pr.title}`))
       .when(Boolean(checks), (e) => e.child(div().flex_none().text_color(checks[1]).child(checks[0])))
       .when(Boolean(review), (e) => e.child(div().flex_none().text_size(11).text_color(review[1]).child(review[0])))

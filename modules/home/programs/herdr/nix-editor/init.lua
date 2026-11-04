@@ -31,6 +31,9 @@ o.cmdheight = 1
 o.shortmess:append("IcsW")
 o.mouse = "a"
 o.mousemoveevent = true
+-- A line per wheel step (a trackpad sends one per line height it moves): the view slides
+-- each scroll, so the text follows the fingers.
+o.mousescroll = "ver:1,hor:2"
 o.termguicolors = true
 o.updatetime = 300
 o.scrolloff = 4

@@ -12,7 +12,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { props, exec, readTextFile, watchFolder, theme, settings, shared, setShared, spaces, panes, run, notify, home, appHome } from "herdr";
 import { addedFile, parsePatch, rowsOf } from "./model.js";
 import { languageOf, splitAt, tokenize } from "./syntax.js";
-import { columnAt, editableFiles, liveFile, selectedCols, CELL } from "./edit.js";
+import { columnAt, cutAt, editableFiles, liveFile, selectedCols, CELL } from "./edit.js";
 import { openInEditor } from "../_lib/editor.js";
 import { nvimKey } from "../nix-editor/grid.js";
 import { startNvim } from "../nix-editor/nvim.js";
@@ -259,9 +259,12 @@ export default class Diff extends View {
     const slash = f.path.lastIndexOf("/");
     const name = f.path.slice(slash + 1), dir = slash >= 0 ? f.path.slice(0, slash) : "";
     // A 36px bar like the panels' headers, on chrome between hairlines.
-    return h_flex().w_full().h(SIZE.file).flex_none().px(12).gap(8).items_center().bg(t.chrome).border_t(1).border_b(1).border_color(t.border)
+    // An id, so the row and its chevron take their hover and pressed styles.
+    return h_flex().id(`file-${f.path}`).w_full().h(SIZE.file).flex_none().px(12).gap(8).items_center().bg(t.chrome).border_t(1).border_b(1).border_color(t.border)
       .cursor_pointer().hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)).text_size(12.5)
-      .child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.dim))
+      .child(div().id(`fold-${f.path}`).size(18).ml(-4).flex_none().flex().items_center().justify_center().rounded(4).text_color(t.dim)
+        .hover((s) => s.bg(t.input + "80").text_color(t.foreground)).active((s) => s.bg(t.input + "b3"))
+        .child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(10)))
       .child(this.statusIcon(f.status, t))
       .child(div().flex_none().font_medium().text_color(t.foreground).child(name))
       .when(Boolean(f.modified), (e) => e.child(div().size(6).rounded(3).flex_none().bg(t.ansi3)))
@@ -282,7 +285,7 @@ export default class Diff extends View {
     if (r.type === "file") return this.toggle(f.path, cx);
     if (r.type !== "line" || f.status === "D") return;
     if (f.live && this.nvim && !this.pointer?.cmd) {
-      if (r.line.kind !== "-") this.edit(f.path, r.line.new, columnAt(this.pointer?.x ?? 0));
+      if (r.line.kind !== "-") this.edit(f.path, r.line.new, columnAt(this.pointer?.x ?? 0, this.cell));
       return;
     }
     this.openFile(f.path, r.line.new ?? r.line.old);
@@ -302,14 +305,23 @@ export default class Diff extends View {
     const sel = here ? selectedCols(here.sel, line.new, line.text.length) : null;
     const caret = here && here.line === line.new ? here.col : null;
     const showCaret = caret !== null && (this.blink || this.focused === false);
-    const text = h_flex().flex_none().relative().whitespace_nowrap()
-      .when(Boolean(sel), (e) => e.child(div().absolute().top(1).bottom(1).left(sel[0] * CELL).w((sel[1] - sel[0]) * CELL).bg(t.selection ?? t.accent + "40")))
-      .children(parts.map((p) =>
-        div().flex_none().text_color(p.kind ? syn[p.kind] ?? t.foreground : t.foreground)
-          .when(p.changed, (e) => e.bg(strong).rounded(2)).child(p.text)))
-      // Centred on the boundary between two characters, over neither.
-      .when(showCaret, (e) => e.child(div().absolute().top(2).bottom(2).left(caret * CELL - 0.75).w(1.5).rounded(1)
-        .bg(this.focused === false ? t.dim : t.accent)));
+    // The caret is a zero-width mark between two parts, the selection the background of the
+    // parts it covers: both where the text's own layout puts the characters.
+    const mark = () => div().relative().w(0).h(16).flex_none().child(div().absolute().top(0).bottom(0).left(-0.75).w(1.5).rounded(1)
+      .bg(this.focused === false ? t.dim : t.accent));
+    const chosen = (p) => sel && p.col >= sel[0] && p.col < sel[1];
+    const segs = sel || showCaret ? cutAt(parts, [sel?.[0], sel?.[1], showCaret ? caret : null]) : parts;
+    const pieces = [];
+    for (const p of segs) {
+      if (showCaret && p.col === caret) pieces.push(mark());
+      pieces.push(div().flex_none().text_color(p.kind ? syn[p.kind] ?? t.foreground : t.foreground)
+        .when(p.changed && !chosen(p), (e) => e.bg(strong).rounded(2))
+        .when(Boolean(chosen(p)), (e) => e.bg(t.selection ?? t.accent + "40")).child(p.text));
+    }
+    if (showCaret && caret >= line.text.length) pieces.push(mark());
+    // A selection past the line's end takes its line break: one cell.
+    if (sel && sel[1] > line.text.length) pieces.push(div().w(CELL).h(16).flex_none().bg(t.selection ?? t.accent + "40"));
+    const text = h_flex().flex_none().items_center().whitespace_nowrap().children(pieces);
     return h_flex().w_full().h(SIZE.line).flex_none().items_center().font_family(this.mono).text_size(13).when(Boolean(bg), (e) => e.bg(bg))
       .when(editable, (e) => e.cursor_text()).when(!f.live && f.status !== "D", (e) => e.cursor_pointer())
       // The line the caret is on stands out a little, as in the editor.
@@ -383,8 +395,12 @@ export default class Diff extends View {
                 (range) => { this.visible = range; return this.rows.slice(range.start, range.end).map((r) => this.row(r, t, syn)); })
                 .track_scroll(this.scroll).on_item_click((key, cx) => this.click(key, cx)).size_full())))
           .child(Scrollbar.vertical("diff-rows").viewport_from_layout().absolute().inset_0());
-    return v_flex().id("nix-diff").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(13)
+    return v_flex().id("nix-diff").size_full().min_h(0).relative().bg(t.background).text_color(t.foreground).text_size(13)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
+      // The font's real advance at the lines' size, for the column under a click: 100 cells
+      // laid out where nobody sees them.
+      .child(div().absolute().top(0).left(0).invisible().whitespace_nowrap().font_family(this.mono).text_size(13)
+        .on_size_change((px) => { if (px.width > 0) this.cell = px.width / 100; }).child("0".repeat(100)))
       .child(this.header(t)).child(body);
   }
 }

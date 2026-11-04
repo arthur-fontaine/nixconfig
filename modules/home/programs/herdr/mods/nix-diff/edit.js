@@ -24,9 +24,10 @@ export function liveFile(file, msg) {
   return { ...file, hunks, add: msg.add ?? 0, del: msg.del ?? 0, lines, cut: false, modified: Boolean(msg.modified), live: true };
 }
 
-// The text column under x (from the row's left edge): the nearest gap between characters.
-export function columnAt(x) {
-  return Math.max(0, Math.round((x - TEXT_X) / CELL));
+// The text column under x (from the row's left edge): the nearest gap between characters,
+// `cell` the font's measured advance (CELL until the view has measured it).
+export function columnAt(x, cell = CELL) {
+  return Math.max(0, Math.round((x - TEXT_X) / cell));
 }
 
 // The columns [start, end) of line `n` (of `length` columns) a selection covers, or null.
@@ -47,4 +48,20 @@ export function editableFiles(files, root) {
   return files.filter((f) => !f.binary && f.status !== "D").map((f) => ({
     path: `${root}/${f.path}`, root, base: f.status === "R" && f.oldPath ? f.oldPath : f.path,
   }));
+}
+
+// A line's parts cut at columns (the caret, the selection's ends), each with the column it
+// starts at: the caret goes in the text between two parts, where the layout puts it.
+export function cutAt(parts, cols) {
+  const at = [...new Set(cols.filter((c) => c != null))].sort((a, b) => a - b);
+  const out = [];
+  let col = 0;
+  for (const p of parts) {
+    const end = col + p.text.length;
+    let from = col;
+    for (const c of at) if (c > from && c < end) { out.push({ ...p, text: p.text.slice(from - col, c - col), col: from }); from = c; }
+    out.push({ ...p, text: p.text.slice(from - col), col: from });
+    col = end;
+  }
+  return out;
 }

@@ -75,7 +75,7 @@ export default class Tabs extends View {
     const space = spaces().find(p => p.active);
     const shown = space?.tabs ?? [];
     const stop = (_e, cx) => cx.stop_propagation();
-    const button = (id, label, action, tip) => div().id(id).size(28).flex_none().self_center().flex().items_center().justify_center().rounded(6).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
+    const button = (id, label, action, tip) => div().id(id).size(28).flex_none().self_center().flex().items_center().justify_center().rounded(6).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground)).active(s => s.bg(t.selected))
       .when(Boolean(tip), el => el.tooltip(tip)).on_mouse_down("left", stop).on_click(action).child(label);
     const item = (c, i) => {
       const program = panes().find(p => p.tab === c.id && p.program?.agent)?.program ?? panes().find(p => p.tab === c.id)?.program;
@@ -104,7 +104,8 @@ export default class Tabs extends View {
         .child(div().max_w(170).truncate().child(c.zoomed ? `${name} Z` : name))
         .when(c.status === "working", el => el.child(svg(ICON("loader")).size(12).flex_none().text_color(t.working).spin(900)))
         .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(3).bg(t[c.status])))
-        .when(c.active, el => el.child(div().id(`close-${c.id}`).text_color(t.dim).hover(s => s.text_color(t.foreground)).tooltip("Close tab").on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg(ICON("x")).size(12))));
+        .when(c.active, el => el.child(div().id(`close-${c.id}`).size(18).flex_none().flex().items_center().justify_center().rounded(4).text_color(t.dim)
+          .hover(s => s.bg(t.input + "80").text_color(t.foreground)).active(s => s.bg(t.input + "b3")).tooltip("Close tab").on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg(ICON("x")).size(12))));
     };
     const root = layout(), sidebar = find(root, "sidebar"), w = window();
     // Old saved rails and a dragged-narrow sidebar can be smaller than the window buttons.
@@ -119,7 +120,7 @@ export default class Tabs extends View {
       const on = panel && !panel.hidden && body?.active === id;
       return div().id(`panel-${id}`).size(28).flex_none().flex().items_center().justify_center().rounded(6)
         .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.dim)
-        .hover(s => s.bg(on ? t.selected : t.hover).text_color(t.foreground)).tooltip(label).on_mouse_down("left", stop)
+        .hover(s => s.bg(on ? t.selected : t.hover).text_color(t.foreground)).active(s => s.bg(on ? t.input + "80" : t.selected)).tooltip(label).on_mouse_down("left", stop)
         .on_click(() => {
           if (on) run("layout.hide", { id: "panel" });
           else { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); }

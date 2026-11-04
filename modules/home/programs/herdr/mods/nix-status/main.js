@@ -93,7 +93,7 @@ export default class Status extends View {
     const working = list.filter((a) => a.status === "working").length;
     const label = (icon, text) => h_flex().gap(5).items_center().child(svg(ICON(icon)).size(12).flex_none().text_color(t.dim)).child(text);
     const count = (id, n, word, color) => h_flex().id(id).gap(5).items_center().cursor_pointer().text_color(color ?? t.muted)
-      .hover((x) => x.opacity(0.75))
+      .hover((x) => x.opacity(0.75)).active((x) => x.opacity(0.55))
       .on_click(() => this.command("jump")).when(Boolean(color), (el) => el.child(div().size(6).flex_none().rounded(3).bg(color))).child(`${n} ${word}`);
     return h_flex().size_full().px(12).gap(14).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(11).text_color(t.muted)
       .child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer"))
@@ -103,7 +103,7 @@ export default class Status extends View {
       .when(working > 0, (el) => el.child(count("agents-working", working, "working")))
       .child(div().flex_1())
       .child(h_flex().gap(14).items_center().text_color(t.dim).children(this.hints().map(([key, text, action]) =>
-        h_flex().id(`hint-${action}`).gap(4).items_center().cursor_pointer().hover((x) => x.text_color(t.foreground)).on_click(() => run(action))
+        h_flex().id(`hint-${action}`).gap(4).items_center().cursor_pointer().hover((x) => x.text_color(t.foreground)).active((x) => x.opacity(0.7)).on_click(() => run(action))
           .child(div().font_medium().text_color(t.muted).child(key)).child(text))));
   }
 }

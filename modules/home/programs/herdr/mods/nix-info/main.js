@@ -284,8 +284,8 @@ export default class Info extends View {
     return [
       ...running.map((c) => this.toolRow(t, c, now, big)),
       ...shown.map((c) => this.toolRow(t, c, now, big)),
-      ...(history.length > shown.length ? [div().id("show-all").h(24).mx(16).my(4).flex_none().flex().items_center().cursor_pointer()
-        .text_size(12).text_color(t.muted).hover((e) => e.text_color(t.foreground))
+      ...(history.length > shown.length ? [div().id("show-all").h(24).mx(10).my(4).px(6).flex_none().flex().items_center().rounded(6).cursor_pointer()
+        .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground)).active((e) => e.bg(t.selected))
         .on_click((_e, cx) => { this.all = true; cx.notify(); }).child(`Show all ${history.length}`)] : []),
     ];
   }
