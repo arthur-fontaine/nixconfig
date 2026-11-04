@@ -234,6 +234,8 @@ let
     # Commands run in the environment of an interactive shell in the session's folder,
     # direnv's included, however Pi was started (Herdr, `hc run`).
     shell-env = ./extensions/shell-env;
+    # Thinking as a tool-like row: "⦁ Thinking (3.2k tokens · 12s)", not nothing.
+    thinking-rows = ./extensions/thinking-rows;
   };
   # Pi loads the folder's extensions in directory order, unsorted, and each tool renderer
   # wraps those of the extensions loaded after it. A manifest fixes the order: these first,
