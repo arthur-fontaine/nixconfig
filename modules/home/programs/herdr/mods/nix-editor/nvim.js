@@ -4,6 +4,7 @@
 // main.js's. Runtime: "fs/promises" and the global fetch. Not "net": Herdr's script
 // runtime crashes with a socket read pending under load, fetch holds up.
 import * as nvimFs from "fs/promises";
+import nvimNet from "net";
 
 // --- UTF-8 and base64 (the runtime has no TextEncoder, TextDecoder or btoa) -----------
 
@@ -312,28 +313,121 @@ export function nvimConnection({ config, id, post, onRedraw, onNotify }) {
   return c;
 }
 
+// The same session over the bridge's socket (port): ~1 ms a round trip where Herdr's fetch
+// takes 120 ms or more, so keys, scrolling and the caret answer at once. The bridge reads
+// base64 lines and writes raw bytes. Still no `async`: a read pending in a function that
+// returned is what crashed Herdr (84b05e6); this read loop's state lives on `c`.
+export function nvimSocketConnection({ socket, rest, onRedraw, onNotify }) {
+  const c = { closed: false, nextId: 1, pending: new Map(), writing: Promise.resolve(), decoder: new NvimDecoder() };
+  c.send = (message) => {
+    const line = nvimBase64(nvimEncode(message)) + "\n";
+    c.writing = c.writing.then(() => (c.closed ? undefined : socket.write(line))).catch(() => {});
+  };
+  c.request = (method, ...args) => {
+    if (c.closed) return Promise.reject(new Error("nvim is closed"));
+    const n = c.nextId++;
+    return new Promise((resolve, reject) => { c.pending.set(n, { resolve, reject }); c.send([0, n, method, args]); });
+  };
+  c.notify = (method, ...args) => { if (!c.closed) c.send([2, method, args]); };
+  c.handle = (message) => {
+    const kind = message[0];
+    if (kind === 1) {
+      const p = c.pending.get(message[1]);
+      if (!p) return;
+      c.pending.delete(message[1]);
+      const error = message[2];
+      if (error) p.reject(new Error(Array.isArray(error) ? String(error[1]) : String(error)));
+      else p.resolve(message[3]);
+    } else if (kind === 2) {
+      if (message[1] === "redraw") onRedraw?.(message[2]);
+      else onNotify?.(message[1], message[2]);
+    } else if (kind === 0) {
+      c.send([1, message[1], [0, `herdr: ${message[2]} is not supported`], null]);
+    }
+  };
+  c.finish = () => {
+    if (c.ended) return;
+    c.ended = c.closed = true;
+    for (const p of c.pending.values()) p.reject(new Error("nvim is closed"));
+    c.pending.clear();
+    onNotify?.("nvim_closed", []);
+  };
+  c.pump = () => {
+    if (c.closed) return c.finish();
+    socket.read(65536).then((chunk) => {
+      if (!chunk) return c.finish();
+      for (const m of c.decoder.feed(chunk)) c.handle(m);
+      c.pump();
+    }).catch((e) => { onNotify?.("nvim_error", [String(e?.message ?? e)]); c.finish(); });
+  };
+  c.input = (keys) => c.notify("nvim_input", keys);
+  c.inputMouse = (button, action, modifier, grid, row, col) => c.notify("nvim_input_mouse", button, action, modifier, grid, row, col);
+  c.resize = (w, h) => c.notify("nvim_ui_try_resize", w, h);
+  // Closing the socket ends nvim: the bridge kills the process.
+  c.close = () => { c.closed = true; try { socket.close(); } catch {} };
+  for (const m of c.decoder.feed(rest)) c.handle(m);
+  return c;
+}
+
+// The bridge's one-line answer to a socket's hello, then what followed it.
+function nvimHandshake(socket, got = new Uint8Array(0)) {
+  const nl = got.indexOf(10);
+  if (nl >= 0) return Promise.resolve({ answer: JSON.parse(nvimUtf8Decode(got, 0, nl)), rest: got.subarray(nl + 1) });
+  return socket.read(65536).then((chunk) => {
+    if (!chunk) throw new Error("bridge closed the connection");
+    const joined = new Uint8Array(got.length + chunk.length);
+    joined.set(got); joined.set(chunk, got.length);
+    return nvimHandshake(socket, joined);
+  });
+}
+
+// A socket session with a fresh nvim, or null (then the HTTP side is used).
+function nvimOverSocket({ config, cwd, cmd, onRedraw, onNotify, connect }) {
+  if (!config.port) return Promise.resolve(null);
+  return connect("127.0.0.1", config.port).then((socket) =>
+    socket.write(JSON.stringify({ token: config.token, op: "run", input: "base64", cwd, cmd }) + "\n")
+      .then(() => nvimHandshake(socket))
+      .then(({ answer, rest }) => {
+        if (!answer.ok) { socket.close(); return null; }
+        const c = nvimSocketConnection({ socket, rest, onRedraw, onNotify });
+        c.pump();
+        return c;
+      }, () => { socket.close(); return null; }), () => null);
+}
+
 // Starts `nvim --embed` for `file` in `cwd`, attaches a `width`×`height` UI and opens the
 // file: the connection, or null when the bridge or nvim isn't there. `home` is Herdr's
 // home() (where the bridge's config and init.lua live); `post` (fetch) and `readFile` are
 // for tests.
 export function startNvim({ file, cwd, width, height, onRedraw, onNotify, home, appHome, config = "init.lua",
-  post = (url, options) => fetch(url, options), readFile = nvimFs.readFile }) {
+  post = (url, options) => fetch(url, options), readFile = nvimFs.readFile,
+  connect = (host, port) => nvimNet.connect(host, port) }) {
   // init.lua for the editor, diff.lua for nix-diff's editable diff, in Herdr's own home
   // (HERDR_APP_HOME's when set: a test window has its own).
   const init = `${appHome ?? `${home}/.config/herdr-app`}/nix-editor/${config}`;
-  return nvimBridgeConfig(home, readFile).then((config) => {
-    if (!config?.token || !config.http) return null;
-    return nvimPost(config, "run", { cwd, cmd: ["nvim", "--embed", "-n", "-i", "NONE", "-u", init] }, post).then((r) => {
+  const cmd = ["nvim", "--embed", "-n", "-i", "NONE", "-u", init];
+  const overHttp = (config) => {
+    if (!config.http) return null;
+    return nvimPost(config, "run", { cwd, cmd }, post).then((r) => {
       const answer = JSON.parse(r.text);
       if (!answer.ok) return null;
       const c = nvimConnection({ config, id: answer.id, post, onRedraw, onNotify });
       c.pump();
+      return c;
+    });
+  };
+  return nvimBridgeConfig(home, readFile).then((config) => {
+    if (!config?.token) return null;
+    return nvimOverSocket({ config, cwd, cmd, onRedraw, onNotify, connect })
+      .then((c) => c ?? overHttp(config))
+      .then((c) => {
+      if (!c) return null;
       // ext_messages and ext_cmdline: no message area and so no hit-enter prompt; the view
       // shows messages in its status strip and the cmdline as its own line. ext_multigrid:
       // each window is its own grid, so the view draws floats (hover, diagnostics) itself.
       return c.request("nvim_ui_attach", width, height, { ext_linegrid: true, ext_multigrid: true, ext_popupmenu: true, ext_messages: true, ext_cmdline: true, ext_hlstate: false, rgb: true })
         .then(() => (file ? c.request("nvim_cmd", { cmd: "edit", args: [file] }, {}) : null))
         .then(() => c, (e) => { c.close(); throw e; });
-    });
+      });
   }).catch(() => null);
 }

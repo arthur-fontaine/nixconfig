@@ -6,7 +6,7 @@
 // this view draws as its tab strip, or beside the current file (a split).
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, settings, props, exec, home, appHome, shared, setShared, spaces, panes, focused, run } from "herdr";
+import { theme, settings, props, exec, home, appHome, shared, setShared, spaces, panes, focused, run, writeTextFile } from "herdr";
 import { Grid, nvimKey } from "./grid.js";
 import { startNvim } from "./nvim.js";
 
@@ -20,8 +20,9 @@ const BLINK = 530; // ms the caret is shown, then hidden, as macOS's insertion p
 // content was, its offset (`anim`) shrinking by e^(-dt/SLIDE) each frame, as Neovide does.
 const SLIDE = 45;
 const FRAME = 8;
-// Rows nvim draws under the editor's bottom edge, clipped: what the content uncovers when it
-// moves up ahead of nvim. scrolloff (init.lua) keeps the caret above them.
+// Rows nvim draws under the editor's bottom edge, out of sight: what the content uncovers
+// when it moves up ahead of nvim (a millisecond over the bridge's socket). scrolloff
+// (init.lua) keeps the caret above them.
 const EXTRA = 2;
 const FLOAT = { x: 8, y: 6, gap: 4 }; // a float's padding, and its distance from the line it's about
 // Cmd chords the editor keeps; any other Cmd chord stays Herdr's (new tab, palette…).
@@ -88,7 +89,8 @@ export default class Editor extends View {
     const size = Number(s.font_size) || 12;
     const mono = s.font_family ?? "JetBrains Mono";
     const cw = this.advance?.key === `${mono}/${size}` ? this.advance.cw : size * 0.6;
-    return { mono, size, cw, lh: Math.round(size * 1.45) };
+    const lh = Math.round(size * 1.45);
+    return { mono, size, cw, lh, oy: PAD.y };
   }
 
   resized(px) {
@@ -133,12 +135,32 @@ export default class Editor extends View {
         this.nvim = nvim;
         if (!nvim) this.error = "Couldn't start Neovim";
         else if (this.line) nvim.notify("nvim_win_set_cursor", 0, [this.line, 0]);
+        if (nvim && props()?.testScroll) this.cx.timer.after(1500, () => this.testScroll(), { owner: this });
       }, (e) => { this.error = `Couldn't start Neovim: ${e?.message ?? e}`; })
       .then(() => { this.starting = false; notify(); });
   }
 
   // nvim scrolled whole windows: their content slides from where it was. The rows that left
   // are kept to fill the space the slide uncovers, as many as a window can show.
+  // A synthetic trackpad gesture through scroll(), each step logged (props.testScroll): for
+  // checking the scroll feel without a person at the trackpad.
+  testScroll() {
+    const log = [];
+    const w = this.grid.windows().find((g) => g.id !== 1);
+    if (!w) return;
+    const m = this.metrics(), { lh, cw } = m;
+    const at = { x: PAD.x + (w.col + 5) * cw, y: m.oy + (w.row + 5) * lh };
+    const top = () => this.grid.runs(w.id, 0).map((r) => r.text).join("").trim().slice(0, 12);
+    const snap = (what) => { const s = this.slides.get(w.id); log.push(`${Date.now() % 100000} ${what} pred=${s?.pred?.toFixed(1)} anim=${s?.anim?.toFixed(1)} pending=${s?.pending} top=${top()}`); };
+    this.onScrollLog = snap;
+    let i = 0;
+    const tick = () => {
+      if (i++ < 40) { this.scroll({ delta: { x: 0, y: -6 }, local_position: at, modifiers: {}, touch_phase: "moved" }); snap("wheel"); this.cx.timer.after(16, tick, { owner: this }); }
+      else this.cx.timer.after(600, () => { snap("end"); writeTextFile(`${appHome()}/scroll-test.log`, log.join("\n") + "\n", null).catch(() => null); }, { owner: this });
+    };
+    tick();
+  }
+
   slideOf(id) {
     let s = this.slides.get(id);
     if (!s) { s = { pred: 0, anim: 0, pending: 0, above: [], below: [] }; this.slides.set(id, s); }
@@ -161,6 +183,7 @@ export default class Editor extends View {
       if (rows !== asked) { s.anim = Math.max(-g.rows * lh, Math.min(g.rows * lh, s.anim + (rows - asked) * lh)); animate = true; }
     }
     if (animate) this.animate();
+    this.onScrollLog?.(`nvim ${scrolls.map((x) => x.rows).join(",")}`);
   }
 
   animate() {
@@ -225,7 +248,7 @@ export default class Editor extends View {
       }
     }
     const col = Math.max(0, Math.min(g.cols - 1, Math.floor((p.x - PAD.x) / m.cw)));
-    const row = Math.max(0, Math.min(g.rows - 1, Math.floor((p.y - PAD.y) / m.lh)));
+    const row = Math.max(0, Math.min(g.rows - 1, Math.floor((p.y - m.oy) / m.lh)));
     const hit = g.at(row, col);
     return { ...hit, screen: `${row}:${col}` };
   }
@@ -284,13 +307,13 @@ export default class Editor extends View {
     const w = this.grid.grids.get(grid);
     if (w && !w.float && grid !== 1 && e.delta.y) {
       const s = this.slideOf(grid);
-      s.pred = Math.max(-lh * (Math.abs(s.pending) + 1), Math.min(lh * (Math.abs(s.pending) + 1), s.pred + e.delta.y));
+      s.pred = Math.max(-lh * EXTRA, Math.min(lh * EXTRA, s.pred + e.delta.y));
       this.cx.notify();
     }
     while (Math.abs(this.wheel.y) >= lh) {
       const up = this.wheel.y > 0;
       const s = this.slides.get(grid);
-      if (s && Math.abs(s.pending) >= 3) { this.wheel.y = 0; break; }
+      if (s && Math.abs(s.pending) >= EXTRA) { this.wheel.y = 0; break; }
       this.nvim.inputMouse("wheel", up ? "up" : "down", this.mods(e.modifiers), grid, row, col);
       if (s) s.pending += up ? -1 : 1;
       this.wheel.y += up ? -lh : lh;
@@ -300,12 +323,15 @@ export default class Editor extends View {
       this.nvim.inputMouse("wheel", left ? "left" : "right", this.mods(e.modifiers), grid, row, col);
       this.wheel.x += left ? -cw * 4 : cw * 4;
     }
-    if (e.touch_phase === "ended") {
+    // The gesture is over when no scroll has come for a moment (its inertia included, which
+    // macOS may report as "ended" event by event): what is left of the offset eases back.
+    const n = (this.wheels = (this.wheels ?? 0) + 1);
+    this.cx.timer.after(150, () => {
+      if (n !== this.wheels) return;
       this.wheel = { x: 0, y: 0 };
-      // The fingers are off: what is left of the offset eases back.
       for (const s of this.slides.values()) { s.anim += s.pred; s.pred = 0; s.pending = 0; }
       this.animate();
-    }
+    }, { owner: this });
   }
 
   // Cmd held over a word: it is underlined and the pointer is a hand, as a link to its
@@ -325,7 +351,7 @@ export default class Editor extends View {
     const l = this.link, w = l && this.grid.grids.get(l.grid);
     if (!w || w.float || w.hidden) return null;
     const color = this.grid.style(this.grid.cellAt(l.grid, l.row, l.start)?.[1] ?? 0).fg ?? t.foreground;
-    return div().absolute().left(PAD.x + (w.col + l.start) * m.cw).top(PAD.y + (w.row + l.row) * m.lh).h(m.lh)
+    return div().absolute().left(PAD.x + (w.col + l.start) * m.cw).top(m.oy + (w.row + l.row) * m.lh).h(m.lh)
       .line_height(`${m.lh}px`).whitespace_nowrap().text_color(color).underline().child(" ".repeat(l.end - l.start));
   }
 
@@ -367,7 +393,7 @@ export default class Editor extends View {
     const opaque = (e) => e.when(w.id !== 1 && Boolean(base), (e) => e.bg(base));
     const sl = this.slides.get(w.id);
     const s = sl && { ...sl, off: sl.pred + sl.anim };
-    if (!s || !s.off) return Array.from({ length: w.rows }, (_, r) => opaque(this.row(w.id, r, PAD.x + w.col * m.cw, PAD.y + (w.row + r) * m.lh, base, m, t)));
+    if (!s || !s.off) return Array.from({ length: w.rows }, (_, r) => opaque(this.row(w.id, r, PAD.x + w.col * m.cw, m.oy + (w.row + r) * m.lh, base, m, t)));
     // Sliding: the window clips its rows, drawn `off` px from their place, and the rows that
     // left fill the space uncovered above (scrolling down) or below (scrolling up).
     const line = (runs, y) => opaque(this.rowOf(runs, w.cols, 0, y, base, m, t));
@@ -375,7 +401,7 @@ export default class Editor extends View {
     const n = Math.ceil(Math.abs(s.off) / m.lh);
     if (s.off > 0) for (let k = 1; k <= Math.min(n, s.above.length); k++) rows.push(line(g.runsOf(s.above[s.above.length - k]), s.off - k * m.lh));
     else for (let k = 0; k < Math.min(n, s.below.length); k++) rows.push(line(g.runsOf(s.below[k]), (w.rows + k) * m.lh + s.off));
-    return [div().absolute().left(PAD.x + w.col * m.cw).top(PAD.y + w.row * m.lh).w(w.cols * m.cw).h(w.rows * m.lh).overflow_hidden().children(rows)];
+    return [div().absolute().left(PAD.x + w.col * m.cw).top(m.oy + w.row * m.lh).w(w.cols * m.cw).h(w.rows * m.lh).overflow_hidden().children(rows)];
   }
 
   // Where a float is drawn: in a padded frame 4px under the line it's about (the line above
@@ -386,10 +412,10 @@ export default class Editor extends View {
     const w = f.cols * m.cw + FLOAT.x * 2, h = f.rows * m.lh + FLOAT.y * 2;
     const below = !/^S/.test(f.float.anchor);
     const line = below ? f.row - 1 : f.row + f.rows; // the screen row it's about
-    const under = PAD.y + (line + 1) * m.lh + FLOAT.gap, over = PAD.y + line * m.lh - FLOAT.gap - h;
+    const under = m.oy + (line + 1) * m.lh + FLOAT.gap, over = m.oy + line * m.lh - FLOAT.gap - h;
     const cg = g.grids.get(g.cursor.grid);
     const cursorRow = (cg?.row ?? 0) + g.cursor.row;
-    const covers = (y) => cursorRow * m.lh + PAD.y < y + h && (cursorRow + 1) * m.lh + PAD.y > y;
+    const covers = (y) => cursorRow * m.lh + m.oy < y + h && (cursorRow + 1) * m.lh + m.oy > y;
     let y = below ? under : over;
     if (y + h > viewH || y < 0 || covers(y)) {
       const other = below ? over : under;
@@ -413,7 +439,7 @@ export default class Editor extends View {
     if (!cg || row >= cg.rows || col >= cg.cols || cg.hidden) return null;
     let x, y;
     if (cg.float) { const r = this.placeFloat(cg, m); x = r.x + FLOAT.x + col * m.cw; y = r.y + FLOAT.y + row * m.lh; }
-    else { x = PAD.x + (cg.col + col) * m.cw; y = PAD.y + (cg.row + row) * m.lh + ((this.slides.get(grid)?.pred ?? 0) + (this.slides.get(grid)?.anim ?? 0)); }
+    else { x = PAD.x + (cg.col + col) * m.cw; y = m.oy + (cg.row + row) * m.lh + ((this.slides.get(grid)?.pred ?? 0) + (this.slides.get(grid)?.anim ?? 0)); }
     const { shape, percentage } = g.cursorShape();
     // A bar between two characters, over neither: centred on the cells' boundary. Steady and
     // dimmed while the editor doesn't have the keyboard.
@@ -444,8 +470,8 @@ export default class Editor extends View {
     const pg = this.grid.grids.get(p.grid) ?? { row: 0, col: 0 };
     const row = pg.row + p.row, col = pg.col + p.col;
     const height = items.length * rowH + 8;
-    const below = PAD.y + (row + 1) * m.lh + FLOAT.gap;
-    const top = below + height > (this.px?.height ?? 600) && row * m.lh > height ? PAD.y + row * m.lh - height - FLOAT.gap : below;
+    const below = m.oy + (row + 1) * m.lh + FLOAT.gap;
+    const top = below + height > (this.px?.height ?? 600) && row * m.lh > height ? m.oy + row * m.lh - height - FLOAT.gap : below;
     const left = Math.max(0, Math.min(PAD.x + col * m.cw - 12, (this.px?.width ?? 800) - width - 8));
     return v_flex().absolute().left(left).top(top).w(width).p(4).rounded(6).bg(t.popover).border_1().border_color(t.border).shadow_md()
       .children(items.map(([word, kind], i) => {
