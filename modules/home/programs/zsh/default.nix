@@ -30,10 +30,13 @@
 
   home.packages = [ pkgs.zsh ];
 
+  # antidote is a zsh function, not a command: bundled by a zsh that loads it.
   home.activation.installZshGeneratedFiles = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
-    if command -v antidote >/dev/null 2>&1; then
-      antidote bundle < "$HOME/.config/zsh/zsh_plugins.txt" > "$HOME/.config/zsh/zsh_plugins.zsh"
+    antidote=/opt/homebrew/opt/antidote/share/antidote/antidote.zsh
+    if [ -r "$antidote" ]; then
+      ${pkgs.zsh}/bin/zsh -c 'source "$1" && antidote bundle < "$2" >| "$3.tmp" && mv "$3.tmp" "$3"' \
+        zsh "$antidote" "$HOME/.config/zsh/zsh_plugins.txt" "$HOME/.config/zsh/zsh_plugins.zsh" \
+        || echo "warning: antidote could not bundle the zsh plugins" >&2
     fi
   '';
 }
