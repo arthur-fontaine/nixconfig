@@ -60,12 +60,12 @@ function distinctNames(commons) {
 // The orchestrators: a Pi chat per worktree, and one per project, that steers the others
 // with hc (role prompts in ~/.pi/agent/orchestrator/). A click opens one, or starts it the
 // first time; nothing else here depends on them.
-// Each is named after what it orchestrates ("records-access · orchestrator", "monorepo ·
-// project orchestrator"): the tab, Pi's session, and what workers and other orchestrators see
-// in hc and intercom. Tabs from before, named plain "Orchestrator", still count.
-const orchestratorName = (scope, label) => `${label} · ${scope === "project" ? "project orchestrator" : "orchestrator"}`;
+// Each is named after what it orchestrates ("records-access-orchestrator", "monorepo-project-
+// orchestrator"): the tab, Pi's session, and what workers and other orchestrators see in hc and
+// intercom, whose @mentions end at a space. Tabs from before, named "Orchestrator", still count.
+const orchestratorName = (scope, label) => `${label.replace(/[^A-Za-z0-9._-]+/g, "-")}-${scope === "project" ? "project-orchestrator" : "orchestrator"}`;
 const orchestratorArgv = (scope, label) => ["pi", "--name", orchestratorName(scope, label), "--append-system-prompt", `${home()}/.pi/agent/orchestrator/${scope}.md`];
-const isOrchestrator = (tab) => tab.named && /^Orchestrator$| · (project )?orchestrator$/.test(tab.name ?? "");
+const isOrchestrator = (tab) => tab.named && /^Orchestrator$|-(project-)?orchestrator$/.test(tab.name ?? "");
 // Repo key → the space its project orchestrator lives in.
 const projectSpaces = () => shared("nix.orchestrators") ?? {};
 function ago(ms) {
@@ -178,7 +178,7 @@ export default class Sidebar extends View {
         if (st.code !== 0) { this.git[key] = null; return; }
         const rp = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"], { cwd, on });
         const [common, top] = rp.stdout.trim().split("\n");
-        const info = { common, repo: JSON.stringify([on, common]), name: repoName(common), branch: null, ahead: 0, behind: 0, dirty: 0, linked: top !== undefined && `${top}/.git` !== common };
+        const info = { common, top, repo: JSON.stringify([on, common]), name: repoName(common), branch: null, ahead: 0, behind: 0, dirty: 0, linked: top !== undefined && `${top}/.git` !== common };
         for (const line of st.stdout.split("\n")) {
           if (line.startsWith("# branch.head ")) info.branch = line.slice(14);
           else if (line.startsWith("# branch.ab ")) {
@@ -444,12 +444,14 @@ export default class Sidebar extends View {
     this.openNew(cx, { repo: r.key, name: r.name, folder: first ? place(first.s, ps) : JSON.parse(r.key)[1], machine: r.on, ...(s && { space: s.id, level: 2 }), ...(trees && { worktrees: trees }) });
   }
 
-  // A worktree's click: its orchestrator tab, started the first time.
-  openOrchestrator(s, folder) {
+  // A worktree's click: its orchestrator tab, started the first time, named after the
+  // worktree's folder (`top`), not the subfolder a terminal moved to.
+  openOrchestrator(s, folder, top) {
     run("space.select", { id: s.id });
     const tab = (s.tabs ?? []).find(isOrchestrator);
     if (tab) run("tab.select", { id: tab.id });
-    else run("tab.new", { space: s.id, name: orchestratorName("worktree", base(folder)), folder, argv: orchestratorArgv("worktree", base(folder)) });
+    const label = base(top ?? folder);
+    if (!tab) run("tab.new", { space: s.id, name: orchestratorName("worktree", label), folder, argv: orchestratorArgv("worktree", label) });
   }
 
   // A project's click: its orchestrator lives in a space of its own, at the repo's root.
@@ -503,7 +505,7 @@ export default class Sidebar extends View {
     const status = folded ? s.status : orchestrator?.status;
     const rows = [this.hoverable(id, h_flex().h(28).pl(24).pr(10).gap(7).items_center().rounded(6).cursor_pointer()
       .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)))
-      .on_click(() => this.openOrchestrator(s, place(s, ps)))
+      .on_click(() => this.openOrchestrator(s, place(s, ps), g?.top))
       .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 260, props: { tab: "space", target: { id: s.id } } }))
       .child(div().id(`fold-${s.id}`).w(12).h(14).flex_none().flex().items_center().justify_center().text_color(t.dim)
         .on_click((_e, cx) => { cx.stop_propagation(); this.toggle(this.folded, "folded", s.id, cx); })

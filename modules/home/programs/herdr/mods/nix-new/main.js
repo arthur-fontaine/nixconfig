@@ -13,8 +13,8 @@ import { repoOf, createWorktree, defaultBranch, remoteOnly, slug } from "../_lib
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 const HEIGHT = 404;
 // Not the person's own chats: orchestrators ("Orchestrator" before they were named after their
-// worktree, "<worktree> · orchestrator" since), and pi-subagents' workers ("general-purpose#534df88b").
-const hidden = (name) => /^Orchestrator$| · (project )?orchestrator$|#[0-9a-f]{6,}$/.test(name ?? "");
+// worktree, "<worktree>-orchestrator" since), and pi-subagents' workers ("general-purpose#534df88b").
+const hidden = (name) => /^Orchestrator$|-(project-)?orchestrator$|#[0-9a-f]{6,}$/.test(name ?? "");
 
 const git = (on) => async (cwd, args) => {
   const r = await exec("git", args, { cwd, on }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
