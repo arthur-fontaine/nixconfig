@@ -2,6 +2,9 @@
 {
   home.sessionPath = [
     "$HOME/.local/bin"
+    # mise's tools (node, pnpm, corepack…) for what never runs an interactive zsh, where
+    # `mise activate` puts them: herdr-core and the chats `hc run` starts, launchd agents.
+    "$HOME/.local/share/mise/shims"
   ];
 
   home.sessionVariables = {
