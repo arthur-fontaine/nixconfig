@@ -76,7 +76,9 @@ let
   # Code's classifier does), and a model asked for by full id ("claude-sonnet-5") isn't routed
   # through Claude Code's "sonnet" alias, which now means Sonnet 5.5; a spawn that lands while
   # Claude Code's updater rewrites its binary (ENOEXEC) is tried again; a rewritten request keeps
-  # at most the API's four cache breakpoints. No runtime dependencies:
+  # at most the API's four cache breakpoints. With patches/pi-claude-code-status-cache.patch,
+  # Pi's startup no longer waits for six `claude auth status` (seconds each): they share
+  # one, and the last logged-in answer is kept in ~/.pi/agent/cache. No runtime dependencies:
   # its imports are Pi's own packages.
   piClaudeCode = pkgs.runCommand "pi-claude-code-70abb65-patched" { } ''
     cp -r ${
@@ -89,6 +91,7 @@ let
     } $out
     chmod -R u+w $out
     patch -d $out -p1 < ${./patches/pi-claude-code-caller-cache.patch}
+    patch -d $out -p1 < ${./patches/pi-claude-code-status-cache.patch}
   '';
   # nedleeds/pi-compact-tools 0.16.7 with patches/pi-compact-tools-claude-bash.patch: bash
   # titles leave the folding of long commands to syntax-highlighting, and an opened command

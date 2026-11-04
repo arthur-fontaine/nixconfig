@@ -1,0 +1,110 @@
+--- a/src/claude-cli.ts
++++ b/src/claude-cli.ts
+@@ -1,7 +1,7 @@
+ import { createHash } from "node:crypto";
+-import { constants as fsConstants } from "node:fs";
++import { constants as fsConstants, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+ import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+-import { tmpdir } from "node:os";
++import { homedir, tmpdir } from "node:os";
+ import { delimiter, dirname, extname, isAbsolute, join, resolve } from "node:path";
+ import { fileURLToPath } from "node:url";
+ import { createInterface } from "node:readline";
+@@ -151,13 +151,86 @@
+   }
+ }
+ 
++// `claude auth status` starts all of Claude Code (seconds), and Pi asks for it once per
++// caller at startup. Concurrent asks share one process, and the last logged-in answer is
++// kept on disk: it answers at once, and past an hour a check runs in the background for
++// the next ask. A logout shows within that hour, or at the first request Claude refuses.
++const STATUS_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
++const STATUS_REFRESH_MS = 60 * 60 * 1_000;
++const STATUS_RECHECK_MS = 60_000;
++const statusChecks = new Map<string, Promise<ClaudeStatus>>();
++const statusCheckedAt = new Map<string, number>();
++
++function statusCacheFile(env: Record<string, string>): string {
++  const agentDir = env.PI_CODING_AGENT_DIR || join(env.HOME || homedir(), ".pi", "agent");
++  return join(agentDir, "cache", "claude-code-status.json");
++}
++
++function readStatusCache(file: string): Record<string, { at: number; status: ClaudeStatus }> {
++  try {
++    return JSON.parse(readFileSync(file, "utf8"));
++  } catch {
++    return {};
++  }
++}
++
++function writeStatusCache(file: string, key: string, status: ClaudeStatus): void {
++  try {
++    const all = readStatusCache(file);
++    if (status.loggedIn) all[key] = { at: Date.now(), status };
++    else delete all[key];
++    mkdirSync(dirname(file), { recursive: true });
++    writeFileSync(`${file}.${process.pid}`, JSON.stringify(all));
++    renameSync(`${file}.${process.pid}`, file);
++  } catch {}
++}
++
++function checkStatus(key: string, command: string, env: Record<string, string>): Promise<ClaudeStatus> {
++  let check = statusChecks.get(key);
++  if (!check) {
++    statusCheckedAt.set(key, Date.now());
++    check = probeClaudeStatus(command, env).then((status) => {
++      writeStatusCache(statusCacheFile(env), key, status);
++      return status;
++    });
++    check.finally(() => statusChecks.delete(key)).catch(() => {});
++    statusChecks.set(key, check);
++  }
++  return check;
++}
++
++function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
++  if (!signal) return promise;
++  signal.throwIfAborted();
++  return new Promise((resolvePromise, reject) => {
++    const abort = () => reject(signal.reason);
++    signal.addEventListener("abort", abort, { once: true });
++    promise.then(resolvePromise, reject).finally(() => signal.removeEventListener("abort", abort));
++  });
++}
++
++/** Claude Code's login, from the disk cache when it says logged in, unless `fresh`. */
+ export async function getClaudeStatus(
+   envInput: Record<string, string | undefined> = process.env,
+   signal?: AbortSignal,
++  { fresh = false }: { fresh?: boolean } = {},
+ ): Promise<ClaudeStatus> {
+   const env = withConfigDirectory(envInput);
+   const command = await resolveClaudeExecutable(env);
+   if (!command) return { available: false, loggedIn: false, subscription: false, detail: INSTALL_HINT };
++  const key = JSON.stringify([command, env.CLAUDE_CONFIG_DIR ?? null]);
++  if (!fresh) {
++    const cached = readStatusCache(statusCacheFile(env))[key];
++    if (cached?.status?.loggedIn && Date.now() - cached.at < STATUS_MAX_AGE_MS) {
++      const stale = Date.now() - cached.at > STATUS_REFRESH_MS;
++      if (stale && Date.now() - (statusCheckedAt.get(key) ?? 0) > STATUS_RECHECK_MS) void checkStatus(key, command, env).catch(() => {});
++      return { ...cached.status, command };
++    }
++  }
++  return abortable(checkStatus(key, command, env), signal);
++}
++
++async function probeClaudeStatus(command: string, env: Record<string, string>, signal?: AbortSignal): Promise<ClaudeStatus> {
+   try {
+     const result = await captureProcess(command, ["auth", "status"], env, signal);
+     const payload = result.stdout.trim().startsWith("{")
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -8,7 +8,7 @@
+   pi.registerCommand("claude-code-status", {
+     description: "Check the Claude Code executable and subscription login",
+     handler: async (_args, ctx) => {
+-      const status = await getClaudeStatus(claudeCodeEnv(), ctx.signal);
++      const status = await getClaudeStatus(claudeCodeEnv(), ctx.signal, { fresh: true });
+       if (!status.available || !status.loggedIn) {
+         ctx.ui.notify(status.detail ?? "Claude Code is not ready", "error");
+         return;
