@@ -28,6 +28,9 @@ let
     remoteControlAtStartup = true;
     # Keep the conversation in the Claude apps when Pi exits.
     remoteControlArchiveOnQuit = false;
+    # Pi's tool_search, for the tools kept out of the first request (exposure "deferred"):
+    # pi-subagents' SubagentWorkflow, a quarter of that request on its own (6k tokens).
+    defaultTools = [ "+tool_search" ];
 
     # Pinned: Pi runs package code, so bump the commit after reading the diff.
     packages = [
@@ -55,7 +58,9 @@ let
     ];
   };
   # @tintinweb/pi-subagents 0.22.1 with patches/pi-subagents-fleet-refresh.patch, until a
-  # release fixes FleetView staying hidden for background agents. Pi doesn't patch npm
+  # release fixes FleetView staying hidden for background agents, and
+  # patches/pi-subagents-deferred-workflow.patch: SubagentWorkflow's 6k-token description is
+  # loaded through tool_search when a workflow is asked for, not sent with every request. Pi doesn't patch npm
   # packages, and a local package brings its own dependencies: croner and nanoid have none.
   piSubagents =
     let
@@ -70,6 +75,7 @@ let
       tar xzf ${npm "croner" "10.0.1" "sha256-1tk8KGEl/tVnuYaldv8dqnTnLVa7Y/4oJIyhfPywDO4="} -C $out/node_modules/croner --strip-components=1
       tar xzf ${npm "nanoid" "5.1.16" "sha256-0/2cvcnmyPlhepLmsGowjFamLHRPdI45PRAgOGbBs/g="} -C $out/node_modules/nanoid --strip-components=1
       patch -d $out -p1 < ${./patches/pi-subagents-fleet-refresh.patch}
+      patch -d $out -p1 < ${./patches/pi-subagents-deferred-workflow.patch}
     '';
   # earendil-works/pi-claude-code with patches/pi-claude-code-caller-cache.patch: a caller's own
   # prompt-cache breakpoints on user blocks reach the API (auto-mode places them where Claude
@@ -290,6 +296,7 @@ in
     ".pi/agent/AGENTS.md".text = lib.concatStringsSep "\n" [
       (builtins.readFile ../claude/CLAUDE.md)
       (builtins.readFile ../claude/rules/context7.md)
+      (builtins.readFile ./AGENTS.pi.md)
     ];
     ".pi/agent/extensions".source = pkgs.linkFarm "pi-extensions" (
       extensions // { "package.json" = extensionsManifest; }
