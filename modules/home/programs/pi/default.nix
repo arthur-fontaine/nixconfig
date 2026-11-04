@@ -228,6 +228,9 @@ let
     footer = ./extensions/footer;
     # web_search and web_fetch through TinyFish, and view_image to look at a URL's image.
     web = ./extensions/web;
+    # Commands run in the environment of an interactive shell in the session's folder,
+    # direnv's included, however Pi was started (Herdr, `hc run`).
+    shell-env = ./extensions/shell-env;
   };
   # Pi loads the folder's extensions in directory order, unsorted, and each tool renderer
   # wraps those of the extensions loaded after it. A manifest fixes the order: these first,
