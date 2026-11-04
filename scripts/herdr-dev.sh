@@ -38,6 +38,9 @@ link() {
   cp -R "$repo/modules/home/programs/herdr/mods/nix-head/icons" "$HOME_DIR/mods/nix-head/icons"
   mkdir -p "$HOME_DIR/themes"
   for f in "$files"/.config/herdr-app/themes/*; do ln -sfn "$(readlink "$f" || echo "$f")" "$HOME_DIR/themes/$(basename "$f")"; done
+  # The editor's and the diff's Neovim config (init.lua, diff.lua, the Ayu scheme).
+  mkdir -p "$HOME_DIR/nix-editor"
+  for f in "$files"/.config/herdr-app/nix-editor/*; do ln -sfn "$(readlink "$f" || echo "$f")" "$HOME_DIR/nix-editor/$(basename "$f")"; done
 }
 
 case "${1:-}" in

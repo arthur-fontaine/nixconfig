@@ -81,7 +81,8 @@ vim.lsp.config("ts_ls", {
     end
   end,
 })
-vim.lsp.enable({ "ts_ls" })
+-- Not for a diff tab (diff.lua): one light process however many files it shows.
+if not vim.g.herdr_diff then vim.lsp.enable({ "ts_ls" }) end
 vim.diagnostic.config({
   virtual_text = false,
   underline = true,

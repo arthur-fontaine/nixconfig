@@ -33,13 +33,14 @@ let
   # Herdr refuses an import whose file resolves outside the mod's folder, and
   # every linked file resolves into the store. So a mod split into modules is
   # joined into one main.js here: the shared mods/_lib files it imports, then its
-  # own modules (both without `export`), then main.js without those imports.
+  # own modules (both without `export`; "../nix-editor/nvim.js" names another mod's), then
+  # main.js without those imports.
   # Kept apart in the repo so `node --test` runs them.
   bundle = mod: { shared ? [ ], modules ? [ ] }: pkgs.runCommand "herdr-${mod}-main.js" { } ''
     {
       ${lib.concatMapStrings (f: "sed 's/^export //' ${./mods/_lib/${f}}\n") shared}
-      ${lib.concatMapStrings (f: "sed 's/^export //' ${./mods/${mod}/${f}}\n") modules}
-      grep -v -E '^import .* from "(\./|\.\./_lib/)' ${./mods/${mod}/main.js}
+      ${lib.concatMapStrings (f: "sed -e 's/^export //' -e '/^import .* from \"\\.\\.\\{0,1\\}\\//d' ${./mods/${mod}/${f}}\n") modules}
+      grep -v -E '^import .* from "(\./|\.\./)' ${./mods/${mod}/main.js}
     } > $out
   '';
   # The patched copies of shipped mods, and nix-diff (the diff tab nix-changes opens).
@@ -47,7 +48,9 @@ let
     nix-sidebar = { };
     nix-files = { shared = [ "editor.js" ]; };
     nix-changes = { };
-    nix-diff = { shared = [ "editor.js" ]; modules = [ "model.js" "syntax.js" ]; };
+    # The diff tab, editable: edit.js (its figures), and the editor's grid.js (key notation) and
+    # nvim.js (its Neovim, started on diff.lua) joined in.
+    nix-diff = { shared = [ "editor.js" ]; modules = [ "model.js" "syntax.js" "edit.js" "../nix-editor/grid.js" "../nix-editor/nvim.js" ]; };
     nix-worktree = { shared = [ "repo.js" ]; };
     nix-menu = { };
     nix-tabs = { };
@@ -140,6 +143,8 @@ in
     "herdr-app/themes/nix-dark.json".source = ./themes/nix-dark.json;
     # nix-editor's backend: the config `nvim --embed` starts with.
     "herdr-app/nix-editor/init.lua".source = ./nix-editor/init.lua;
+    # nix-diff's backend: init.lua without language servers, and the live diff of each file.
+    "herdr-app/nix-editor/diff.lua".source = ./nix-editor/diff.lua;
     # Its code colors: Ayu, as in Zed and Ghostty (init.lua puts it on the runtimepath).
     "herdr-app/nix-editor/ayu".source = pkgs.vimPlugins.neovim-ayu;
   };

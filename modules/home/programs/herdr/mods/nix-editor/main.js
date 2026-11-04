@@ -6,7 +6,7 @@
 // this view draws as its tab strip, or beside the current file (a split).
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, settings, props, exec, home, shared, setShared, spaces, panes, focused, run } from "herdr";
+import { theme, settings, props, exec, home, appHome, shared, setShared, spaces, panes, focused, run } from "herdr";
 import { Grid, nvimKey } from "./grid.js";
 import { startNvim } from "./nvim.js";
 
@@ -89,7 +89,7 @@ export default class Editor extends View {
     exec("git", ["rev-parse", "--show-toplevel"], { cwd: dirname(this.file) }).catch(() => null)
       .then((top) => {
         if (top?.code === 0) this.root = top.stdout.trim();
-        return startNvim({ home: home(), file: this.file, cwd: dirname(this.file), width: this.size.cols, height: this.size.rows, onRedraw, onNotify });
+        return startNvim({ home: home(), appHome: appHome(), file: this.file, cwd: dirname(this.file), width: this.size.cols, height: this.size.rows, onRedraw, onNotify });
       })
       .then((nvim) => {
         this.nvim = nvim;

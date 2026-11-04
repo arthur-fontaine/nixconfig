@@ -316,9 +316,11 @@ export function nvimConnection({ config, id, post, onRedraw, onNotify }) {
 // file: the connection, or null when the bridge or nvim isn't there. `home` is Herdr's
 // home() (where the bridge's config and init.lua live); `post` (fetch) and `readFile` are
 // for tests.
-export function startNvim({ file, cwd, width, height, onRedraw, onNotify, home,
+export function startNvim({ file, cwd, width, height, onRedraw, onNotify, home, appHome, config = "init.lua",
   post = (url, options) => fetch(url, options), readFile = nvimFs.readFile }) {
-  const init = `${home}/.config/herdr-app/nix-editor/init.lua`;
+  // init.lua for the editor, diff.lua for nix-diff's editable diff, in Herdr's own home
+  // (HERDR_APP_HOME's when set: a test window has its own).
+  const init = `${appHome ?? `${home}/.config/herdr-app`}/nix-editor/${config}`;
   return nvimBridgeConfig(home, readFile).then((config) => {
     if (!config?.token || !config.http) return null;
     return nvimPost(config, "run", { cwd, cmd: ["nvim", "--embed", "-n", "-i", "NONE", "-u", init] }, post).then((r) => {

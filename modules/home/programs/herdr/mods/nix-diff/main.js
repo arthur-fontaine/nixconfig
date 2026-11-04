@@ -3,12 +3,19 @@
 // numbers, syntax colors, a bar in the margin (green added, yellow modified,
 // red removed) and the changed words highlighted. Opened by nix-changes as a
 // tab, with props { root, on, commit? }: the uncommitted changes, or a commit.
+// The uncommitted changes are editable where they are: a click puts the caret in a line,
+// keys go to the tab's Neovim (../../nix-editor/diff.lua), which holds the changed files,
+// diffs them against HEAD after each change and sends the hunks back (edit.js). ⌘S saves,
+// Esc leaves the text, ⌘-click opens the file in the editor.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } from "gpui-base";
-import { props, exec, readTextFile, watchFolder, theme, settings, shared, setShared, spaces, panes, run, notify } from "herdr";
+import { props, exec, readTextFile, watchFolder, theme, settings, shared, setShared, spaces, panes, run, notify, home, appHome } from "herdr";
 import { addedFile, parsePatch, rowsOf } from "./model.js";
 import { languageOf, splitAt, tokenize } from "./syntax.js";
+import { columnAt, editableFiles, liveFile, selectedCols, CELL } from "./edit.js";
 import { openInEditor } from "../_lib/editor.js";
+import { nvimKey } from "../nix-editor/grid.js";
+import { startNvim } from "../nix-editor/nvim.js";
 
 // The editor (../_lib/editor.js) gets the herdr functions it uses.
 const HERDR = { spaces, panes, run, shared, setShared, notify };
@@ -19,6 +26,8 @@ const DIFF = ["--no-ext-diff", "--no-textconv", "--no-color", "--find-renames", 
 const ICON = (name) => `mods/nix-head/icons/${name}.svg`;
 const SIZE = { file: 36, gap: 6, hunk: 24, line: 20, note: 28, end: 10 };
 const UNTRACKED_MAX = 200;
+// Cmd chords the diff's text keeps while it has the caret; the others stay Herdr's.
+const OWN_CMD = new Set(["s", "z", "a", "c", "x", "v", "left", "right", "up", "down", "backspace"]);
 
 const ago = (s) => {
   const m = Math.floor((Date.now() / 1000 - s) / 60);
@@ -29,13 +38,106 @@ export default class Diff extends View {
   init(_props, cx) {
     const p = props() ?? {};
     this.root = p.root; this.on = p.on ?? null; this.commit = p.commit ?? null;
-    this.files = []; this.rows = []; this.folded = new Set(); this.meta = null; this.error = null; this.loading = true;
+    this.files = []; this.view = []; this.rows = []; this.folded = new Set(); this.meta = null; this.error = null; this.loading = true;
     this.scroll = VirtualListScrollHandle.new();
     this.focusSeen = null;
+    // The editable diff: its Neovim, each file's hunks as it last sent them, its caret
+    // ({ rel, line, col, mode, sel }), the file being typed in, the rows on screen.
+    this.cx = cx;
+    this.handle = cx.focus_handle();
+    this.nvim = null; this.live = new Map(); this.caret = null; this.editing = null;
+    this.visible = { start: 0, end: 0 }; this.pointer = null;
+    this.editable = !this.commit && !this.on && Boolean(this.root) && typeof startNvim === "function";
+    if (this.editable) this.startEditor();
     this.load(cx);
     // A commit never changes; the working tree does.
     if (!this.commit && !this.on && this.root) this.watch(cx);
     else if (!this.commit) cx.timer.every(10000, (cx) => this.load(cx));
+  }
+
+  // No async function and no task: Herdr's script runtime frees what they capture once they
+  // return (nix-editor's lesson); the connection's callbacks live as long as the view.
+  startEditor() {
+    const onNotify = (name, args) => {
+      if (name === "herdr_diff") this.onLive(args?.[0]);
+      else if (name === "herdr_diff_caret") this.onCaret(args?.[0]);
+      else if (name === "nvim_closed") { this.nvim = null; this.editing = null; this.cx.notify(); }
+    };
+    startNvim({ home: home(), appHome: appHome(), cwd: this.root, width: 120, height: 40, config: "diff.lua", onRedraw: () => {}, onNotify })
+      .then((nvim) => { this.nvim = nvim; this.syncFiles(); }, () => {});
+  }
+
+  close() {
+    this.nvim?.close();
+    this.nvim = null;
+  }
+
+  // The files git lists, for Neovim to hold (and to diff against HEAD).
+  syncFiles() {
+    if (!this.nvim || this.loading) return;
+    this.nvim.notify("nvim_exec_lua", "_G.herdr_diff_files(...)", [editableFiles(this.files, this.root)]);
+  }
+
+  rel(path) {
+    return path?.startsWith(this.root + "/") ? path.slice(this.root.length + 1) : null;
+  }
+
+  onLive(msg) {
+    const rel = this.rel(msg?.file);
+    if (!rel) return;
+    this.live.set(rel, liveFile({}, msg));
+    this.layout();
+    this.cx.notify();
+  }
+
+  // The caret where Neovim has it, kept in sight.
+  onCaret(msg) {
+    const rel = this.rel(msg?.file);
+    if (!rel) return;
+    this.caret = { ...msg, rel };
+    const i = this.rows.findIndex((r) => r.type === "line" && r.line.kind !== "-" && r.line.new === msg.line && this.view[r.file]?.path === rel);
+    if (i >= 0 && (i < this.visible.start || i >= this.visible.end - 1)) this.scroll.scroll_to_item(i, "center");
+    this.cx.notify();
+  }
+
+  // A click on a line of an editable file: the caret there, keys to Neovim.
+  edit(path, line, col) {
+    if (!this.nvim) return;
+    this.editing = path;
+    this.handle.focus();
+    this.nvim.notify("nvim_exec_lua", "_G.herdr_diff_focus(...)", [`${this.root}/${path}`, line, col]);
+    this.cx.notify();
+  }
+
+  stopEditing() {
+    this.editing = null;
+    this.nvim?.notify("nvim_exec_lua", "_G.herdr_diff_blur()", []);
+    this.cx.notify();
+  }
+
+  // Keys while a file has the caret, as the editor sends them (Neovim notation); the system
+  // clipboard through ⌘C/⌘X/⌘V. Esc leaves the text (a selection first).
+  key(e, cx) {
+    if (!this.editing || !this.nvim) return;
+    const m = e.modifiers;
+    if (e.key === "escape" && !m.platform && !this.caret?.sel) { cx.stop_propagation(); return this.stopEditing(); }
+    if (m.platform && !OWN_CMD.has(e.key)) return;
+    cx.stop_propagation();
+    if (m.platform && !m.shift && !m.control && !m.alt && e.key === "v") {
+      const text = cx.read_from_clipboard();
+      if (text) this.nvim.notify("nvim_paste", text, true, -1);
+      return;
+    }
+    const keys = nvimKey(e);
+    if (!keys) return;
+    this.nvim.input(keys);
+    if (m.platform && !m.shift && (e.key === "c" || e.key === "x")) {
+      this.cx.timer.after(30, (cx) => {
+        this.nvim?.request("nvim_call_function", "getreg", ["+"]).then((text) => {
+          if (typeof text === "string" && text) cx.write_to_clipboard(text);
+        }, () => {});
+      }, { owner: this });
+    }
   }
 
   watch(cx) {
@@ -79,7 +181,9 @@ export default class Diff extends View {
           files.sort((a, b) => a.path.localeCompare(b.path));
         }
         this.files = files; this.error = null;
+        this.loading = false;
         this.layout();
+        this.syncFiles();
       } catch (e) { this.error = String(e.message ?? e); }
       finally {
         this.loading = false; this.busy = false; cx.notify();
@@ -88,10 +192,15 @@ export default class Diff extends View {
     });
   }
 
+  // The files as drawn: git's, each editable one with the hunks its Neovim sent last.
   layout() {
-    this.rows = rowsOf(this.files, this.folded);
+    this.view = this.files.map((f) => {
+      const live = !f.binary && f.status !== "D" ? this.live.get(f.path) : null;
+      return live ? { ...f, ...live } : f;
+    });
+    this.rows = rowsOf(this.view, this.folded);
     this.sizes = this.rows.map((r) => SIZE[r.type]);
-    const longest = Math.max(0, ...this.files.flatMap((f) => f.hunks.flatMap((h) => h.lines.map((l) => l.text.length))));
+    const longest = Math.max(0, ...this.view.flatMap((f) => f.hunks.flatMap((h) => h.lines.map((l) => l.text.length))));
     this.width = Math.max(600, longest * 7.9 + 130);
   }
 
@@ -110,7 +219,7 @@ export default class Diff extends View {
   followFocus() {
     const want = shared("nix-diff.focus");
     if (!want || want.n === this.focusSeen || want.commit !== this.commit || want.root !== this.root) return;
-    const i = this.rows.findIndex((r) => r.type === "file" && this.files[r.file].path === want.path);
+    const i = this.rows.findIndex((r) => r.type === "file" && this.view[r.file].path === want.path);
     if (i < 0) return;
     this.focusSeen = want.n;
     if (this.folded.delete(want.path)) this.layout();
@@ -144,6 +253,7 @@ export default class Diff extends View {
       .child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.dim))
       .child(this.statusIcon(f.status, t))
       .child(div().flex_none().font_medium().text_color(t.foreground).child(name))
+      .when(Boolean(f.modified), (e) => e.child(div().size(6).rounded(3).flex_none().bg(t.ansi3)))
       .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(f.status === "R" && f.oldPath ? `${dir}  ← ${f.oldPath}` : dir))
       .child(div().flex_1())
       .child(h_flex().flex_none().gap(5).text_size(11)
@@ -151,15 +261,20 @@ export default class Diff extends View {
         .when(f.del > 0, (e) => e.child(div().text_color(t.ansi1).child(`−${f.del}`))));
   }
 
-  // One handler for the whole list (rows can't hold their own): a header folds
-  // its file, a line opens the file in the editor there, as clicking a line in Zed's
-  // diff jumps to it.
+  // One handler for the whole list (rows can't hold their own): a header folds its file;
+  // a line of an editable file gets the caret where it was clicked (this.pointer, from the
+  // list's mouse-down); ⌘-click, or a line of a commit, opens the file in the editor there.
   click(key, cx) {
     const r = this.rows[+key.split(":")[1]];
     if (!r) return;
-    const f = this.files[r.file];
+    const f = this.view[r.file];
     if (r.type === "file") return this.toggle(f.path, cx);
-    if (r.type === "line" && f.status !== "D") this.openFile(f.path, r.line.new ?? r.line.old);
+    if (r.type !== "line" || f.status === "D") return;
+    if (f.live && this.nvim && !this.pointer?.cmd) {
+      if (r.line.kind !== "-") this.edit(f.path, r.line.new, columnAt(this.pointer?.x ?? 0));
+      return;
+    }
+    this.openFile(f.path, r.line.new ?? r.line.old);
   }
 
   lineRow(f, line, t, syn) {
@@ -170,13 +285,25 @@ export default class Diff extends View {
     const sign = line.kind === "+" ? ["+", t.ansi2] : line.kind === "-" ? ["−", t.ansi1] : [" ", t.dim];
     const parts = (line.parts ??= splitAt(tokenize(line.text, lang), line.changed));
     const number = line.kind === "-" ? line.old : line.new;
-    return h_flex().w_full().h(SIZE.line).flex_none().items_center().cursor_pointer().font_family(this.mono).text_size(13).when(Boolean(bg), (e) => e.bg(bg))
-      .child(div().w(3).h_full().flex_none().when(Boolean(bar), (e) => e.bg(bar)))
-      .child(div().w(48).flex_none().pr(10).text_right().text_size(11).text_color(t.dim).child(String(number)))
-      .child(div().w(16).flex_none().text_color(sign[1]).child(sign[0]))
-      .child(h_flex().flex_none().whitespace_nowrap().children(parts.map((p) =>
+    // An editable line takes a text cursor; a removed one is only read; a commit's opens.
+    const editable = f.live && line.kind !== "-";
+    const here = editable && this.editing === f.path && this.caret?.rel === f.path ? this.caret : null;
+    const sel = here ? selectedCols(here.sel, line.new, line.text.length) : null;
+    const caret = here && here.line === line.new ? here.col : null;
+    const text = h_flex().flex_none().relative().whitespace_nowrap()
+      .when(Boolean(sel), (e) => e.child(div().absolute().top(1).bottom(1).left(sel[0] * CELL).w((sel[1] - sel[0]) * CELL).bg(t.selection ?? t.accent + "40")))
+      .children(parts.map((p) =>
         div().flex_none().text_color(p.kind ? syn[p.kind] ?? t.foreground : t.foreground)
-          .when(p.changed, (e) => e.bg(strong).rounded(2)).child(p.text))));
+          .when(p.changed, (e) => e.bg(strong).rounded(2)).child(p.text)))
+      .when(caret !== null, (e) => e.child(div().absolute().top(1).bottom(1).left(caret * CELL - 1).w(2).bg(t.accent)));
+    return h_flex().w_full().h(SIZE.line).flex_none().items_center().font_family(this.mono).text_size(13).when(Boolean(bg), (e) => e.bg(bg))
+      .when(editable, (e) => e.cursor_text()).when(!f.live && f.status !== "D", (e) => e.cursor_pointer())
+      // The line the caret is on stands out a little, as in the editor.
+      .when(caret !== null && !bg, (e) => e.bg(t.hover))
+      .child(div().w(3).h_full().flex_none().when(Boolean(bar), (e) => e.bg(bar)))
+      .child(div().w(48).flex_none().pr(10).text_right().text_size(11).text_color(caret !== null ? t.foreground : t.dim).child(String(number)))
+      .child(div().w(16).flex_none().text_color(sign[1]).child(sign[0]))
+      .child(text);
   }
 
   // Zed's fold line between hunks: lines were skipped here.
@@ -186,7 +313,7 @@ export default class Diff extends View {
   }
 
   row(r, t, syn) {
-    const f = this.files[r.file];
+    const f = this.view[r.file];
     if (r.type === "file") return this.fileRow(f, t);
     if (r.type === "hunk") return this.hunkRow(t);
     if (r.type === "gap") return div().w_full().h(SIZE.gap).flex_none();
@@ -196,13 +323,16 @@ export default class Diff extends View {
   }
 
   header(t) {
-    const add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
+    const add = this.view.reduce((n, f) => n + f.add, 0), del = this.view.reduce((n, f) => n + f.del, 0);
     const allFolded = this.files.length > 0 && this.files.every((f) => this.folded.has(f.path));
+    const unsaved = this.view.filter((f) => f.modified).length;
     const bar = h_flex().h(36).flex_none().px(12).gap(8).items_center().bg(t.chrome).border_b(1).border_color(t.border)
       .child(svg(ICON(this.commit ? "git-branch" : "git-compare")).size(14).flex_none().text_color(t.muted))
       .child(div().font_medium().min_w(0).truncate().child(this.commit ? (this.meta?.subject ?? this.commit.slice(0, 7)) : "Uncommitted Changes"))
       .child(div().flex_none().text_size(11).text_color(t.dim).child(`${this.files.length} ${this.files.length === 1 ? "file" : "files"}`))
       .child(div().flex_1())
+      .when(unsaved > 0, (e) => e.child(h_flex().flex_none().gap(5).items_center().text_size(11).text_color(t.muted)
+        .child(div().size(6).rounded(3).bg(t.ansi3)).child(`${unsaved} unsaved · ⌘S`)))
       .child(div().flex_none().text_size(11).text_color(t.ansi2).child(`+${add}`))
       .child(div().flex_none().text_size(11).text_color(t.ansi1).child(`−${del}`))
       .when(this.files.length > 0, (e) => e.child(
@@ -231,12 +361,16 @@ export default class Diff extends View {
         ? div().p(16).text_size(12).text_color(t.dim).child(this.loading ? "Loading changes…" : this.commit ? "This commit changes no files" : "No uncommitted changes")
         : div().flex_1().min_h(0).relative()
           .child(div().id("diff-x").size_full().overflow_x_scrollbar()
-            .child(div().min_w(this.width).w_full().h_full().child(
+            .child(div().min_w(this.width).w_full().h_full()
+              // Where a click lands (the list's click knows only the row): x for the column.
+              .on_mouse_down("left", (e) => { this.pointer = { x: e.local_position?.x ?? 0, cmd: Boolean(e.modifiers?.platform) }; })
+              .child(
               v_virtual_list("diff-rows", this.rows.length, this.sizes, (i) => `${this.rows[i].type}:${i}`,
-                (range) => this.rows.slice(range.start, range.end).map((r) => this.row(r, t, syn)))
+                (range) => { this.visible = range; return this.rows.slice(range.start, range.end).map((r) => this.row(r, t, syn)); })
                 .track_scroll(this.scroll).on_item_click((key, cx) => this.click(key, cx)).size_full())))
           .child(Scrollbar.vertical("diff-rows").viewport_from_layout().absolute().inset_0());
-    return v_flex().size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(13)
+    return v_flex().id("nix-diff").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(13)
+      .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .child(this.header(t)).child(body);
   }
 }
