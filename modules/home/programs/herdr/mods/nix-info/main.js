@@ -15,6 +15,9 @@ import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff,
 const HERDR = { spaces, panes, run, shared, setShared, notify };
 
 const TICK = 1000;
+const POLL = 100;
+// Sessions kept read, for switching between panes.
+const KEPT = 6;
 const USAGE_EVERY = 5000;
 const CHUNK_BYTES = 4 * 1024 * 1024;
 // From byte $2 on: whole lines, up to CHUNK_BYTES; nothing while the file ends mid-line.
@@ -71,6 +74,8 @@ export default class Info extends View {
   init(_props, cx) {
     this.cx = cx;
     this.session = null; // model state of the file shown
+    this.kept = new Map(); // file → model state, the last few shown: going back shows at once
+    this.wake = null; // ends the loop's wait early
     this.pane = null;
     this.usage = null;
     this.windows = {}; // model id → context window
@@ -146,7 +151,12 @@ export default class Info extends View {
   // readFile gives nothing for a 20 MB session): at most 4 MB each, and only up to a
   // newline, so each chunk is valid UTF-8 and the byte offset stays exact.
   async read(file) {
-    if (this.session?.file !== file) this.session = infoNewSession(file);
+    if (this.session?.file !== file) {
+      this.session = this.kept.get(file) ?? infoNewSession(file);
+      this.kept.delete(file);
+      this.kept.set(file, this.session);
+      if (this.kept.size > KEPT) this.kept.delete(this.kept.keys().next().value);
+    }
     const s = this.session;
     let changed = false;
     for (let i = 0; i < 16; i++) {
@@ -177,12 +187,15 @@ export default class Info extends View {
     if (this.loop) return;
     this.loop = true;
     this.cx.spawn(async (cx) => {
-      let usageAt = 0;
+      let usageAt = 0, readAt = 0;
       for (;;) {
-        if (visible()) {
-          let changed = false;
-          const p = selectedPane();
-          if (p?.pane !== this.pane?.pane || p?.status !== this.pane?.status) changed = true;
+        // The selection is checked every POLL (memory only), the file read every TICK or
+        // as soon as another pane is selected.
+        const p = visible() ? selectedPane() : undefined;
+        const moved = p !== undefined && (p?.pane !== this.pane?.pane || p?.status !== this.pane?.status);
+        if (p !== undefined && (moved || Date.now() - readAt >= TICK)) {
+          readAt = Date.now();
+          let changed = moved;
           this.pane = p;
           const file = p ? await this.fileOf(p) : null;
           if (!file && this.session) { this.session = null; changed = true; }
@@ -191,7 +204,8 @@ export default class Info extends View {
           // Running calls' elapsed time ticks.
           if (changed || (this.session && this.pane?.status === "working")) cx.notify();
         }
-        await new Promise((r) => cx.timer.after(TICK, r));
+        await new Promise((r) => { this.wake = r; cx.timer.after(POLL, r); });
+        this.wake = null;
       }
     });
   }
@@ -533,6 +547,9 @@ export default class Info extends View {
 
   render() {
     this.start();
+    // Herdr renders the view when focus or tabs change: a new pane is read now, not at the
+    // next tick (up to a second later).
+    if (this.wake && visible() && selectedPane()?.pane !== this.pane?.pane) this.wake();
     // The view outlives layout edits, so a changed props.detail is taken here.
     const asked = props()?.detail ?? null;
     if (asked !== this.asked) { this.asked = asked; this.detail = asked; }
