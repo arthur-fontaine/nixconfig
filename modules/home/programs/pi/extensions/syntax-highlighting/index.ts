@@ -3,7 +3,7 @@
 // recolors whatever the bash renderers before it drew, so other extensions'
 // additions to the row stay as they are, and every color is a theme token.
 import { type ExtensionAPI, getLanguageFromPath, highlightCode, type Theme, type ToolRenderers } from "@earendil-works/pi-coding-agent";
-import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
+import { type Component, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { escapes, FG_RESET, railOf, stripAnsi } from "./ansi.ts";
 import { displayedCommand, fold, normalizeCommand, type Preview, readPreview } from "./command.ts";
 import { highlightShell, type Paint } from "./highlight.ts";
@@ -157,9 +157,22 @@ export default function (pi: ExtensionAPI) {
 			const raw = (args as { command?: unknown } | undefined)?.command;
 			if (typeof raw !== "string") return new Recolored(inner(args, theme, innerContext(context)), theme, (lines) => lines);
 			const writing = settings.expandWhileWriting && !context.argsComplete && !context.executionStarted && context.isPartial;
-			const title = !context.expanded && !writing && !showWholeCommands ? titles.get(raw) : undefined;
-			if (title) return new Recolored(inner({ ...(args as object), command: title }, theme, innerContext(context)), theme, (lines) => lines);
+			const title = !writing && !showWholeCommands ? titles.get(raw) : undefined;
 			const lines = displayedCommand(normalizeCommand(raw), context.cwd).split("\n");
+			if (title) {
+				const component = inner({ ...(args as object), command: title }, theme, innerContext(context));
+				if (!context.expanded) return new Recolored(component, theme, (drawn) => drawn);
+				// Opened: the title stays, the whole command goes under it, in the rows' body column.
+				const styled = memo(() => highlightShell(paintFor(theme), lines.join("\n")));
+				return new Recolored(component, theme, (drawn, width) => {
+					const indent = CLAUDE_TITLE.test(stripAnsi(drawn[0] ?? "")) ? CLAUDE_BODY : "";
+					const room = Math.max(10, width - indent.length - 2);
+					const body = styled(themeKey(theme)).flatMap((line, i) =>
+						wrapTextWithAnsi(line, room).map((part, j) => `${indent}${i === 0 && j === 0 ? theme.fg("bashMode", theme.bold("$")) : " "} ${part}`),
+					);
+					return [drawn[0] ?? "", ...body.map((line) => truncateToWidth(line, width)), ...drawn.slice(1)];
+				});
+			}
 			const limit: Preview = writing || showWholeCommands ? "all" : context.expanded ? settings.commandPreview : 1;
 			const { shown, hidden } = fold(lines, limit);
 			const component = inner({ ...(args as object), command: shown.join("\n") }, theme, innerContext(context));
@@ -169,8 +182,13 @@ export default function (pi: ExtensionAPI) {
 			});
 			return new Recolored(component, theme, (drawn, width) => {
 				const lead = { text: "$ ", styled: theme.fg("bashMode", theme.bold("$")) + " " };
-				const out = overlay(drawn, doc(themeKey(theme)), { match: "run", lead });
-				if (hidden > 0) {
+				let out = overlay(drawn, doc(themeKey(theme)), { match: "run", lead });
+				// Collapsed, an untitled command keeps to the title's one row, cut rather than wrapped.
+				const collapsed = limit === 1;
+				if (collapsed && out.length > 1 && CLAUDE_TITLE.test(stripAnsi(out[0] ?? ""))) {
+					out = [truncateToWidth(out[0]!, Math.max(1, width - 2), "") + FG_RESET + theme.fg("toolOutput", "…)")];
+				}
+				if (hidden > 0 && !collapsed) {
 					const hint = `… ${hidden} more command line${hidden === 1 ? "" : "s"} · ${SHORTCUT} shows all`;
 					// Under compact-tools' `⦁ Bash(…)` title, in its rows' body column.
 					const indent = CLAUDE_TITLE.test(stripAnsi(drawn[0] ?? "")) ? CLAUDE_BODY : "";
