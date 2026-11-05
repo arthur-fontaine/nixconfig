@@ -144,6 +144,7 @@ top of `predictor.ts`, `editor.ts` and `prediction.ts`.
 - `context.ts`: conversation payload and branch prompts from session data
 - `history.ts`: skips Pi's replay of in-context prompts
 - `scroll.ts`: the mouse wheel over the input. No Pi imports.
+- `paste.ts`: a paste joining the paste marker before the cursor. No Pi imports.
 - `tests/`: `node --test 'modules/home/programs/pi/extensions/input-autocomplete/tests/*.test.ts'`
 
 ## Editor additions
@@ -155,6 +156,10 @@ top of `predictor.ts`, `editor.ts` and `prediction.ts`.
   more lines than it shows (the cursor follows at the edge, since Pi keeps it
   in view), and goes to the chat when everything fits. A click places the
   cursor; a drag still selects text for Ctrl+C / Cmd+C.
+- A paste with the cursor right after a `[paste #N …]` marker (nothing typed
+  since) goes into that marker, as in Claude Code: two long pastes in a row
+  are one marker and are sent as one block, as is. Undo takes the second paste
+  back out.
 - Edits Pi doesn't refresh the popup after, such as Cmd+Delete (to the start of
   the line), refresh it.
 - With the session-name extension loaded, `/rename` replaces Pi's `/name`:

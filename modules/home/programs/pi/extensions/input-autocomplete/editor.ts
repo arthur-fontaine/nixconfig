@@ -18,6 +18,7 @@ import {
 import { commandName, paintCommand } from "./command.ts";
 import { ReplayFilter } from "./history.ts";
 import { arbitrate, cycle, type Step } from "./keys.ts";
+import { type Draft, joinPaste } from "./paste.ts";
 import { wantsPrediction } from "./prediction.ts";
 import type { Predictor } from "./predictor.ts";
 import { wheel } from "./scroll.ts";
@@ -56,6 +57,13 @@ interface Selection {
 interface AutocompleteControl {
 	updateAutocomplete(): void;
 }
+// Pi's Editor's paste handling, private in its types.
+interface PasteInternals {
+	handlePaste(text: string): void;
+	pastes: Map<number, string>;
+	pasteCounter: number;
+	state: { lines: string[]; cursorLine: number; cursorCol: number };
+}
 
 export interface GhostOptions {
 	predictor: Predictor;
@@ -91,6 +99,7 @@ export class GhostEditor extends CustomEditor {
 		super(tui, theme, keys, { embedWorkingStatus: true });
 		this.keys = keys;
 		this.ghost = options;
+		this.joinPastes();
 		// Pi hands its submit handler over by assigning onSubmit, an own field of its
 		// Editor, so an accessor here sees what is sent before Pi's commands do.
 		let submit: ((text: string) => void) | undefined;
@@ -102,6 +111,33 @@ export class GhostEditor extends CustomEditor {
 				submit = handler;
 			},
 		});
+	}
+
+	// A paste with the cursor right after a paste marker goes into that marker's content instead
+	// of a marker of its own, as in Claude Code: two pastes in a row are sent as one block.
+	private joinPastes(): void {
+		const editor = this as unknown as PasteInternals;
+		const paste = editor.handlePaste;
+		if (typeof paste !== "function" || !(editor.pastes instanceof Map)) return;
+		const draft = (): Draft => {
+			const { lines, cursorLine, cursorCol } = editor.state;
+			const before = lines.slice(0, cursorLine).reduce((length, line) => length + line.length + 1, 0);
+			return { text: lines.join("\n"), cursor: before + cursorCol };
+		};
+		editor.handlePaste = (text: string) => {
+			const before = draft();
+			const pastes = { contents: new Map(editor.pastes), counter: editor.pasteCounter };
+			paste.call(this, text);
+			const joined = joinPaste(before, draft(), pastes, { contents: editor.pastes, counter: editor.pasteCounter });
+			if (!joined) return;
+			editor.pastes = joined.pastes.contents;
+			editor.pasteCounter = joined.pastes.counter;
+			const head = joined.draft.text.slice(0, joined.draft.cursor).split("\n");
+			editor.state.lines = joined.draft.text.split("\n");
+			editor.state.cursorLine = head.length - 1;
+			editor.state.cursorCol = head.at(-1)?.length ?? 0;
+			this.onChange?.(this.getText());
+		};
 	}
 
 	/**
