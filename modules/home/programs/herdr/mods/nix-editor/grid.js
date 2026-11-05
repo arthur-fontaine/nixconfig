@@ -130,6 +130,13 @@ export class Grid {
         });
         break;
       }
+      case "win_viewport": {
+        // [grid, win, topline, botline, curline, curcol, line_count, scroll_delta]: lines are
+        // 0-based, botline past the last shown. Whether the window can scroll either way.
+        const [id, , topline, botline, , , count] = args;
+        this.grid(id).viewport = { top: topline, bottom: botline, count };
+        break;
+      }
       case "win_hide":
         this.grid(args[0]).hidden = true;
         break;

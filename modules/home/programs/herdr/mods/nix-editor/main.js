@@ -24,6 +24,8 @@ const FRAME = 8;
 // when it moves up ahead of nvim (a millisecond over the bridge's socket). scrolloff
 // (init.lua) keeps the caret above them.
 const EXTRA = 2;
+// Lines a single trackpad event may ask nvim for (a fast flick moves several).
+const AHEAD = 12;
 const FLOAT = { x: 8, y: 6, gap: 4 }; // a float's padding, and its distance from the line it's about
 // Cmd chords the editor keeps; any other Cmd chord stays Herdr's (new tab, palette…).
 const OWN_CMD = new Set(["s", "z", "a", "c", "x", "v", "f", "/", "[", "]", "\\", "left", "right", "up", "down", "backspace", "d", "p"]);
@@ -155,7 +157,12 @@ export default class Editor extends View {
     this.onScrollLog = snap;
     let i = 0;
     const tick = () => {
-      if (i++ < 80) { this.scroll({ delta: { x: 0, y: i <= 40 ? -6 : 6 }, local_position: at, modifiers: {}, touch_phase: "moved" }); snap(i <= 40 ? "down" : "up"); this.cx.timer.after(16, tick, { owner: this }); }
+      // props.testScroll: [px per event, events], + = up (default: 6 px down 40 times, then up).
+      const [px, count] = Array.isArray(props()?.testScroll) ? props().testScroll : [null, 80];
+      if (i++ < count) {
+        const dy = px ?? (i <= 40 ? -6 : 6);
+        this.scroll({ delta: { x: 0, y: dy }, local_position: at, modifiers: {}, touch_phase: "moved" }); snap(dy < 0 ? "down" : "up"); this.cx.timer.after(16, tick, { owner: this });
+      }
       else this.cx.timer.after(600, () => { snap("end"); writeTextFile(`${appHome()}/scroll-test.log`, log.join("\n") + "\n", null).catch(() => null); }, { owner: this });
     };
     tick();
@@ -314,12 +321,26 @@ export default class Editor extends View {
     const w = this.grid.grids.get(grid);
     if (w && !w.float && grid !== 1 && e.delta.y) {
       const s = this.slideOf(grid);
-      s.pred = Math.max(-lh * (EXTRA + 1), Math.min(lh * (EXTRA + 1), s.pred + e.delta.y));
+      // How far nvim can still scroll each way (its viewport), counting the lines asked for.
+      const v = w.viewport;
+      const room = (up) => (!v ? AHEAD : up ? v.top + s.pending : Math.max(0, v.count - v.bottom) - s.pending);
+      // Past the file's top or end the content only gives a little, and less as it goes.
+      const elastic = (d) => Math.sign(d) * Math.min(lh * 1.5, Math.abs(d) * 0.35);
+      const up = e.delta.y > 0;
+      s.pred = Math.max(-lh * (AHEAD + 1), Math.min(lh * (AHEAD + 1), s.pred + e.delta.y));
       // Where the content will sit once nvim has scrolled the lines already asked for.
       const settled = () => s.pred + s.pending * lh;
-      while (settled() > 0 && s.pending > -EXTRA) { this.nvim.inputMouse("wheel", "up", mods, grid, row, col); s.pending -= 1; }
-      while (settled() <= -lh && s.pending < EXTRA) { this.nvim.inputMouse("wheel", "down", mods, grid, row, col); s.pending += 1; }
-      this.cx.notify();
+      const asked = s.pending;
+      while (settled() > 0 && s.pending > -AHEAD && room(true) > 0) { this.nvim.inputMouse("wheel", "up", mods, grid, row, col); s.pending -= 1; }
+      while (settled() <= -lh && s.pending < AHEAD && room(false) > 0) { this.nvim.inputMouse("wheel", "down", mods, grid, row, col); s.pending += 1; }
+      // Nothing left to scroll this way: what goes past the edge is the elastic overshoot.
+      if (up && settled() > 0 && room(true) <= 0) s.pred = elastic(settled()) - s.pending * lh;
+      if (!up && settled() < 0 && room(false) <= 0) s.pred = elastic(settled()) - s.pending * lh;
+      // Lines asked for: the frame waits for them (a millisecond over the socket), so it never
+      // shows the content moved past the rows nvim has drawn. Past the file's ends nvim never
+      // answers: the frame goes after a moment anyway.
+      if (s.pending === asked) this.cx.notify();
+      else { const k = (this.waits = (this.waits ?? 0) + 1); this.cx.timer.after(30, () => { if (k === this.waits) this.cx.notify(); }, { owner: this }); }
     } else if (e.delta.y) {
       this.wheel.y += e.delta.y;
       while (Math.abs(this.wheel.y) >= lh) {
@@ -340,10 +361,11 @@ export default class Editor extends View {
     this.cx.timer.after(150, () => {
       if (n !== this.wheels) return;
       this.wheel = { x: 0, y: 0 };
-      for (const s of this.slides.values()) {
-        if (!s.pending) continue;
-        s.pending = 0;
-        s.anim += s.pred; s.pred = 0;
+      for (const [id, s] of this.slides) {
+        const v = this.grid.grids.get(id)?.viewport;
+        const over = s.pred > 0 && v && v.top === 0 ? s.pred : s.pred < 0 && v && v.bottom >= v.count ? s.pred : 0;
+        if (s.pending) { s.pending = 0; s.anim += s.pred; s.pred = 0; }
+        else if (over) { s.anim += over; s.pred -= over; }
       }
       this.animate();
     }, { owner: this });
