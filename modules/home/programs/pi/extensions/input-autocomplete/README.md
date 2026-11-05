@@ -151,6 +151,10 @@ top of `predictor.ts`, `editor.ts` and `prediction.ts`.
 ## Editor additions
 
 - A slash command Pi knows is drawn in the theme's accent color as you type it.
+- Bash mode as in Claude Code: the `!` that starts it isn't drawn, only the
+  border's bash color shows the mode, and the cursor never goes before it, so
+  Backspace at the start of the command leaves bash mode. The `!` is still in
+  the draft, where Pi reads it (`!!`, history); with `!!` the second one shows.
 - The slash and `@` popup floats over the chat, just above the editor, instead
   of pushing the input line and the chat up (fullscreen mode). It closes on
   submit, and whenever Pi swaps the editor for a selector such as /resume's.

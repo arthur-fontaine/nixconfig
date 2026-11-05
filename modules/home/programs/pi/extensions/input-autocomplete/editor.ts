@@ -15,6 +15,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
+import { afterBang, hideBang, inBashMode } from "./bash.ts";
 import { commandName, paintCommand } from "./command.ts";
 import { ReplayFilter } from "./history.ts";
 import { arbitrate, cycle, type Step } from "./keys.ts";
@@ -205,6 +206,7 @@ export class GhostEditor extends CustomEditor {
 		this.cancel();
 		const before = this.getText();
 		super.handleInput(data);
+		this.keepAfterBang();
 		if (this.getText() !== before) {
 			// Some of Pi's edits (Cmd+Delete, to the start of the line) leave the popup on
 			// what was deleted; Backspace refreshes it, these don't.
@@ -266,7 +268,8 @@ export class GhostEditor extends CustomEditor {
 	}
 
 	override render(width: number): string[] {
-		const lines = this.paintCommand(super.render(width));
+		this.keepAfterBang();
+		const lines = this.hideBang(this.paintCommand(super.render(width)));
 		this.drawGhost(lines, width);
 		return this.popupAbove(lines, width);
 	}
@@ -373,6 +376,21 @@ export class GhostEditor extends CustomEditor {
 		const cell = graphemes.segment(preview)[Symbol.iterator]().next().value?.segment ?? "";
 		const drawn = head + CURSOR_MARKER + this.ghost.style(renderFakeCursor(cell) + preview.slice(cell.length));
 		lines[row] = drawn + " ".repeat(Math.max(0, width - visibleWidth(drawn)));
+	}
+
+	// Home, a click or Pi's own moves can put the cursor at the very start, before the hidden !.
+	private keepAfterBang(): void {
+		const state = (this as unknown as PasteInternals).state;
+		if (!state) return;
+		state.cursorCol = afterBang(state.lines[0] ?? "", { line: state.cursorLine, col: state.cursorCol });
+	}
+
+	private hideBang(lines: string[]): string[] {
+		if (!inBashMode(this.getLines()[0] ?? "") || (this as unknown as RenderedRows).scrollOffset > 0) return lines;
+		// Row 0 is the top border; row 1 shows the first line, the editor not being scrolled.
+		const hidden = lines[1] !== undefined ? hideBang(lines[1]) : undefined;
+		if (hidden !== undefined) lines[1] = hidden;
+		return lines;
 	}
 
 	private paintCommand(lines: string[]): string[] {
