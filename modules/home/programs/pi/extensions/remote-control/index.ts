@@ -23,6 +23,7 @@ import {
 	uploadFile,
 	Worker,
 } from "./api.ts";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import { claudeToolUse, claudeToolUseResult, isImageFile, mimeType } from "./claude-tools.ts";
 import {
 	askDetails,
@@ -39,12 +40,14 @@ import {
 	permissionPrompt,
 	type Prompt,
 } from "./dialogs.ts";
+import { sendNow, type Waiting, waitingLines } from "./waiting.ts";
 
 // The worker version claude.ai sees; it gates features on it like on a real Claude Code.
 const CLAUDE_CODE_VERSION = "2.1.314";
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 const MAX_TOOL_RESULT_CHARS = 30_000;
 const STATUS_KEY = "remote-control";
+const WAITING_KEY = "remote-control-waiting";
 
 // Set PI_REMOTE_CONTROL_DEBUG to a file path to log the bridge's lifecycle there.
 function debug(message: string) {
@@ -176,7 +179,7 @@ class RemoteControl {
 	private outbox: unknown[] = [];
 	private flushing?: Promise<void>;
 	// Controller messages wait here, not in Pi's own queue, so the apps can still cancel them.
-	private queue: { eventId: string; uuid?: string; content: Content }[] = [];
+	private queue: Waiting<Content>[] = [];
 	private processingIds: string[] = [];
 	// Prompts put to the apps, by control request id.
 	private prompts = new Map<string, Pending>();
@@ -260,6 +263,8 @@ class RemoteControl {
 		clearTimeout(this.heartbeatTimer);
 		clearTimeout(this.regrantTimer);
 		this.setStatus(undefined);
+		this.queue = [];
+		this.showWaiting();
 		debug(`stop ${this.session?.id}`);
 		if (!this.session) return;
 		// The apps' sheets go; Pi's own dialogs stay up and decide.
@@ -322,6 +327,7 @@ class RemoteControl {
 			claude_code_version: CLAUDE_CODE_VERSION,
 			apiKeySource: "none",
 			output_style: "normal",
+			capabilities: ["interrupt_send_now_v1"],
 		};
 	}
 
@@ -478,6 +484,7 @@ class RemoteControl {
 			return;
 		}
 		const next = this.queue.shift()!;
+		this.showWaiting();
 		this.remoteTexts.push(textOf(next.content));
 		this.processingIds.push(next.eventId);
 		this.ack([next.eventId], "processing");
@@ -562,6 +569,26 @@ class RemoteControl {
 		}
 	}
 
+	// Into the running turn, as Pi's own steering: it reaches the model after the current tools.
+	private steer(eventId: string, content: Content) {
+		this.remoteTexts.push(textOf(content));
+		this.processingIds.push(eventId);
+		this.ack([eventId], "processing");
+		this.pi.sendUserMessage(content, { deliverAs: "steer" });
+	}
+
+	// What waits in this queue shows above Pi's editor, as Pi's own queue does.
+	private showWaiting() {
+		if (this.ctx.mode !== "tui") return;
+		const lines = waitingLines(this.queue.map((m) => textOf(m.content)));
+		this.ctx.ui.setWidget(
+			WAITING_KEY,
+			lines.length === 0
+				? undefined
+				: (_tui, theme) => ({ render: (width: number) => lines.map((line) => truncateToWidth(` ${theme.fg("dim", line)}`, width)), invalidate() {} }),
+		);
+	}
+
 	private async handle(event: InboundEvent) {
 		const payload = event.payload;
 		if (payload?.type === "user") {
@@ -574,14 +601,9 @@ class RemoteControl {
 			if (attachments.length > 0) content = await this.withAttachments(content, attachments);
 			// The apps mark a message `later` to wait for the turn to end; any other
 			// priority joins the running turn, as it does in Claude Code.
-			if (this.run && payload.priority !== "later") {
-				this.remoteTexts.push(textOf(content));
-				this.processingIds.push(event.event_id);
-				this.ack([event.event_id], "processing");
-				this.pi.sendUserMessage(content, { deliverAs: "steer" });
-				return;
-			}
+			if (this.run && payload.priority !== "later") return this.steer(event.event_id, content);
 			this.queue.push({ eventId: event.event_id, uuid: payload.uuid, content });
+			this.showWaiting();
 			this.deliverNext();
 		} else if (payload?.type === "control_request") {
 			void this.control(payload);
@@ -818,9 +840,17 @@ class RemoteControl {
 				case "cancel_async_message": {
 					const i = this.queue.findIndex((m) => m.uuid === request.message_uuid);
 					if (i >= 0) this.queue.splice(i, 1);
+					this.showWaiting();
 					return reply({ subtype: "success", response: { cancelled: i >= 0 } });
 				}
 				case "interrupt":
+					// The apps' Send now on a waiting message, which is not a Stop.
+					if (request.send_now === true) {
+						const { answer, take } = sendNow(this.queue, request.message_uuid, this.run !== undefined);
+						for (const m of take) this.steer(m.eventId, m.content);
+						this.showWaiting();
+						return reply({ subtype: "success", response: { send_now: answer } });
+					}
 					this.dismissDialogs();
 					this.ctx.abort();
 					return reply({ subtype: "success" });

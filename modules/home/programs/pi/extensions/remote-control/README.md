@@ -90,7 +90,9 @@ Tested from the Claude iOS app:
 - The session shows the conversation so far, including when started mid-way.
 - Messages run in Pi; tool calls show with their input and output.
 - A message sent while Pi works joins the running turn (Pi's steer), as in
-  Claude Code. One the app marks `later` waits for the turn to end.
+  Claude Code. One the app marks `later` waits for the turn to end, shown above
+  Pi's editor as `Waiting (Claude app): …`; the app's Send now on it joins it to
+  the running turn instead of stopping it.
 - Stop interrupts the turn.
 - The model and effort pickers switch Pi's model (within its current
   provider) and thinking level.
