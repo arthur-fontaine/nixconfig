@@ -23,7 +23,13 @@ const FRAME = 8;
 // Rows nvim draws under the editor's bottom edge, out of sight: what the content uncovers
 // when it moves up ahead of nvim (a millisecond over the bridge's socket). scrolloff
 // (init.lua) keeps the caret above them.
-const EXTRA = 2;
+const EXTRA = 6;
+// Lines Neovim is kept ahead when scrolling up, out of sight above: the slack a trackpad event
+// may move the content up by without waiting for Neovim.
+const LOOK = 4;
+// Lines kept between the caret and the visible edges (the view's scrolloff: Neovim's counts
+// from its own edges, which the rows out of sight would put off screen, so it is 0).
+const CARET_MARGIN = 3;
 // Lines a single trackpad event may ask nvim for (a fast flick moves several).
 const AHEAD = 12;
 const FLOAT = { x: 8, y: 6, gap: 4 }; // a float's padding, and its distance from the line it's about
@@ -117,11 +123,13 @@ export default class Editor extends View {
     // (nvim.js). Plain promise chains, with `this.cx` (init's, which outlives an await).
     const notify = () => this.cx.notify();
     const onRedraw = (events) => {
+      const a0 = this.perf && Date.now();
       if (!this.grid.apply(events)) return;
+      if (this.perf) { this.perf.applies.push(Date.now() - a0); if (this.perf.sent) { this.perf.lat.push(Date.now() - this.perf.sent); this.perf.sent = 0; } }
       const scrolls = this.grid.takeScrolls();
       if (scrolls.length) this.slide(scrolls);
       const c = this.grid.cursor, at = `${c.grid}:${c.row}:${c.col}`;
-      if (at !== this.caretAt) { this.caretAt = at; this.woke = Date.now(); this.blink = true; }
+      if (at !== this.caretAt) { this.caretAt = at; this.woke = Date.now(); this.blink = true; this.followCaret(); }
       notify();
     };
     const onNotify = (name, args) => {
@@ -138,6 +146,8 @@ export default class Editor extends View {
         if (!nvim) this.error = "Couldn't start Neovim";
         else if (this.line) nvim.notify("nvim_win_set_cursor", 0, [this.line, 0]);
         if (nvim && props()?.testScroll) this.cx.timer.after(1500, () => this.testScroll(), { owner: this });
+        if (nvim && props()?.testDrag) this.cx.timer.after(1500, () => this.testDrag(), { owner: this });
+        if (nvim && props()?.testKeys) this.cx.timer.after(1500, () => this.testKeys(), { owner: this });
       }, (e) => { this.error = `Couldn't start Neovim: ${e?.message ?? e}`; })
       .then(() => { this.starting = false; notify(); });
   }
@@ -146,8 +156,56 @@ export default class Editor extends View {
   // are kept to fill the space the slide uncovers, as many as a window can show.
   // A synthetic trackpad gesture through scroll(), each step logged (props.testScroll): for
   // checking the scroll feel without a person at the trackpad.
+  // props.testDrag: a selection dragged down over many lines, 120 moves a second; logs how long
+  // nvim's redraw takes to come back after a move, and how long each apply and render takes.
+  testDrag() {
+    const w = this.grid.windows().find((g) => g.id !== 1);
+    if (!w) return;
+    const m = this.metrics();
+    this.perf = { renders: [], applies: [], lat: [], sent: 0 };
+    const at = (row, col) => ({ local_position: { x: PAD.x + (w.col + col) * m.cw + 2, y: m.oy + (w.row + row) * m.lh + 2 }, modifiers: {} });
+    this.mouseDown(at(1, 2), this.cx);
+    let i = 0;
+    const tick = () => {
+      if (i++ < 120) {
+        const row = 1 + Math.floor(i / 3), col = 2 + (i * 7) % 60;
+        this.perf.sent = Date.now();
+        this.mouseMove(at(Math.min(row, w.rows - 3), col));
+        this.cx.timer.after(8, tick, { owner: this });
+        return;
+      }
+      this.mouseUp(at(30, 10));
+      this.cx.timer.after(400, () => {
+        const st = (a) => { const v = [...a].sort((x, y) => x - y); return v.length ? `n=${v.length} med=${v[v.length >> 1]} p90=${v[Math.floor(v.length * 0.9)]} max=${v[v.length - 1]}` : "n=0"; };
+        const txt = `lat ${st(this.perf.lat)}\napply ${st(this.perf.applies)}\nrender ${st(this.perf.renders)}\n`;
+        writeTextFile(`${appHome()}/drag-test.log`, txt, null).catch(() => null);
+        this.perf = null;
+      }, { owner: this });
+    };
+    tick();
+  }
+
+  // props.testKeys: the caret walked down then up with the arrows; logs where it is drawn, in
+  // visible rows, after each key (it must stay CARET_MARGIN rows from the edges).
+  testKeys() {
+    const log = [];
+    const { lh } = this.metrics();
+    let i = 0;
+    const tick = () => {
+      if (i > 0) {
+        const { grid, row } = this.grid.cursor, w = this.grid.grids.get(grid);
+        const vis = w ? Math.round(((w.row + row) * lh + (this.slides.get(grid)?.pred ?? 0)) / lh) : null;
+        log.push(`${i <= 60 ? "down" : "up"} visible_row=${vis} of ${this.size.rows}`);
+      }
+      if (i++ < 120) { this.nvim.input(i <= 60 ? "<Down>" : "<Up>"); this.cx.timer.after(40, tick, { owner: this }); }
+      else writeTextFile(`${appHome()}/keys-test.log`, log.join("\n") + "\n", null).catch(() => null);
+    };
+    tick();
+  }
+
   testScroll() {
     const log = [];
+    this.perf = { renders: [], applies: [], lat: [], sent: 0 };
     const w = this.grid.windows().find((g) => g.id !== 1);
     if (!w) return;
     const m = this.metrics(), { lh, cw } = m;
@@ -159,14 +217,16 @@ export default class Editor extends View {
     const tick = () => {
       // props.testScroll: [px per event, events], + = up (default: 6 px down 40 times, then up).
       // "flick": a macOS trackpad flick down then up, 120 events a second with inertia.
-      if (props()?.testScroll === "flick") {
-        const ramp = [20, 60, 110, 150, 150, 150, 130, 110, 90, 70, 55, 40, 30, 22, 15, 10, 6, 4, 2, 1];
+      if (String(props()?.testScroll).startsWith("flick")) {
+        // "flick:0.4" scales the speeds.
+        const k = Number(String(props().testScroll).split(":")[1] ?? 1) || 1;
+        const ramp = [20, 60, 110, 150, 150, 150, 130, 110, 90, 70, 55, 40, 30, 22, 15, 10, 6, 4, 2, 1].map((d) => Math.round(d * k));
         const seq = [...ramp.map((d) => -d), ...ramp.map((d) => -d), ...Array(30).fill(0), ...ramp, ...ramp];
         if (i < seq.length) {
           const dy = seq[i++];
           if (dy) { this.scroll({ delta: { x: 0, y: dy }, local_position: at, modifiers: {}, touch_phase: "moved" }); snap(dy < 0 ? "down" : "up"); }
           this.cx.timer.after(8, tick, { owner: this });
-        } else this.cx.timer.after(600, () => { snap("end"); writeTextFile(`${appHome()}/scroll-test.log`, log.join("\n") + "\n", null).catch(() => null); }, { owner: this });
+        } else this.cx.timer.after(600, () => { snap("end"); const v = [...this.perf.renders].sort((x, y) => x - y); log.push(`RENDER n=${v.length} med=${v[v.length >> 1]} p90=${v[Math.floor(v.length * 0.9)]} max=${v[v.length - 1]}`); writeTextFile(`${appHome()}/scroll-test.log`, log.join("\n") + "\n", null).catch(() => null); }, { owner: this });
         return;
       }
       // [px, count, ms, then]: `then` px for `count` more events after the first `count`.
@@ -196,6 +256,27 @@ export default class Editor extends View {
     return Math.max(least, Math.min(most, off));
   }
 
+  // The view's scrolloff: a caret that moved (keys, typing, a drag) within CARET_MARGIN lines of
+  // a visible edge scrolls its window, which slides there. Not during a wheel gesture, which
+  // leaves the caret where it is, as nvim does.
+  followCaret() {
+    if (this.scrolling || this.following || !this.size || !this.nvim) return;
+    const g = this.grid, { grid, row, col } = g.cursor, w = g.grids.get(grid);
+    if (!w || w.float || grid === 1 || w.hidden) return;
+    const { lh } = this.metrics();
+    const v = w.viewport, s = this.slides.get(grid);
+    // Where the caret ends up once a slide in progress settles.
+    const y = (w.row + row) * lh + (s?.pred ?? 0);
+    const up = Math.ceil((CARET_MARGIN * lh - y) / lh);
+    const down = Math.ceil((y - (this.size.rows - 1 - CARET_MARGIN) * lh) / lh);
+    const n = up > 0 ? Math.min(up, v ? v.top : up) : down > 0 ? Math.min(down, v ? Math.max(0, v.count - 1 - v.top) : down) : 0;
+    if (n <= 0 || s?.pending) return;
+    // One request at a time: keys come faster than the scroll they cause.
+    this.following = true;
+    this.cx.timer.after(200, () => { this.following = false; }, { owner: this });
+    for (let k = 0; k < n; k++) this.nvim.inputMouse("wheel", up > 0 ? "up" : "down", "", grid, row, col);
+  }
+
   slideOf(id) {
     let s = this.slides.get(id);
     if (!s) { s = { pred: 0, anim: 0, pending: 0, above: [], below: [] }; this.slides.set(id, s); }
@@ -218,6 +299,7 @@ export default class Editor extends View {
       if (rows !== asked) { s.anim = Math.max(-g.rows * lh, Math.min(g.rows * lh, s.anim + (rows - asked) * lh)); animate = true; }
     }
     if (animate) this.animate();
+    this.following = false;
     this.onScrollLog?.(`nvim ${scrolls.map((x) => x.rows).join(",")}`);
   }
 
@@ -346,6 +428,7 @@ export default class Editor extends View {
     const { lh, cw } = this.metrics();
     const { grid, row, col } = this.cell(e);
     const mods = this.mods(e.modifiers);
+    this.scrolling = true;
     const w = this.grid.grids.get(grid);
     if (w && !w.float && grid !== 1 && e.delta.y) {
       const s = this.slideOf(grid);
@@ -360,8 +443,10 @@ export default class Editor extends View {
       // Where the content will sit once nvim has scrolled the lines already asked for.
       const settled = () => s.pred + s.pending * lh;
       const asked = s.pending;
-      while (settled() > 0 && s.pending > -AHEAD && room(true) > 0) { this.nvim.inputMouse("wheel", "up", mods, grid, row, col); s.pending -= 1; }
-      while (settled() <= -lh && s.pending < AHEAD && room(false) > 0) { this.nvim.inputMouse("wheel", "down", mods, grid, row, col); s.pending += 1; }
+      // Up, nvim stays LOOK lines ahead (the offset in (-(LOOK+1)lh, -LOOK lh]); down, the rows
+      // under the edge are the slack (the offset in (-lh, 0]).
+      if (up) while (settled() > -LOOK * lh && s.pending > -AHEAD && room(true) > 0) { this.nvim.inputMouse("wheel", "up", mods, grid, row, col); s.pending -= 1; }
+      else while (settled() <= -lh && s.pending < AHEAD && room(false) > 0) { this.nvim.inputMouse("wheel", "down", mods, grid, row, col); s.pending += 1; }
       // Nothing left to scroll this way: what goes past the edge is the elastic overshoot.
       if (up && settled() > 0 && room(true) <= 0) s.pred = elastic(settled()) - s.pending * lh;
       if (!up && settled() < 0 && room(false) <= 0) s.pred = elastic(settled()) - s.pending * lh;
@@ -390,6 +475,7 @@ export default class Editor extends View {
     this.cx.timer.after(150, () => {
       if (n !== this.wheels) return;
       this.wheel = { x: 0, y: 0 };
+      this.scrolling = false;
       for (const [id, s] of this.slides) {
         const v = this.grid.grids.get(id)?.viewport;
         const over = s.pred > 0 && v && v.top === 0 ? s.pred : s.pred < 0 && v && v.top >= v.count - 1 ? s.pred : 0;
@@ -429,29 +515,37 @@ export default class Editor extends View {
     return this.rowOf(this.grid.runs(id, r), this.grid.grids.get(id).cols, x, y, base, m, t);
   }
 
+  // A row: its runs one after the other, each only what differs from the row (its colors,
+  // weight, decorations). Every style call crosses into Herdr, and a frame draws thousands of
+  // runs: a run positioned and sized cell by cell cost 6-7 ms a frame, most of a 120 Hz frame.
+  // The font's advance is measured, so runs laid out in a row still sit on their cells.
   rowOf(cells, cols, x, y, base, m, t) {
     const g = this.grid;
-    const runs = cells.map((run) => {
-      const s = g.style(run.hl);
-      const blank = !run.text.trim();
-      return div().absolute().left(run.col * m.cw).top(0).w(run.cells * m.cw).h(m.lh).flex_none().overflow_hidden()
-        .whitespace_nowrap().line_height(`${m.lh}px`)
-        .when(Boolean(s.bg) && s.bg !== base, (e) => e.bg(s.bg))
-        .when(!blank, (e) => e.text_color(s.fg ?? t.foreground)
-          .when(s.bold, (e) => e.font_weight(700))
-          .when(s.italic, (e) => e.italic())
-          .when(s.underline && !s.spSet, (e) => e.underline())
-          .when(s.strikethrough, (e) => e.line_through())
-          .child(run.text))
-        // A line in the special color (GPUI colors decorations like the text): an underline
-        // drawn under spaces of that color, wavy for undercurl.
-        .when(s.undercurl || (s.underline && s.spSet), (e) => e.child(div().absolute().left(0).top(0).w_full().h(m.lh).line_height(`${m.lh}px`)
-          .text_color(s.sp ?? t.blocked).underline().when(s.undercurl, (e) => e.text_decoration_wavy()).whitespace_nowrap()
-          .child(" ".repeat(run.cells))));
-    });
-    return div().absolute().left(x).top(y).w(cols * m.cw).h(m.lh).children(runs)
+    const runs = new Array(cells.length);
+    for (let i = 0; i < cells.length; i++) {
+      const run = cells[i], s = g.style(run.hl);
+      let e = div().flex_none();
+      if (s.bg && s.bg !== base) e = e.bg(s.bg);
+      if (run.text.trim()) {
+        e = e.text_color(s.fg ?? t.foreground);
+        if (s.bold) e = e.font_weight(700);
+        if (s.italic) e = e.italic();
+        if (s.underline && !s.spSet) e = e.underline();
+        if (s.strikethrough) e = e.line_through();
+      }
+      // A line in the special color (GPUI colors decorations like the text): an underline
+      // drawn under spaces of that color, wavy for undercurl.
+      if (s.undercurl || (s.underline && s.spSet)) {
+        let line = div().absolute().left(0).top(0).text_color(s.sp ?? t.blocked).underline();
+        if (s.undercurl) line = line.text_decoration_wavy();
+        e = e.relative().child(line.child(" ".repeat(run.cells)));
+      }
+      runs[i] = e.child(run.text);
+    }
+    return h_flex().absolute().left(x).top(y).w(cols * m.cw).h(m.lh).children(runs)
       .when(Boolean(this.link), (e) => e.cursor_pointer()).when(!this.link, (e) => e.cursor_text());
   }
+
 
   // A window grid where nvim put it on the screen, opaque: grid 1 under it keeps what other
   // tab pages drew there (a split's separator).
@@ -684,6 +778,14 @@ export default class Editor extends View {
   }
 
   render(cx) {
+    if (!this.perf) return this.render0(cx);
+    const t0 = Date.now();
+    const out = this.render0(cx);
+    this.perf.renders.push(Date.now() - t0);
+    return out;
+  }
+
+  render0(cx) {
     const t = theme(), m = this.metrics(), g = this.grid;
     const strip = this.tabStrip(t);
     this.followGoto();

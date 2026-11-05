@@ -36,7 +36,9 @@ o.mousemoveevent = true
 o.mousescroll = "ver:1,hor:2"
 o.termguicolors = true
 o.updatetime = 300
-o.scrolloff = 4
+-- The editor keeps rows out of sight under its edge, and keeps the caret 3 lines from the
+-- visible edges itself (nix-editor's CARET_MARGIN): Neovim's own margin would count those rows.
+o.scrolloff = 0
 o.expandtab = true
 o.shiftwidth = 2
 o.tabstop = 2

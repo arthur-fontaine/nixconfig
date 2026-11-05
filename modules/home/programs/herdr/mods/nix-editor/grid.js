@@ -13,6 +13,7 @@ export class Grid {
     // id → { id, cols, rows, lines, row, col, float, hidden }
     this.grids = new Map();
     this.hl = new Map([[0, {}]]);
+    this.styles = new Map(); // highlight id → style(), until hl_attr_define or default_colors_set
     this.defaults = { fg: null, bg: null, sp: null };
     this.cursor = { grid: 1, row: 0, col: 0 };
     this.modes = [];
@@ -146,11 +147,13 @@ export class Grid {
         this.grid(args[0]).hidden = true;
         break;
       case "default_colors_set": {
+        this.styles.clear();
         const [fg, bg, sp] = args;
         this.defaults = { fg: hex(fg), bg: hex(bg), sp: hex(sp) };
         break;
       }
       case "hl_attr_define": {
+        this.styles.clear();
         const [id, rgb] = args;
         this.hl.set(id, rgb ?? {});
         break;
@@ -283,7 +286,17 @@ export class Grid {
 
   // A highlight's colors with nvim's rules: unset falls back to the defaults, reverse
   // swaps foreground and background.
+  // Kept per highlight until nvim defines highlights or colors again: rows ask for it run by
+  // run, every frame.
   style(id) {
+    const hit = this.styles.get(id);
+    if (hit) return hit;
+    const st = this.styleOf(id);
+    this.styles.set(id, st);
+    return st;
+  }
+
+  styleOf(id) {
     const a = this.hl.get(id) ?? {};
     let fg = hex(a.foreground) ?? this.defaults.fg, bg = hex(a.background) ?? this.defaults.bg;
     if (a.reverse) [fg, bg] = [bg, fg];
