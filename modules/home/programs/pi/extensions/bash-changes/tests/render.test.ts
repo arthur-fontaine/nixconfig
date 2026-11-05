@@ -4,12 +4,12 @@ import type { ToolRenderResultOptions, ToolRenderers } from "@earendil-works/pi-
 import type { Component } from "@earendil-works/pi-tui";
 import { type ChangesSource, withChanges } from "../extension.ts";
 import { headerPath } from "../patch.ts";
-import { ChangesView, changeRows, DEFAULT_VIEW, type Paint, railOf, type RenderDeps } from "../render.ts";
+import { ChangesView, changeRows, DEFAULT_VIEW, type Paint, railOf, type RenderDeps, tintOf } from "../render.ts";
 import type { FileChanges } from "../snapshot.ts";
 
 // Colors show as <token>…</token>; highlighted code as «…».
 const paint: Paint = { fg: (token, text) => `<${token}>${text}</${token}>` };
-const plain = (line: string) => line.replace(/<\/?\w+>|[«»]/g, "");
+const plain = (line: string) => tintOf(line).text.replace(/<\/?\w+>|[«»]/g, "");
 const deps: RenderDeps = {
 	highlight: (code) => code.split("\n").map((line) => `«${line}»`),
 	language: (path) => (path.endsWith(".ts") ? "typescript" : undefined),
@@ -57,30 +57,33 @@ const changes: FileChanges = {
 	patch,
 };
 
-test("expanded: a summary, then each file with its diff in the edit tool's format", () => {
+test("expanded: a summary, then each file with its diff in Update's layout", () => {
 	assert.deepEqual(changeRows(changes, true, DEFAULT_VIEW, paint, deps).map(plain), [
-		"✎ notes.md, a.ts  +4 −1",
+		"Changed notes.md, a.ts · Added 4 lines, removed 1 line",
 		"notes.md  new  +2",
-		"+1 # Notes",
-		"+2 hello",
+		" 1 +# Notes",
+		" 2 +hello",
 		"src/a.ts  +2 −1",
-		"  8 const a = 1;",
-		"- 9 const b = 2;",
-		"+ 9 const b = 3;",
-		" 10 const c = 4;",
-		"    ... function tail() {",
-		" 40    return x;",
-		"+41    // done",
-		" 41 }",
+		"  8  const a = 1;",
+		"  9 -const b = 2;",
+		"  9 +const b = 3;",
+		" 10  const c = 4;",
+		"    ⋮",
+		" 40     return x;",
+		" 41 +   // done",
+		" 42  }",
 	]);
 });
 
-test("colors follow the theme, and added code is highlighted when its language is known", () => {
+test("code is highlighted on every side when its language is known, and changes are tinted", () => {
 	const rows = changeRows(changes, true, DEFAULT_VIEW, paint, deps);
-	assert.ok(rows.includes("<toolDiffAdded>+1 # Notes</toolDiffAdded>"), "unknown language: the whole line in the added color");
-	assert.ok(rows.includes("<toolDiffAdded>+ 9</toolDiffAdded> «const b = 3;»"));
-	assert.ok(rows.includes("<toolDiffRemoved>- 9 const b = 2;</toolDiffRemoved>"));
-	assert.ok(rows.includes("<toolDiffContext> 10 const c = 4;</toolDiffContext>"));
+	const find = (text: string) => rows.find((row) => plain(row) === text)!;
+	assert.equal(tintOf(find(" 1 +# Notes")).text, "<toolDiffAdded> 1 +</toolDiffAdded><toolOutput># Notes</toolOutput>");
+	assert.equal(tintOf(find("  9 +const b = 3;")).text, "<toolDiffAdded>  9 +</toolDiffAdded>«const b = 3;»");
+	assert.equal(tintOf(find("  9 -const b = 2;")).text, "<toolDiffRemoved>  9 -</toolDiffRemoved>«const b = 2;»");
+	assert.equal(tintOf(find("  9 -const b = 2;")).tint, "removed");
+	assert.equal(tintOf(find("  9 +const b = 3;")).tint, "added");
+	assert.equal(find(" 10  const c = 4;"), "<toolDiffContext> 10  </toolDiffContext>«const c = 4;»");
 });
 
 test("collapsed: the first files are previewed, the rest listed or counted, with a hint", () => {
@@ -91,23 +94,23 @@ test("collapsed: the first files are previewed, the rest listed or counted, with
 	};
 	const view = { ...DEFAULT_VIEW, openFiles: 1, previewLines: 1, listFiles: 3 };
 	assert.deepEqual(changeRows(many, false, view, paint, deps).map(plain), [
-		"✎ 7 files  +9 −6  overlapping",
+		"Changed 7 files · Added 9 lines, removed 6 lines  overlapping",
 		"notes.md  new  +2",
-		"+1 # Notes",
-		"... (1 more diff line)",
+		" 1 +# Notes",
+		"… +1 line",
 		"src/a.ts  +2 −1",
 		"c.txt  +1 −1",
 		"... 4 more files  +4 −4",
 		"ctrl+o to show all changes",
 	]);
-	assert.ok(changeRows(many, false, { ...view, newFilesOpen: true, openFiles: 0 }, paint, deps).map(plain).includes("+1 # Notes"));
+	assert.ok(changeRows(many, false, { ...view, newFilesOpen: true, openFiles: 0 }, paint, deps).map(plain).includes(" 1 +# Notes"));
 });
 
 test("a single file is named in the summary, with its status", () => {
 	const one: FileChanges = { ...changes, files: [{ path: "img.png", status: "D" }], patch: "diff --git a/img.png b/img.png\ndeleted file mode 100644\nBinary files a/img.png and /dev/null differ\n" };
-	assert.deepEqual(changeRows(one, false, DEFAULT_VIEW, paint, deps).map(plain), ["✎ img.png  deleted  binary"]);
+	assert.deepEqual(changeRows(one, false, DEFAULT_VIEW, paint, deps).map(plain), ["Changed img.png  deleted  binary"]);
 	assert.deepEqual(changeRows({ ...one, patchTruncated: true }, true, DEFAULT_VIEW, paint, deps).map(plain), [
-		"✎ img.png  deleted  binary",
+		"Changed img.png  deleted  binary",
 		"[Diff truncated at 200 KB]",
 	]);
 });
@@ -148,14 +151,14 @@ test("chains onto the bash renderer it wraps, keeping its own component", () => 
 	const rendered = first.render(80);
 	assert.equal(rendered[0], "output of b");
 	assert.equal(rendered[1], "");
-	assert.equal(rendered[2], "✎ notes.md, a.ts  +4 −1");
+	assert.equal(rendered[2], "Changed notes.md, a.ts · Added 4 lines, removed 1 line");
 
 	// The inner renderer gets back its own component, never the wrapper.
 	const firstBase = first.base;
 	const second = renderers.renderResult!(result, options(true), theme, context(first));
 	assert.equal(second, first);
 	assert.equal(seen[2], firstBase);
-	assert.ok(second.render(80).includes("  8 const a = 1;"));
+	assert.ok(second.render(80).includes("  8  const a = 1;"));
 	for (const line of second.render(12)) assert.ok(line.length <= 12, line);
 });
 
@@ -175,7 +178,7 @@ test("a detached call's changes come from the saved entries, and its row is repa
 	assert.deepEqual(render().render(80), ["final output"]);
 	assert.deepEqual(repaints, ["bg"]);
 	saved.set("bg", changes);
-	assert.equal(render().render(80)[2], "✎ notes.md, a.ts  +4 −1");
+	assert.equal(render().render(80)[2], "Changed notes.md, a.ts · Added 4 lines, removed 1 line");
 });
 
 test("under a Claude-style row, the changes sit in its body column with no blank line", () => {
@@ -186,7 +189,7 @@ test("under a Claude-style row, the changes sit in its body column with no blank
 	const view = renderers.renderResult!(result, options(true), paint as never, context(undefined));
 	const rendered = view.render(30);
 	assert.equal(rendered[0], "   ⎿  (No output)");
-	assert.equal(rendered[1], "      ✎ notes.md, a.ts  +4 −1");
+	assert.equal(rendered[1], "      Changed notes.md, a.ts ·");
 	for (const line of rendered.slice(1)) {
 		assert.ok(line.startsWith("      "), line);
 		assert.ok(line.length <= 30, line);

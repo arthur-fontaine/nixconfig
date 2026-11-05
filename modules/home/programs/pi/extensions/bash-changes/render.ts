@@ -1,5 +1,5 @@
-// Draws a bash call's file changes under its output, in the look of Pi's edit
-// diffs: `-12 old`, `+12 new`, ` 12 context`.
+// Draws a bash call's file changes under its output, in the look of compact-tools' Update
+// rows: ` 12 -old`, ` 12 +new`, ` 12  context`, the code highlighted and changes tinted.
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import { type FilePatch, type Hunk, parsePatch } from "./patch.ts";
@@ -11,6 +11,8 @@ export type RenderDeps = {
 	language(path: string): string | undefined;
 	wrap(text: string, width: number): string[];
 	expandHint(): string;
+	/** A diff row tinted across `width` columns, as compact-tools tints Update's. */
+	fill?(theme: Paint, tint: Tint, text: string, width: number): string;
 };
 
 export type Paint = Pick<Theme, "fg">;
@@ -48,12 +50,20 @@ function tags(file: ChangedFile, theme: Paint) {
 	return [status && theme.fg("muted", status), file.added === undefined ? theme.fg("muted", "binary") : ""].filter(Boolean);
 }
 
+// As Update words its result: "Added 3 lines, removed 1 line".
+function outcome(files: readonly ChangedFile[]) {
+	const added = files.reduce((sum, file) => sum + (file.added ?? 0), 0);
+	const removed = files.reduce((sum, file) => sum + (file.removed ?? 0), 0);
+	const parts = [added ? `added ${plural(added, "line")}` : "", removed ? `removed ${plural(removed, "line")}` : ""].filter(Boolean).join(", ");
+	return parts ? parts[0]!.toUpperCase() + parts.slice(1) : "";
+}
+
 function summary(changes: FileChanges, theme: Paint) {
 	const { files } = changes;
 	const names = files.length === 1 ? files[0]!.path : files.length === 2 ? files.map((file) => basename(file.path)).join(", ") : plural(files.length, "file");
+	const said = outcome(files);
 	return [
-		theme.fg("accent", `✎ ${names}`),
-		counts(files, theme),
+		theme.fg("toolOutput", `Changed ${theme.fg("toolTitle", names)}${said ? ` · ${said}` : ""}`),
 		...(files.length === 1 ? tags(files[0]!, theme) : []),
 		changes.overlapping ? theme.fg("warning", "overlapping") : "",
 	]
@@ -69,45 +79,45 @@ const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 const replaceTabs = (text: string) => text.replace(/\t/g, "   ");
 
-// Highlights the new side of each hunk (context and added lines) as one block,
-// so constructs spanning lines, like block comments, keep their colors.
-function highlightAdded(hunk: Hunk, language: string, deps: RenderDeps): Map<number, string> {
-	const indexes: number[] = [];
-	const source: string[] = [];
-	hunk.lines.forEach((line, index) => {
-		if (line.kind === "removed") return;
-		indexes.push(index);
-		source.push(replaceTabs(line.text));
-	});
-	let highlighted = deps.highlight(source.join("\n"), language);
-	if (highlighted.length !== source.length) highlighted = source.map((text) => deps.highlight(text, language)[0] ?? text);
-	const byIndex = new Map<number, string>();
-	indexes.forEach((index, i) => {
-		if (hunk.lines[index]!.kind === "added") byIndex.set(index, highlighted[i]!);
-	});
-	return byIndex;
+// A diff row and how it is tinted across the width, as compact-tools' Update rows are.
+export type Tint = "added" | "removed";
+type Row = { text: string; tint?: Tint };
+const TINTED = "\u0000tint:";
+
+// Highlights each hunk as one block, as compact-tools does for Update, so constructs
+// spanning lines (block comments, strings) keep their colors. Removed lines go with the
+// rest: a few wrong colors at a change beat none at all.
+function highlightHunk(hunk: Hunk, language: string, deps: RenderDeps): string[] | undefined {
+	const source = hunk.lines.map((line) => replaceTabs(line.text));
+	const highlighted = deps.highlight(source.join("\n"), language);
+	return highlighted.length === source.length ? highlighted : undefined;
 }
 
-// Diff rows of one file, unwrapped.
+// Diff rows of one file, unwrapped, in compact-tools' Update layout: ` 12 +code`, the
+// number and sign in the change's color, the code highlighted.
 function diffRows(path: string, patch: FilePatch, theme: Paint, deps: RenderDeps): string[] {
 	const digits = String(Math.max(0, ...patch.hunks.flatMap((hunk) => hunk.lines.map((line) => line.line)))).length;
 	const language = deps.language(path);
 	const rows: string[] = [];
 	patch.hunks.forEach((hunk, index) => {
-		if (index > 0) rows.push(theme.fg("toolDiffContext", ` ${" ".repeat(digits)} ...${hunk.heading ? ` ${hunk.heading}` : ""}`));
-		const highlighted = language ? highlightAdded(hunk, language, deps) : new Map<number, string>();
+		if (index > 0) rows.push(`${" ".repeat(digits + 2)}${theme.fg("toolDiffContext", "\u22ee")}`);
+		const highlighted = language ? highlightHunk(hunk, language, deps) : undefined;
 		hunk.lines.forEach((line, i) => {
 			const number = String(line.line).padStart(digits);
-			const text = replaceTabs(line.text);
-			if (line.kind === "context") rows.push(theme.fg("toolDiffContext", ` ${number} ${text}`));
-			else if (line.kind === "removed") rows.push(theme.fg("toolDiffRemoved", `-${number} ${text}`));
-			else {
-				const code = highlighted.get(i);
-				rows.push(code === undefined ? theme.fg("toolDiffAdded", `+${number} ${text}`) : `${theme.fg("toolDiffAdded", `+${number}`)} ${code}`);
-			}
+			const code = highlighted?.[i] ?? theme.fg("toolOutput", replaceTabs(line.text));
+			if (line.kind === "context") rows.push(`${theme.fg("toolDiffContext", ` ${number}  `)}${code}`);
+			else if (line.kind === "removed") rows.push(`${TINTED}removed\u0000${theme.fg("toolDiffRemoved", ` ${number} -`)}${code}`);
+			else rows.push(`${TINTED}added\u0000${theme.fg("toolDiffAdded", ` ${number} +`)}${code}`);
 		});
 	});
 	return rows;
+}
+
+/** A row's tint, and its text without the mark. */
+export function tintOf(row: string): Row {
+	if (!row.startsWith(TINTED)) return { text: row };
+	const end = row.indexOf("\u0000", TINTED.length);
+	return { text: row.slice(end + 1), tint: row.slice(TINTED.length, end) as Tint };
 }
 
 const parsed = new WeakMap<FileChanges, Map<string, FilePatch>>();
@@ -140,7 +150,7 @@ export function changeRows(changes: FileChanges, expanded: boolean, view: ViewSe
 		rows.push(...shown);
 		if (shown.length < diff.length) {
 			hidden = true;
-			rows.push(theme.fg("muted", `... (${plural(diff.length - shown.length, "more diff line")})`));
+			rows.push(theme.fg("muted", `… +${plural(diff.length - shown.length, "line")}`));
 		}
 	});
 	if (listed.length < changes.files.length) {
@@ -201,7 +211,13 @@ export class ChangesView implements Component {
 		if (this.#cache?.width !== width || this.#cache.rail !== rail) {
 			const rows = changeRows(this.#changes, this.#expanded, this.#view, this.#theme, this.#deps);
 			const indent = " ".repeat(rail);
-			const wrapped = rows.flatMap((row) => this.#deps.wrap(row, Math.max(1, width - rail)).map((line) => indent + line));
+			const room = Math.max(1, width - rail);
+		const wrapped = rows.flatMap((row) => {
+			const { text, tint } = tintOf(row);
+			const lines = this.#deps.wrap(text, room);
+			const fill = this.#deps.fill;
+			return lines.map((line) => indent + (tint && fill ? fill(this.#theme, tint, line, room) : line));
+		});
 			this.#cache = { width, rail, lines: rail ? wrapped : ["", ...wrapped] };
 		}
 		return [...base, ...this.#cache.lines];

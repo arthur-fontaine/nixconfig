@@ -134,7 +134,7 @@ test("a call detached by background-tools is recorded when it ends, as a session
 	assert.equal(data.toolCallId, "bg");
 	assert.deepEqual(data.fileChanges.files.map((file) => file.path), ["a.txt", "b.txt"]);
 	assert.equal(repainted, 1);
-	assert.ok(render().render(80).includes("✎ a.txt, b.txt  +2 −1"));
+	assert.ok(render().render(80).includes("Changed a.txt, b.txt · Added 2 lines, removed 1 line"));
 	assert.deepEqual(await copies(), []);
 	await emit("session_shutdown", {});
 
@@ -148,7 +148,7 @@ test("a call detached by background-tools is recorded when it ends, as a session
 		lastComponent: undefined,
 		invalidate() {},
 	} as never);
-	assert.equal(lines.render(80)[1], "✎ a.txt, b.txt  +2 −1");
+	assert.equal(lines.render(80)[1], "Changed a.txt, b.txt · Added 2 lines, removed 1 line");
 });
 
 test("skips nested calls, other tools, repositories' outsides, foreign details and detection turned off", async () => {

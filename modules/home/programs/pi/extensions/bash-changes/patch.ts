@@ -2,7 +2,7 @@
 
 export type DiffLine = {
 	kind: "context" | "added" | "removed";
-	// Line number on the side the line belongs to (the old side for context, as edit diffs do).
+	// Line number on the side the line belongs to (the new side for context, as Update rows do).
 	line: number;
 	text: string;
 };
@@ -88,8 +88,8 @@ export function parsePatch(patch: string): Map<string, FilePatch> {
 		if (line.startsWith("+")) hunk.lines.push({ kind: "added", line: newLine++, text });
 		else if (line.startsWith("-")) hunk.lines.push({ kind: "removed", line: oldLine++, text });
 		else if (line.startsWith(" ")) {
-			hunk.lines.push({ kind: "context", line: oldLine++, text });
-			newLine++;
+			hunk.lines.push({ kind: "context", line: newLine++, text });
+			oldLine++;
 		}
 	}
 	return files;
