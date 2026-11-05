@@ -638,8 +638,12 @@ export default class Editor extends View {
         const cw = px.width / 100, key = `${m.mono}/${m.size}`;
         if (px.width > 0 && (this.advance?.key !== key || Math.abs(this.advance.cw - cw) > 0.01)) {
           this.advance = { key, cw };
-          if (this.px) { this.size = null; this.resized(this.px); }
-          this.cx.notify();
+          // Not from here: this runs while the view is being drawn, and repainting it then
+          // panics Herdr ("already being updated"). Next tick.
+          this.cx.timer.after(0, () => {
+            if (this.px) { this.size = null; this.resized(this.px); }
+            this.cx.notify();
+          }, { owner: this });
         }
       }).child("0".repeat(100));
     return v_flex().id("nix-editor").size_full().min_h(0).relative().child(measure).bg(g.defaults.bg ?? t.background).text_color(t.foreground)
