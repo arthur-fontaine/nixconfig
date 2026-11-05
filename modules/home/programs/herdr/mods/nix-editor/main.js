@@ -155,7 +155,7 @@ export default class Editor extends View {
     this.onScrollLog = snap;
     let i = 0;
     const tick = () => {
-      if (i++ < 40) { this.scroll({ delta: { x: 0, y: -6 }, local_position: at, modifiers: {}, touch_phase: "moved" }); snap("wheel"); this.cx.timer.after(16, tick, { owner: this }); }
+      if (i++ < 80) { this.scroll({ delta: { x: 0, y: i <= 40 ? -6 : 6 }, local_position: at, modifiers: {}, touch_phase: "moved" }); snap(i <= 40 ? "down" : "up"); this.cx.timer.after(16, tick, { owner: this }); }
       else this.cx.timer.after(600, () => { snap("end"); writeTextFile(`${appHome()}/scroll-test.log`, log.join("\n") + "\n", null).catch(() => null); }, { owner: this });
     };
     tick();
@@ -250,7 +250,13 @@ export default class Editor extends View {
     const col = Math.max(0, Math.min(g.cols - 1, Math.floor((p.x - PAD.x) / m.cw)));
     const row = Math.max(0, Math.min(g.rows - 1, Math.floor((p.y - m.oy) / m.lh)));
     const hit = g.at(row, col);
-    return { ...hit, screen: `${row}:${col}` };
+    // A window drawn off its place (a scroll between two lines, a slide): its rows as drawn.
+    const sl = hit.grid !== 1 && this.slides.get(hit.grid);
+    if (sl) {
+      const w = g.grids.get(hit.grid);
+      hit.row = Math.max(0, Math.min(w.rows - 1, Math.floor((p.y - m.oy - sl.pred - sl.anim) / m.lh) - w.row));
+    }
+    return { ...hit, screen: `${hit.grid}:${hit.row}:${col}` };
   }
 
   mods(m) {
@@ -296,43 +302,53 @@ export default class Editor extends View {
   }
 
   // Trackpads report pixels: one wheel step per line height, in either direction.
+  // Trackpads report pixels. The content follows them at once (pred), and nvim is kept a
+  // line ahead in the gesture's direction: with the lines asked for, the offset stays in
+  // (-lh, 0], so the line coming in from above or below is already drawn, out of sight.
+  // At the end it stays where the fingers left it, between two lines if so: no snapping.
   scroll(e) {
     if (!this.nvim || !this.grid.mouse) return;
     const { lh, cw } = this.metrics();
     const { grid, row, col } = this.cell(e);
-    this.wheel.y += e.delta.y;
-    this.wheel.x += e.delta.x;
-    // The content follows the fingers now; nvim scrolls a line for each line height. Past
-    // the file's ends nvim doesn't, and the content gives at most a line before it stops.
+    const mods = this.mods(e.modifiers);
     const w = this.grid.grids.get(grid);
     if (w && !w.float && grid !== 1 && e.delta.y) {
       const s = this.slideOf(grid);
-      s.pred = Math.max(-lh * EXTRA, Math.min(lh * EXTRA, s.pred + e.delta.y));
+      s.pred = Math.max(-lh * (EXTRA + 1), Math.min(lh * (EXTRA + 1), s.pred + e.delta.y));
+      // Where the content will sit once nvim has scrolled the lines already asked for.
+      const settled = () => s.pred + s.pending * lh;
+      while (settled() > 0 && s.pending > -EXTRA) { this.nvim.inputMouse("wheel", "up", mods, grid, row, col); s.pending -= 1; }
+      while (settled() <= -lh && s.pending < EXTRA) { this.nvim.inputMouse("wheel", "down", mods, grid, row, col); s.pending += 1; }
       this.cx.notify();
+    } else if (e.delta.y) {
+      this.wheel.y += e.delta.y;
+      while (Math.abs(this.wheel.y) >= lh) {
+        const up = this.wheel.y > 0;
+        this.nvim.inputMouse("wheel", up ? "up" : "down", mods, grid, row, col);
+        this.wheel.y += up ? -lh : lh;
+      }
     }
-    while (Math.abs(this.wheel.y) >= lh) {
-      const up = this.wheel.y > 0;
-      const s = this.slides.get(grid);
-      if (s && Math.abs(s.pending) >= EXTRA) { this.wheel.y = 0; break; }
-      this.nvim.inputMouse("wheel", up ? "up" : "down", this.mods(e.modifiers), grid, row, col);
-      if (s) s.pending += up ? -1 : 1;
-      this.wheel.y += up ? -lh : lh;
-    }
+    this.wheel.x += e.delta.x;
     while (Math.abs(this.wheel.x) >= cw * 4) {
       const left = this.wheel.x > 0;
-      this.nvim.inputMouse("wheel", left ? "left" : "right", this.mods(e.modifiers), grid, row, col);
+      this.nvim.inputMouse("wheel", left ? "left" : "right", mods, grid, row, col);
       this.wheel.x += left ? -cw * 4 : cw * 4;
     }
-    // The gesture is over when no scroll has come for a moment (its inertia included, which
-    // macOS may report as "ended" event by event): what is left of the offset eases back.
+    // The gesture is over when no scroll has come for a moment (inertia included). Lines nvim
+    // never scrolled (the file's top or end) are given up, and the offset past them eases back.
     const n = (this.wheels = (this.wheels ?? 0) + 1);
     this.cx.timer.after(150, () => {
       if (n !== this.wheels) return;
       this.wheel = { x: 0, y: 0 };
-      for (const s of this.slides.values()) { s.anim += s.pred; s.pred = 0; s.pending = 0; }
+      for (const s of this.slides.values()) {
+        if (!s.pending) continue;
+        s.pending = 0;
+        s.anim += s.pred; s.pred = 0;
+      }
       this.animate();
     }, { owner: this });
   }
+
 
   // Cmd held over a word: it is underlined and the pointer is a hand, as a link to its
   // definition (Cmd+click goes there). Redrawn only when the word or Cmd changes.
