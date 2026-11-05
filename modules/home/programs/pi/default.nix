@@ -238,6 +238,8 @@ let
     rewind = ./extensions/rewind;
     # Herdr's Info panel: labels the terminal with its session file, keeps the Claude usage.
     herdr-session = ./extensions/herdr-session;
+    # Messages from `hc send` go to the agent (a steer mid-run), not into the draft.
+    hc-inbox = ./extensions/hc-inbox;
     # A resumed session shows its whole conversation, each compaction where it happened.
     full-history = ./extensions/full-history;
     # Pi's footer as two lines: where you are, then what's going on.
