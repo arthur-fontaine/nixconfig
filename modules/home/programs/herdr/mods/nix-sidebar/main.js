@@ -175,7 +175,20 @@ export default class Sidebar extends View {
     cx.spawn(async (cx) => {
       try {
         const st = await exec("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", "status", "--porcelain=v2", "--branch"], { cwd, on });
-        if (st.code !== 0) { this.git[key] = null; return; }
+        if (st.code !== 0) {
+          // A bare clone's container (`repo/` holding `.bare` and its worktrees) has no work
+          // tree, so no status: it is the repo's own folder, its project space.
+          const c = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, on });
+          const common = c.code === 0 ? c.stdout.trim() : "";
+          const bare = common && (await exec("git", ["--git-dir", common, "rev-parse", "--is-bare-repository"], { cwd, on })).stdout.trim() === "true";
+          if (!bare) { this.git[key] = null; return; }
+          const info = { common, top: null, repo: JSON.stringify([on, common]), name: repoName(common), branch: null, ahead: 0, behind: 0, dirty: 0, linked: false, container: true };
+          this.git[key] = info;
+          this.remember(info, on);
+          await this.loadTrees(info.repo, cx);
+          if (!on) this.watch(info.repo, common, cx);
+          return;
+        }
         const rp = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"], { cwd, on });
         const [common, top] = rp.stdout.trim().split("\n");
         const info = { common, top, repo: JSON.stringify([on, common]), name: repoName(common), branch: null, ahead: 0, behind: 0, dirty: 0, linked: top !== undefined && `${top}/.git` !== common };
@@ -252,7 +265,8 @@ export default class Sidebar extends View {
       if (g === undefined && now - (this.born[s.id] ?? now) < 1500) continue; // a moment for its git, so it doesn't jump
       if (!g) { folders.push({ s, g: null }); continue; }
       if (!repos.has(g.repo)) repos.set(g.repo, { key: g.repo, name: g.name, on: s.machine ?? null, items: [] });
-      repos.get(g.repo).items.push({ s, g });
+      if (g.container) repos.get(g.repo).home = s;
+      else repos.get(g.repo).items.push({ s, g });
     }
     for (const r of this.repos) if (!repos.has(r.key)) repos.set(r.key, { key: r.key, name: r.name, on: r.on, items: [], closed: true });
     // Each machine's repos are told apart among themselves.
@@ -263,7 +277,7 @@ export default class Sidebar extends View {
     }
     this.names = new Map([...repos.values()].map((r) => [r.key, r.name]));
     this.repoByKey = repos;
-    for (const r of repos.values()) r.project = sp.find((s) => s.id === projects[r.key]) ?? null;
+    for (const r of repos.values()) r.project = sp.find((s) => s.id === projects[r.key]) ?? r.home ?? null;
     const inside = (p, dir) => p === dir || p.startsWith(dir + "/");
     // Workers (hc run children) go under the worktree their cwd is in when their parent is an
     // orchestrator or works elsewhere; the rest stay under their parent's tab (workerRows).
@@ -548,6 +562,11 @@ export default class Sidebar extends View {
     const head = this.hoverable(id, h_flex().h(28).px(10).gap(8).items_center().rounded(6).cursor_pointer()
       .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
       .on_click((_e, cx) => this.openProject(r, cx))
+      .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 96, props: { tab: "project", target: {
+        key: r.key,
+        spaces: [...r.items.map(({ s }) => s.id), ...(r.project ? [r.project.id] : [])],
+        newProps: { repo: r.key, name: r.name, folder: r.items[0] ? place(r.items[0].s, ps) : JSON.parse(r.key)[1], machine: r.on, ...(this.trees[r.key] && { worktrees: this.trees[r.key] }) },
+      } } }))
       .child(div().id(`fold-${r.key}`).size(20).ml(-3).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.muted)
         .hover((x) => x.bg(t.input + "80").text_color(t.foreground)).active((x) => x.bg(t.input + "b3")).tooltip(folded ? "Unfold" : "Fold")
         .on_click((_e, cx) => { cx.stop_propagation(); fold(cx); })
@@ -566,7 +585,11 @@ export default class Sidebar extends View {
     const workers = projectTab ? this.workerRows(projectTab, 24, t) : [];
     if (folded && !this.filter) return [head, ...workers];
     if (r.closed && !this.trees[r.key]) this.loadTrees(r.key, null);
-    return [head, ...workers, ...items.flatMap((it) => this.worktreeRow(it, ps, t, order)), ...r.busy.flatMap((c) => this.checkoutRows(r, c, t))];
+    // A space opened on the repo's own folder (a bare clone's container) lists its tabs here;
+    // with no worktree open, the repo's worktrees are listed, each opening on a click.
+    const homeTabs = r.home && r.home === r.project ? (r.home.tabs ?? []).filter((x) => !x.settled && !isOrchestrator(x)).flatMap((x) => this.tabRows(r.home, x, ps, t, order)) : [];
+    const idle = !r.items.length && !r.closed ? r.idle.filter((c) => !r.busy.includes(c)).flatMap((c) => this.checkoutRows(r, c, t)) : [];
+    return [head, ...workers, ...homeTabs, ...items.flatMap((it) => this.worktreeRow(it, ps, t, order)), ...r.busy.flatMap((c) => this.checkoutRows(r, c, t)), ...idle];
   }
 
   folderRow({ s }, ps, t, order) {
@@ -602,6 +625,13 @@ export default class Sidebar extends View {
 
   render() {
     const t = theme();
+    // A project the menu closed or hid leaves the list of repos seen before.
+    const gone = shared("nix-sidebar.forget");
+    if (gone && gone.n !== this.forgotten) {
+      this.forgotten = gone.n;
+      this.repos = this.repos.filter((r) => r.key !== gone.key);
+      localStorage.setItem("repos", JSON.stringify(this.repos));
+    }
     if (narrow()) return this.rail(t);
     const m = this.hoverOnly && this.lastModel ? this.lastModel : this.model();
     this.lastModel = m; this.hoverOnly = false;

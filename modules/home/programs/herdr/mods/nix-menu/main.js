@@ -1,11 +1,12 @@
 // Context menus (Herdr's items). Opened as a popup with
-// props { tab: "pane" | "tab" | "space" | "global", target }.
+// props { tab: "pane" | "tab" | "space" | "project" | "global", target }. A project's target is
+// the sidebar's repo: { key, spaces (its open spaces' ids), newProps (nix-new's, for its +) }.
 // ↑/↓ move, Enter runs, Esc closes. An item is [label, command, args];
 // a command "worktree" opens the worktree dialog instead.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, openOverlay, theme, keys, terminals, spaces, panes, exec } from "herdr";
+import { run, props, closeOverlay, openOverlay, theme, keys, terminals, spaces, panes, exec, setShared } from "herdr";
 
 // Where a space is now: its first terminal's live folder, else where it was made.
 function place(s) {
@@ -53,6 +54,13 @@ function items(p, git) {
         ["New tab", "tab.new", { space: tg.space }],
         ["Close", "tab.close", { id: tg.id }],
       ];
+    case "project":
+      return [
+        ["New worktree", "worktree", { action: "new-project", props: tg.newProps }],
+        ...(tg.spaces?.length
+          ? [["Close project", "project.close", { spaces: tg.spaces, key: tg.key }]]
+          : [["Hide from the list", "project.forget", { key: tg.key }]]),
+      ];
     case "space":
       return [
         ["Rename", "space.rename", { id: tg.id }],
@@ -73,7 +81,7 @@ function items(p, git) {
 }
 
 function menuIcon(command) {
-  const name = command.endsWith(".close") ? "x" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.help" ? "terminal" : command === "app.theme" ? "settings" : command === "pane.split" ? "split-right" : command === "pane.zoom" ? "zoom" : "terminal";
+  const name = command.endsWith(".close") ? "x" : command === "project.forget" ? "minus" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.help" ? "terminal" : command === "app.theme" ? "settings" : command === "pane.split" ? "split-right" : command === "pane.zoom" ? "zoom" : "terminal";
   return `mods/nix-head/icons/${name}.svg`;
 }
 
@@ -105,6 +113,14 @@ export default class Menu extends View {
     const it = items(props(), this.git)[i];
     if (!it) return;
     closeOverlay(props()?.overlay);
+    // A project closes all its spaces (Herdr asks first for one with programs running) and
+    // leaves the sidebar's list; the sidebar takes the key from shared state.
+    if (it[1] === "project.close" || it[1] === "project.forget") {
+      for (const id of it[2].spaces ?? []) run("space.close", { id });
+      setShared("nix-sidebar.forget", { key: it[2].key, n: Date.now() });
+      return;
+    }
+    if (it[1] === "worktree" && it[2].action === "new-project") return openOverlay({ mod: "nix-new", kind: "dialog", width: 360, height: 404, props: it[2].props });
     if (it[1] === "worktree" && it[2].action === "new") openOverlay({ mod: "nix-new", kind: "dialog", width: 360, height: 404, props: { space: it[2].space } });
     else if (it[1] === "worktree") openOverlay({ mod: "nix-worktree", kind: "dialog", ...(it[2].action === "open" ? { width: 560, height: 480 } : { width: 480, height: 300 }), props: it[2] });
     else run(it[1], it[2]);
