@@ -64,3 +64,18 @@ test("a closed run shows its row alone", () => {
 	const shown = displayMessage({ role: "assistant", content: [{ type: "thinking", thinking: "Long reasoning.", durationMs: 3000 }] }, false);
 	assert.equal(renderMarkdown(shown.content[0]!.thinking!), "⦁ Thinking (3s)");
 });
+
+// What compact-tools' summary view does to thinking before this extension's transformer.
+const summarized = (markdown: string) => {
+	const first = markdown.split("\n").find((line) => line.trim()) ?? "";
+	const plain = first.replace(/[*_~`]/gu, "").replace(/\s+/gu, " ").trim();
+	return `\x1b[1m${plain}\x1b[22m`;
+};
+
+test("an opened run's thinking gets past compact-tools' summary, after the row's style", () => {
+	const thinking = "Check `row.ts` *first*.\n\n- then __tests__ ~ é";
+	const shown = displayMessage({ role: "assistant", content: [{ type: "thinking", thinking, durationMs: 2000 }] }, false, () => true);
+	assert.equal(renderMarkdown(summarized(shown.content[0]!.thinking!)), `\x1b[1m⦁ Thinking (2s)\x1b[22m\n\n${thinking}`);
+	const closed = displayMessage({ role: "assistant", content: [{ type: "thinking", thinking, durationMs: 2000 }] }, false);
+	assert.equal(renderMarkdown(summarized(closed.content[0]!.thinking!)), "\x1b[1m⦁ Thinking (2s)\x1b[22m");
+});

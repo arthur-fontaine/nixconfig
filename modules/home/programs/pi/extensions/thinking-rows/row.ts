@@ -21,9 +21,13 @@ export interface Row {
 	running: boolean;
 	tokens?: number;
 	ms?: number;
+	/** The thinking of an opened run, in base64. */
+	text?: string;
 }
 
 // Pi passes thinking text through Markdown transformers; the row travels as this line.
+// compact-tools' transformer, before this one, keeps only a thinking's first line (restyled,
+// without * _ ~ `), so an opened run's thinking travels inside it, in base64.
 const OPEN = "⟦pi-thinking-row ";
 const CLOSE = "⟧";
 
@@ -79,8 +83,8 @@ export function displayMessage<M extends Message>(message: M, streaming: boolean
 			ms: ms || undefined,
 		};
 		const text = run.map((b) => (b.thinking ?? "").trim()).filter(Boolean).join("\n\n");
-		const shown = open(n++) && text;
-		content.push({ ...run[0]!, thinking: `${OPEN}${JSON.stringify(row)}${CLOSE}${shown ? `\n\n${text}` : ""}` });
+		if (open(n++) && text) row.text = Buffer.from(text, "utf8").toString("base64");
+		content.push({ ...run[0]!, thinking: `${OPEN}${JSON.stringify(row)}${CLOSE}` });
 	}
 	return { ...message, content };
 }
@@ -97,7 +101,9 @@ export function renderMarkdown(markdown: string): string {
 	} catch {
 		return markdown;
 	}
-	return markdown.slice(0, start) + rowText(row) + markdown.slice(end + CLOSE.length);
+	const drawn = markdown.slice(0, start) + rowText(row) + markdown.slice(end + CLOSE.length);
+	// After the row and whatever style wraps it: drawn as Pi draws thinking.
+	return row.text ? `${drawn}\n\n${Buffer.from(row.text, "base64").toString("utf8")}` : drawn;
 }
 
 /** Whether a message is already this extension's copy of one (its runs are rows). */

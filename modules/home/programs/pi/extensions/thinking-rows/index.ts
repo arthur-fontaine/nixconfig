@@ -6,17 +6,21 @@
 import { AssistantMessageComponent, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { displayMessage, isDisplayed, renderMarkdown, type Message } from "./row.ts";
 
-// Global, so a reloaded extension doesn't wrap Pi's component a second time.
-const HOOK = Symbol.for("pi-extension-thinking-rows");
+// Pi's own method, kept globally from the first load: a reload (/reload, a rebuild picked up
+// without restarting) wraps it again with its own code, rather than keeping the first load's.
+const ORIGINAL = Symbol.for("pi-extension-thinking-rows.original");
 const OPENED = Symbol.for("pi-extension-thinking-rows.opened");
 const SOURCE = Symbol.for("pi-extension-thinking-rows.source");
-type Proto = { updateContent: (message: Message, streaming?: boolean) => void; [HOOK]?: true };
+type Update = (message: Message, streaming?: boolean) => void;
+type Proto = { updateContent: Update; [ORIGINAL]?: Update };
 
 function hookComponent() {
 	const proto = (AssistantMessageComponent as unknown as { prototype?: Proto } | undefined)?.prototype;
 	// Checked rather than trusted: a Pi release may rename it.
-	if (!proto || typeof proto.updateContent !== "function" || proto[HOOK]) return;
-	const original = proto.updateContent;
+	if (!proto || typeof proto.updateContent !== "function") return;
+	// A load from before the original was kept is wrapped in turn: Pi started before then needs
+	// a restart for clicks to open rows.
+	const original = (proto[ORIGINAL] ??= proto.updateContent);
 	proto.updateContent = function (message, streaming) {
 		// A click on a thinking run makes Pi flip it to hidden (thinkingVisibilityOverrides) and
 		// draw the message again: taken here as opening or closing the run, and Pi's own state
@@ -34,7 +38,6 @@ function hookComponent() {
 		}
 		return original.call(this, displayMessage(message, Boolean(streaming), (run) => opened.has(run)), streaming);
 	};
-	proto[HOOK] = true;
 }
 
 export default function (pi: ExtensionAPI) {
