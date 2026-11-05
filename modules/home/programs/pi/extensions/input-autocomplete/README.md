@@ -143,6 +143,7 @@ top of `predictor.ts`, `editor.ts` and `prediction.ts`.
 - `prediction.ts`: prompt, boundary rule, reply parsing, typed-ahead reuse, LRU. No Pi imports.
 - `context.ts`: conversation payload and branch prompts from session data
 - `history.ts`: skips Pi's replay of in-context prompts
+- `scroll.ts`: the mouse wheel over the input. No Pi imports.
 - `tests/`: `node --test 'modules/home/programs/pi/extensions/input-autocomplete/tests/*.test.ts'`
 
 ## Editor additions
@@ -150,6 +151,10 @@ top of `predictor.ts`, `editor.ts` and `prediction.ts`.
 - A slash command Pi knows is drawn in the theme's accent color as you type it.
 - The slash and `@` popup floats over the chat, just above the editor, instead
   of pushing the input line and the chat up (fullscreen mode).
+- In fullscreen mode the mouse wheel over the input scrolls it when it holds
+  more lines than it shows (the cursor follows at the edge, since Pi keeps it
+  in view), and goes to the chat when everything fits. A click places the
+  cursor; a drag still selects text for Ctrl+C / Cmd+C.
 - Edits Pi doesn't refresh the popup after, such as Cmd+Delete (to the start of
   the line), refresh it.
 - With the session-name extension loaded, `/rename` replaces Pi's `/name`:

@@ -20,6 +20,7 @@ import { ReplayFilter } from "./history.ts";
 import { arbitrate, cycle, type Step } from "./keys.ts";
 import { wantsPrediction } from "./prediction.ts";
 import type { Predictor } from "./predictor.ts";
+import { wheel } from "./scroll.ts";
 
 // Long enough that typing through a sentence doesn't fire a request at every
 // space: each one spawns `claude -p` and spends subscription quota.
@@ -31,6 +32,20 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 // What Pi's Editor keeps of its last render; private in its types, plain fields at run time.
 interface RenderedRows {
 	renderedAutocompleteHeight: number;
+	renderedVisibleLineCount: number;
+	scrollOffset: number;
+	lastWidth: number;
+}
+interface VisualLine {
+	logicalLine: number;
+	startCol: number;
+	length: number;
+}
+// Pi's Editor's own cursor moves, private in its types.
+interface VisualNavigation {
+	buildVisualLineMap(width: number): VisualLine[];
+	findCurrentVisualLine(lines: VisualLine[]): number;
+	moveToVisualLine(lines: VisualLine[], from: number, to: number): void;
 }
 // The fullscreen renderer's selection, public on Pi's alt-screen TUI but not on the TUI type.
 interface Selection {
@@ -267,9 +282,34 @@ export class GhostEditor extends CustomEditor {
 	// Rows as Pi's Editor laid them out, when the popup is drawn above the top border.
 	override handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		const popup = this.popupRows;
-		if (popup <= 0 || this.popup || !this.isShowingAutocomplete()) return super.handleMouse(event);
-		const editorRows = event.height - popup;
-		return super.handleMouse({ ...event, y: event.y < popup ? editorRows + event.y : event.y - popup });
+		const local =
+			popup <= 0 || this.popup || !this.isShowingAutocomplete()
+				? event
+				: { ...event, y: event.y < popup ? event.height - popup + event.y : event.y - popup };
+		if (local.type === "wheel") return this.scrollText(local) ?? super.handleMouse(local);
+		// Clicks place the cursor in Pi's Editor; press, drag and release stay unhandled
+		// there, for the renderer's text selection.
+		return super.handleMouse(local);
+	}
+
+	// The wheel over the text and its borders scrolls the input when it holds more rows than
+	// it shows; otherwise it's left to the chat.
+	private scrollText(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		const rendered = this as unknown as RenderedRows;
+		const nav = this as unknown as VisualNavigation;
+		if (event.y < 0 || event.y > rendered.renderedVisibleLineCount + 1 || !event.wheelDelta) return undefined;
+		if (typeof nav.buildVisualLineMap !== "function" || typeof nav.moveToVisualLine !== "function") return undefined;
+		const rows = nav.buildVisualLineMap(rendered.lastWidth);
+		const current = nav.findCurrentVisualLine(rows);
+		const next = wheel(
+			{ offset: rendered.scrollOffset, visible: rendered.renderedVisibleLineCount, total: rows.length, cursor: current },
+			event.wheelDelta,
+		);
+		if (!next) return undefined;
+		rendered.scrollOffset = next.offset;
+		// Pi's render scrolls back to the cursor, so it follows along at the edge.
+		if (next.cursor !== current) nav.moveToVisualLine(rows, current, next.cursor);
+		return { handled: true };
 	}
 
 	private drawGhost(lines: string[], width: number): void {
