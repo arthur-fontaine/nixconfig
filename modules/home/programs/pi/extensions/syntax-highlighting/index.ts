@@ -147,14 +147,23 @@ export default function (pi: ExtensionAPI) {
 		if (rows.size > MAX_ROWS) rows.delete(rows.keys().next().value!);
 	};
 
+	// bash-titles' names for long commands: a collapsed row reads as the name, an opened one
+	// shows the command. Rows are drawn again when a name arrives.
+	// Made here or there, whichever extension loads first (this one does, bash-titles fills it).
+	const holder = globalThis as unknown as Record<symbol, { get(command: string): string | undefined; listeners: Set<() => void> } | undefined>;
+	const titles = (holder[Symbol.for("pi-extension-bash-titles")] ??= { get: () => undefined, listeners: new Set() });
+	titles.listeners.add(() => { for (const invalidate of rows.values()) invalidate(); });
+
 	const renderCall =
 		(inner: RenderCall): RenderCall =>
 		(args, theme, context) => {
 			remember(context);
 			const raw = (args as { command?: unknown } | undefined)?.command;
 			if (typeof raw !== "string") return new Recolored(inner(args, theme, innerContext(context)), theme, (lines) => lines);
-			const lines = displayedCommand(normalizeCommand(raw), context.cwd).split("\n");
 			const writing = settings.expandWhileWriting && !context.argsComplete && !context.executionStarted && context.isPartial;
+			const title = !context.expanded && !writing && !showWholeCommands ? titles.get(raw) : undefined;
+			if (title) return new Recolored(inner({ ...(args as object), command: title }, theme, innerContext(context)), theme, (lines) => lines);
+			const lines = displayedCommand(normalizeCommand(raw), context.cwd).split("\n");
 			const limit: Preview = writing || showWholeCommands ? "all" : context.expanded ? settings.commandPreview : 1;
 			const { shown, hidden } = fold(lines, limit);
 			const component = inner({ ...(args as object), command: shown.join("\n") }, theme, innerContext(context));

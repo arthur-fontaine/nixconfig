@@ -249,6 +249,8 @@ let
     shell-env = ./extensions/shell-env;
     # Thinking as a tool-like row: "⦁ Thinking (3.2k tokens · 12s)", not nothing.
     thinking-rows = ./extensions/thinking-rows;
+    # Long bash commands named in plain words by Claude Haiku, cached by command.
+    bash-titles = ./extensions/bash-titles;
   };
   # Pi loads the folder's extensions in directory order, unsorted, and each tool renderer
   # wraps those of the extensions loaded after it. A manifest fixes the order: these first,
