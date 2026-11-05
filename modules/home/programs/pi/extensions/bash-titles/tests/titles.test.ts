@@ -10,11 +10,12 @@ test("short, simple commands are read as they are", () => {
 	assert.equal(wantsTitle("x".repeat(81)), true);
 });
 
-test("an answer is a title only when it is short and on one line", () => {
+test("an answer becomes a short one-line title", () => {
 	assert.equal(titleOf("Lists the largest session files."), "Lists the largest session files");
 	assert.equal(titleOf("\"runs the unit tests\""), "Runs the unit tests");
-	assert.equal(titleOf("one two three four five six seven eight nine ten"), null);
-	assert.equal(titleOf("Lists files.\nThen sorts them."), null);
+	assert.equal(titleOf("Shows the current time, logged-in user, uptime, and a test echo"), "Shows the current time, logged-in user, uptime, and a test echo");
+	assert.equal(titleOf("one two three four five six seven eight nine ten eleven twelve thirteen"), "One two three four five six seven eight nine ten eleven twelve…");
+	assert.equal(titleOf("Lists files.\nThen sorts them."), "Lists files");
 	assert.equal(titleOf(""), null);
 });
 

@@ -84,6 +84,8 @@ export default function (pi: ExtensionAPI) {
 					for (const tell of registry.listeners) tell();
 				} catch (error) {
 					log(`failed: ${(error as Error).message}`);
+					// Asked again after the pause, by the next call that drains the queue.
+					queue.unshift(command);
 					pausedUntil = Date.now() + PAUSE_MS;
 				}
 			}

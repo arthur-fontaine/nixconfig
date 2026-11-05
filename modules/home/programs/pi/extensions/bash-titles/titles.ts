@@ -24,11 +24,18 @@ export function request(command: string, max = 1500): string {
 	return `${text.slice(0, max * 0.7)}\n…\n${text.slice(-max * 0.3)}`;
 }
 
-// An answer is a title when it is one line of at most 9 words and 100 characters.
+const MAX_WORDS = 12;
+const MAX_CHARS = 90;
+
+// The answer's first line, cut to a few words: Haiku often goes a word or two past the ask,
+// and an answer dropped is a command left untitled for good.
 export function titleOf(reply: string): string | null {
-	const text = reply.trim().replace(/^["'`]+|["'`.]+$/g, "").trim();
-	if (!text || text.includes("\n") || text.length > 100) return null;
-	if (text.split(/\s+/).length > 9) return null;
+	const line = reply.trim().split("\n")[0] ?? "";
+	let text = line.trim().replace(/^["'`]+|["'`.]+$/g, "").trim();
+	if (!text) return null;
+	const words = text.split(/\s+/);
+	if (words.length > MAX_WORDS) text = words.slice(0, MAX_WORDS).join(" ").replace(/[,;:]$/, "") + "…";
+	if (text.length > MAX_CHARS) text = `${text.slice(0, MAX_CHARS - 1).trimEnd()}…`;
 	return text[0]!.toUpperCase() + text.slice(1);
 }
 
