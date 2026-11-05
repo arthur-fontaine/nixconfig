@@ -253,6 +253,8 @@ let
     thinking-rows = ./extensions/thinking-rows;
     # Long bash commands named in plain words by Claude Haiku, cached by command.
     bash-titles = ./extensions/bash-titles;
+    # Tool rows drawn faint, apart from the agent's own words.
+    tool-rows-faint = ./extensions/tool-rows-faint;
   };
   # Pi loads the folder's extensions in directory order, unsorted, and each tool renderer
   # wraps those of the extensions loaded after it. A manifest fixes the order: these first,
@@ -261,6 +263,8 @@ let
   # compact-tools' Claude-style rows, then the rest by name. One loaded after compact-tools
   # would hand it its own view of the row, which compact-tools shows once opened.
   wrappersOfCompactTools = [
+    # First, so it fades the whole row, what the others add included.
+    "tool-rows-faint"
     "auto-mode"
     "background-tools"
     "bash-changes"
