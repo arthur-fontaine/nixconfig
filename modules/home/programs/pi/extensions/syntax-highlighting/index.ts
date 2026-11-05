@@ -9,6 +9,7 @@ import { displayedCommand, fold, normalizeCommand, type Preview, readPreview } f
 import { highlightShell, type Paint } from "./highlight.ts";
 import { type Document, overlay } from "./overlay.ts";
 import { styleOutput } from "./output.ts";
+import { Rows } from "./rows.ts";
 
 type RenderCall = NonNullable<ToolRenderers["renderCall"]>;
 type RenderResult = NonNullable<ToolRenderers["renderResult"]>;
@@ -139,20 +140,15 @@ export default function (pi: ExtensionAPI) {
 	// Settings can't be read while extensions load.
 	let settings: Settings = { commandPreview: 2, expandWhileWriting: true };
 	let showWholeCommands = false;
-	const rows = new Map<string, () => void>();
-
-	const remember = (context: RenderContext) => {
-		rows.delete(context.toolCallId);
-		rows.set(context.toolCallId, context.invalidate);
-		if (rows.size > MAX_ROWS) rows.delete(rows.keys().next().value!);
-	};
+	const rows = new Rows(MAX_ROWS);
+	const remember = (context: RenderContext) => rows.remember(context.toolCallId, context.invalidate);
 
 	// bash-titles' names for long commands: a collapsed row reads as the name, an opened one
 	// shows the command. Rows are drawn again when a name arrives.
 	// Made here or there, whichever extension loads first (this one does, bash-titles fills it).
 	const holder = globalThis as unknown as Record<symbol, { get(command: string): string | undefined; listeners: Set<() => void> } | undefined>;
 	const titles = (holder[Symbol.for("pi-extension-bash-titles")] ??= { get: () => undefined, listeners: new Set() });
-	titles.listeners.add(() => { for (const invalidate of rows.values()) invalidate(); });
+	titles.listeners.add(() => rows.redrawAll());
 
 	const renderCall =
 		(inner: RenderCall): RenderCall =>
@@ -228,8 +224,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Show or fold multi-line bash commands",
 		handler: () => {
 			showWholeCommands = !showWholeCommands;
-			// Redrawing a row renders it again, which moves it to the end of `rows`.
-			for (const invalidate of [...rows.values()]) invalidate();
+			rows.redrawAll();
 		},
 	});
 
