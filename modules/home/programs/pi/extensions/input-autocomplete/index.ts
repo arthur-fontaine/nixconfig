@@ -48,7 +48,7 @@ export default function (pi: ExtensionAPI) {
 		// extensions before packages': this one sees Down ahead of pi-subagents' FleetView,
 		// which adds its own in its session_start. One it adds again later goes last.
 		stopKeys?.();
-		stopKeys = ctx.ui.onTerminalInput((data) => (editor?.takeKey(data) ? { consume: true } : undefined));
+		stopKeys = ctx.ui.onTerminalInput((data) => (editor?.copyKey(data) || editor?.takeKey(data) ? { consume: true } : undefined));
 		if (hidingAliases) return;
 		hidingAliases = true;
 		// Pi's provider is a class: its methods are passed on one by one, not spread.

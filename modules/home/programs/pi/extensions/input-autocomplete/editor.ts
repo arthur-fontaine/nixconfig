@@ -89,6 +89,14 @@ export class GhostEditor extends CustomEditor {
 		});
 	}
 
+	/**
+	 * Ctrl+C with text selected, wherever the keyboard is (a question, a dialog): the selection is
+	 * copied and the key goes no further, instead of cancelling what has the keyboard.
+	 */
+	copyKey(data: string): boolean {
+		return this.keys.matches(data, "app.clear") && this.copySelection();
+	}
+
 	private copySelection(): boolean {
 		const screen = this.tui as unknown as Selection;
 		if (!screen.hasActiveSelection?.() || !screen.copyActiveSelectionToClipboard) return false;
