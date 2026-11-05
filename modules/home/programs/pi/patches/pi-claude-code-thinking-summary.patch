@@ -1,0 +1,13 @@
+--- a/src/transcript.ts
++++ b/src/transcript.ts
+@@ -378,7 +378,9 @@
+   if (options?.maxTokens !== undefined) body.max_tokens = options.maxTokens;
+ 
+   if (options?.reasoning) {
+-    if (supportsAdaptiveThinking(modelId)) body.thinking = { type: "adaptive" };
++    // Summarized, as Claude Code shows it: the API's default for recent models is "omitted"
++    // (the thinking arrives empty, only its signature), which leaves nothing to show.
++    if (supportsAdaptiveThinking(modelId)) body.thinking = { type: "adaptive", display: "summarized" };
+     body.output_config = {
+       effort: options.reasoning === "minimal" ? "low" : options.reasoning,
+     };

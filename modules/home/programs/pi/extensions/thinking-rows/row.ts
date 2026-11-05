@@ -47,12 +47,14 @@ export function rowText(row: Row): string {
 
 /**
  * The message as Pi should draw it: each run of thinking blocks becomes one block whose
- * text starts with the row's marker line, then any thinking text there was.
+ * text is the row's marker line, followed by the thinking text when that run is open
+ * (`open(n)`, n counting the runs from 0), as a tool row opens on a click.
  */
-export function displayMessage<M extends Message>(message: M, streaming: boolean): M {
+export function displayMessage<M extends Message>(message: M, streaming: boolean, open: (run: number) => boolean = () => false): M {
 	if (!message?.content?.some((b) => b.type === "thinking")) return message;
 	const runs = message.content.reduce((n, b, i, all) => n + (b.type === "thinking" && all[i - 1]?.type !== "thinking" ? 1 : 0), 0);
 	const content: Block[] = [];
+	let n = 0;
 	for (let i = 0; i < message.content.length; i++) {
 		const block = message.content[i]!;
 		if (block.type !== "thinking") {
@@ -77,7 +79,8 @@ export function displayMessage<M extends Message>(message: M, streaming: boolean
 			ms: ms || undefined,
 		};
 		const text = run.map((b) => (b.thinking ?? "").trim()).filter(Boolean).join("\n\n");
-		content.push({ ...run[0]!, thinking: `${OPEN}${JSON.stringify(row)}${CLOSE}${text ? `\n\n${text}` : ""}` });
+		const shown = open(n++) && text;
+		content.push({ ...run[0]!, thinking: `${OPEN}${JSON.stringify(row)}${CLOSE}${shown ? `\n\n${text}` : ""}` });
 	}
 	return { ...message, content };
 }
@@ -95,4 +98,9 @@ export function renderMarkdown(markdown: string): string {
 		return markdown;
 	}
 	return markdown.slice(0, start) + rowText(row) + markdown.slice(end + CLOSE.length);
+}
+
+/** Whether a message is already this extension's copy of one (its runs are rows). */
+export function isDisplayed(message: Message): boolean {
+	return Boolean(message?.content?.some((b) => b.type === "thinking" && b.thinking?.startsWith(OPEN)));
 }

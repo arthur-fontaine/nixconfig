@@ -1,12 +1,15 @@
 // Thinking drawn as a row, like a tool call: "⦁ Thinking…", then "⦁ Thinking (3.2k tokens ·
 // 12s)". The tokens are the response's reasoning tokens; the time is measured while the
 // thinking streams and kept on its block in the session (durationMs), so a resumed session
-// shows it too. Any thinking text still shows under the row.
+// shows it too. A click opens the row on the thinking (summarized by the API), as a tool row
+// opens on its details, and closes it again.
 import { AssistantMessageComponent, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { displayMessage, renderMarkdown, type Message } from "./row.ts";
+import { displayMessage, isDisplayed, renderMarkdown, type Message } from "./row.ts";
 
 // Global, so a reloaded extension doesn't wrap Pi's component a second time.
 const HOOK = Symbol.for("pi-extension-thinking-rows");
+const OPENED = Symbol.for("pi-extension-thinking-rows.opened");
+const SOURCE = Symbol.for("pi-extension-thinking-rows.source");
 type Proto = { updateContent: (message: Message, streaming?: boolean) => void; [HOOK]?: true };
 
 function hookComponent() {
@@ -15,7 +18,21 @@ function hookComponent() {
 	if (!proto || typeof proto.updateContent !== "function" || proto[HOOK]) return;
 	const original = proto.updateContent;
 	proto.updateContent = function (message, streaming) {
-		return original.call(this, displayMessage(message, Boolean(streaming)), streaming);
+		// A click on a thinking run makes Pi flip it to hidden (thinkingVisibilityOverrides) and
+		// draw the message again: taken here as opening or closing the run, and Pi's own state
+		// put back, so it keeps drawing the row this extension gives it.
+		const self = this as unknown as { thinkingVisibilityOverrides?: Map<number, boolean>; [OPENED]?: Set<number>; [SOURCE]?: Message };
+		// Pi draws again from the last message it was given, which is this extension's copy
+		// (without the text of a closed run): the message it came from is kept for that.
+		if (isDisplayed(message) && self[SOURCE]) message = self[SOURCE];
+		else self[SOURCE] = message;
+		const opened = (self[OPENED] ??= new Set());
+		const flips = self.thinkingVisibilityOverrides;
+		if (flips instanceof Map) {
+			for (const [run, hidden] of flips) if (hidden) opened.has(run) ? opened.delete(run) : opened.add(run);
+			flips.clear();
+		}
+		return original.call(this, displayMessage(message, Boolean(streaming), (run) => opened.has(run)), streaming);
 	};
 	proto[HOOK] = true;
 }

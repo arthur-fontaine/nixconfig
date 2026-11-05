@@ -87,7 +87,9 @@ let
   # one, and the last logged-in answer is kept in ~/.pi/agent/cache. With
   # patches/pi-claude-code-keep-thinking.patch, the signed thinking of earlier turns reaches
   # the API again: Claude Code dropped it from every replayed turn, so the model re-planned
-  # from scratch at each tool round (the looping chats). No runtime dependencies:
+  # from scratch at each tool round (the looping chats). With
+  # patches/pi-claude-code-thinking-summary.patch, the thinking comes summarized (the API's
+  # default is now omitted, an empty text) for thinking-rows to show. No runtime dependencies:
   # its imports are Pi's own packages.
   piClaudeCode = pkgs.runCommand "pi-claude-code-70abb65-patched" { } ''
     cp -r ${
@@ -102,6 +104,7 @@ let
     patch -d $out -p1 < ${./patches/pi-claude-code-caller-cache.patch}
     patch -d $out -p1 < ${./patches/pi-claude-code-status-cache.patch}
     patch -d $out -p1 < ${./patches/pi-claude-code-keep-thinking.patch}
+    patch -d $out -p1 < ${./patches/pi-claude-code-thinking-summary.patch}
   '';
   # nedleeds/pi-compact-tools 0.16.7 with patches/pi-compact-tools-claude-bash.patch: bash
   # titles leave the folding of long commands to syntax-highlighting, and an opened command

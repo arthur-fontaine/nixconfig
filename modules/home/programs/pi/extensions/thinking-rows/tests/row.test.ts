@@ -40,7 +40,7 @@ test("a run still streaming says so; one followed by text has ended", () => {
 	assert.equal(renderMarkdown(after.content[0]!.thinking!), "⦁ Thinking");
 });
 
-test("thinking text stays under the row, and several runs share no token count", () => {
+test("a run opens on its thinking text; several runs share no token count", () => {
 	const shown = displayMessage({
 		role: "assistant",
 		usage: { reasoning: 900 },
@@ -50,7 +50,7 @@ test("thinking text stays under the row, and several runs share no token count",
 			{ type: "toolCall", id: "1" },
 			{ type: "thinking", thinking: "", durationMs: 2000 },
 		],
-	}, false);
+	}, false, (run) => run === 0);
 	assert.equal(shown.content.length, 3);
 	assert.equal(renderMarkdown(shown.content[0]!.thinking!), "⦁ Thinking\n\nFirst idea.\n\nSecond.");
 	assert.equal(renderMarkdown(shown.content[2]!.thinking!), "⦁ Thinking (2s)");
@@ -58,4 +58,9 @@ test("thinking text stays under the row, and several runs share no token count",
 
 test("other Markdown is left alone", () => {
 	assert.equal(renderMarkdown("plain *thinking*"), "plain *thinking*");
+});
+
+test("a closed run shows its row alone", () => {
+	const shown = displayMessage({ role: "assistant", content: [{ type: "thinking", thinking: "Long reasoning.", durationMs: 3000 }] }, false);
+	assert.equal(renderMarkdown(shown.content[0]!.thinking!), "⦁ Thinking (3s)");
 });
