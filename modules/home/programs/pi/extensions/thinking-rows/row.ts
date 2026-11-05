@@ -43,10 +43,15 @@ export function duration(ms: number): string {
 	return s % 60 ? `${m}m ${s % 60}s` : `${m}m`;
 }
 
-export function rowText(row: Row): string {
-	if (row.running) return "⦁ Thinking…";
+/** The row's figures, "(3.2k tokens · 12s)", or "…" while it runs. */
+export function rowDetail(row: Row): string {
+	if (row.running) return "…";
 	const parts = [row.tokens ? tokens(row.tokens) : null, row.ms ? duration(row.ms) : null].filter(Boolean);
-	return parts.length ? `⦁ Thinking (${parts.join(" · ")})` : "⦁ Thinking";
+	return parts.length ? ` (${parts.join(" · ")})` : "";
+}
+
+export function rowText(row: Row): string {
+	return `⦁ Thinking${rowDetail(row)}`;
 }
 
 /**
@@ -89,8 +94,11 @@ export function displayMessage<M extends Message>(message: M, streaming: boolean
 	return { ...message, content };
 }
 
+/** How the row is painted: as a tool row is, when the theme is known. */
+export type Style = (row: Row) => string;
+
 /** Pi's thinking Markdown with the marker line turned into the row. */
-export function renderMarkdown(markdown: string): string {
+export function renderMarkdown(markdown: string, style: Style = rowText): string {
 	const start = markdown.indexOf(OPEN);
 	if (start < 0) return markdown;
 	const end = markdown.indexOf(CLOSE, start);
@@ -101,7 +109,7 @@ export function renderMarkdown(markdown: string): string {
 	} catch {
 		return markdown;
 	}
-	const drawn = markdown.slice(0, start) + rowText(row) + markdown.slice(end + CLOSE.length);
+	const drawn = markdown.slice(0, start) + style(row) + markdown.slice(end + CLOSE.length);
 	// After the row and whatever style wraps it: drawn as Pi draws thinking.
 	return row.text ? `${drawn}\n\n${Buffer.from(row.text, "base64").toString("utf8")}` : drawn;
 }
