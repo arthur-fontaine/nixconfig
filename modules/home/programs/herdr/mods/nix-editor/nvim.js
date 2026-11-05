@@ -318,10 +318,19 @@ export function nvimConnection({ config, id, post, onRedraw, onNotify }) {
 // base64 lines and writes raw bytes. Still no `async`: a read pending in a function that
 // returned is what crashed Herdr (84b05e6); this read loop's state lives on `c`.
 export function nvimSocketConnection({ socket, rest, onRedraw, onNotify }) {
-  const c = { closed: false, nextId: 1, pending: new Map(), writing: Promise.resolve(), decoder: new NvimDecoder() };
+  const c = { closed: false, nextId: 1, pending: new Map(), queued: [], writing: false, decoder: new NvimDecoder() };
+  // One write at a time, and what is sent while one is out goes in the next, together: a
+  // write costs the runtime several ms, and twelve wheel steps one after another were 120 ms.
+  c.flush = () => {
+    if (c.writing || c.closed || !c.queued.length) return;
+    const line = nvimBase64(c.queued) + "\n";
+    c.queued = [];
+    c.writing = true;
+    socket.write(line).catch(() => {}).then(() => { c.writing = false; c.flush(); });
+  };
   c.send = (message) => {
-    const line = nvimBase64(nvimEncode(message)) + "\n";
-    c.writing = c.writing.then(() => (c.closed ? undefined : socket.write(line))).catch(() => {});
+    for (const b of nvimEncode(message)) c.queued.push(b);
+    c.flush();
   };
   c.request = (method, ...args) => {
     if (c.closed) return Promise.reject(new Error("nvim is closed"));

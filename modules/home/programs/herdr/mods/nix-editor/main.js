@@ -158,14 +158,42 @@ export default class Editor extends View {
     let i = 0;
     const tick = () => {
       // props.testScroll: [px per event, events], + = up (default: 6 px down 40 times, then up).
-      const [px, count] = Array.isArray(props()?.testScroll) ? props().testScroll : [null, 80];
+      // "flick": a macOS trackpad flick down then up, 120 events a second with inertia.
+      if (props()?.testScroll === "flick") {
+        const ramp = [20, 60, 110, 150, 150, 150, 130, 110, 90, 70, 55, 40, 30, 22, 15, 10, 6, 4, 2, 1];
+        const seq = [...ramp.map((d) => -d), ...ramp.map((d) => -d), ...Array(30).fill(0), ...ramp, ...ramp];
+        if (i < seq.length) {
+          const dy = seq[i++];
+          if (dy) { this.scroll({ delta: { x: 0, y: dy }, local_position: at, modifiers: {}, touch_phase: "moved" }); snap(dy < 0 ? "down" : "up"); }
+          this.cx.timer.after(8, tick, { owner: this });
+        } else this.cx.timer.after(600, () => { snap("end"); writeTextFile(`${appHome()}/scroll-test.log`, log.join("\n") + "\n", null).catch(() => null); }, { owner: this });
+        return;
+      }
+      // [px, count, ms, then]: `then` px for `count` more events after the first `count`.
+      const [px, count0, every = 16, then = null] = Array.isArray(props()?.testScroll) ? props().testScroll : [null, 80];
+      const count = then === null ? count0 : count0 * 2;
       if (i++ < count) {
-        const dy = px ?? (i <= 40 ? -6 : 6);
-        this.scroll({ delta: { x: 0, y: dy }, local_position: at, modifiers: {}, touch_phase: "moved" }); snap(dy < 0 ? "down" : "up"); this.cx.timer.after(16, tick, { owner: this });
+        const dy = px === null ? (i <= 40 ? -6 : 6) : then !== null && i > count0 ? then : px;
+        this.scroll({ delta: { x: 0, y: dy }, local_position: at, modifiers: {}, touch_phase: "moved" }); snap(dy < 0 ? "down" : "up"); this.cx.timer.after(every, tick, { owner: this });
       }
       else this.cx.timer.after(600, () => { snap("end"); writeTextFile(`${appHome()}/scroll-test.log`, log.join("\n") + "\n", null).catch(() => null); }, { owner: this });
     };
     tick();
+  }
+
+  // Where a window's content is drawn (px, + = lower): its offset, but never past the rows
+  // there are to fill the space it uncovers (the rows that left, the rows nvim draws under the
+  // edge). A frame drawn while nvim is still scrolling waits for those rows rather than show an
+  // empty band; past the file's top or end the content still gives elastically.
+  drawnOff(id) {
+    const s = this.slides.get(id);
+    if (!s) return 0;
+    const w = this.grid.grids.get(id), v = w?.viewport, { lh } = this.metrics();
+    const off = s.pred + s.anim;
+    const top = v && v.top === 0 && !s.pending, end = v && v.top >= v.count - 1 && !s.pending;
+    const most = top ? Infinity : s.above.length * lh;
+    const least = end ? -Infinity : -(s.below.length + EXTRA) * lh;
+    return Math.max(least, Math.min(most, off));
   }
 
   slideOf(id) {
@@ -261,7 +289,7 @@ export default class Editor extends View {
     const sl = hit.grid !== 1 && this.slides.get(hit.grid);
     if (sl) {
       const w = g.grids.get(hit.grid);
-      hit.row = Math.max(0, Math.min(w.rows - 1, Math.floor((p.y - m.oy - sl.pred - sl.anim) / m.lh) - w.row));
+      hit.row = Math.max(0, Math.min(w.rows - 1, Math.floor((p.y - m.oy - this.drawnOff(hit.grid)) / m.lh) - w.row));
     }
     return { ...hit, screen: `${hit.grid}:${hit.row}:${col}` };
   }
@@ -323,7 +351,8 @@ export default class Editor extends View {
       const s = this.slideOf(grid);
       // How far nvim can still scroll each way (its viewport), counting the lines asked for.
       const v = w.viewport;
-      const room = (up) => (!v ? AHEAD : up ? v.top + s.pending : Math.max(0, v.count - v.bottom) - s.pending);
+      // Down, Neovim scrolls until the last line is at the top, as it always has.
+      const room = (up) => (!v ? AHEAD : up ? v.top + s.pending : Math.max(0, v.count - 1 - v.top) - s.pending);
       // Past the file's top or end the content only gives a little, and less as it goes.
       const elastic = (d) => Math.sign(d) * Math.min(lh * 1.5, Math.abs(d) * 0.35);
       const up = e.delta.y > 0;
@@ -363,7 +392,7 @@ export default class Editor extends View {
       this.wheel = { x: 0, y: 0 };
       for (const [id, s] of this.slides) {
         const v = this.grid.grids.get(id)?.viewport;
-        const over = s.pred > 0 && v && v.top === 0 ? s.pred : s.pred < 0 && v && v.bottom >= v.count ? s.pred : 0;
+        const over = s.pred > 0 && v && v.top === 0 ? s.pred : s.pred < 0 && v && v.top >= v.count - 1 ? s.pred : 0;
         if (s.pending) { s.pending = 0; s.anim += s.pred; s.pred = 0; }
         else if (over) { s.anim += over; s.pred -= over; }
       }
@@ -430,13 +459,20 @@ export default class Editor extends View {
     const base = this.grid.defaults.bg, g = this.grid;
     const opaque = (e) => e.when(w.id !== 1 && Boolean(base), (e) => e.bg(base));
     const sl = this.slides.get(w.id);
-    const s = sl && { ...sl, off: sl.pred + sl.anim };
+    const s = sl && { ...sl, off: this.drawnOff(w.id) };
     if (!s || !s.off) return Array.from({ length: w.rows }, (_, r) => opaque(this.row(w.id, r, PAD.x + w.col * m.cw, m.oy + (w.row + r) * m.lh, base, m, t)));
     // Sliding: the window clips its rows, drawn `off` px from their place, and the rows that
     // left fill the space uncovered above (scrolling down) or below (scrolling up).
     const line = (runs, y) => opaque(this.rowOf(runs, w.cols, 0, y, base, m, t));
     const rows = Array.from({ length: w.rows }, (_, r) => line(g.runs(w.id, r), r * m.lh + s.off));
     const n = Math.ceil(Math.abs(s.off) / m.lh);
+    // props.testScroll: every frame that would show an empty band is logged.
+    if (this.onScrollLog && Math.abs(s.off - (sl.pred + sl.anim)) > 1) this.onScrollLog(`HELD ${(sl.pred + sl.anim - s.off).toFixed(0)}px`);
+    if (this.onScrollLog) {
+      const v = w.viewport, edge = s.off > 0 ? v?.top === 0 : v && v.top >= v.count - 1;
+      const have = s.off > 0 ? s.above.length : s.below.length + EXTRA;
+      if (n > have && !edge) this.onScrollLog(`BLANK ${s.off > 0 ? "top" : "bottom"} ${n - have} line(s) off=${s.off.toFixed(0)}`);
+    }
     if (s.off > 0) for (let k = 1; k <= Math.min(n, s.above.length); k++) rows.push(line(g.runsOf(s.above[s.above.length - k]), s.off - k * m.lh));
     else for (let k = 0; k < Math.min(n, s.below.length); k++) rows.push(line(g.runsOf(s.below[k]), (w.rows + k) * m.lh + s.off));
     return [div().absolute().left(PAD.x + w.col * m.cw).top(m.oy + w.row * m.lh).w(w.cols * m.cw).h(w.rows * m.lh).overflow_hidden().children(rows)];
@@ -477,7 +513,7 @@ export default class Editor extends View {
     if (!cg || row >= cg.rows || col >= cg.cols || cg.hidden) return null;
     let x, y;
     if (cg.float) { const r = this.placeFloat(cg, m); x = r.x + FLOAT.x + col * m.cw; y = r.y + FLOAT.y + row * m.lh; }
-    else { x = PAD.x + (cg.col + col) * m.cw; y = m.oy + (cg.row + row) * m.lh + ((this.slides.get(grid)?.pred ?? 0) + (this.slides.get(grid)?.anim ?? 0)); }
+    else { x = PAD.x + (cg.col + col) * m.cw; y = m.oy + (cg.row + row) * m.lh + this.drawnOff(grid); }
     const { shape, percentage } = g.cursorShape();
     // A bar between two characters, over neither: centred on the cells' boundary. Steady and
     // dimmed while the editor doesn't have the keyboard.

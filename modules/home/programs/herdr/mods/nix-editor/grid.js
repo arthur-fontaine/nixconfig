@@ -29,6 +29,7 @@ export class Grid {
     // `lines` the rows that left the window, top first, for the view to draw while it
     // slides the window's content to its new place.
     this.scrolls = [];
+    this.moved = new Map(); // window grid → lines its topline moved since takeScrolls (+ = down)
   }
 
   // The screen: grid 1's size.
@@ -133,8 +134,12 @@ export class Grid {
       case "win_viewport": {
         // [grid, win, topline, botline, curline, curcol, line_count, scroll_delta]: lines are
         // 0-based, botline past the last shown. Whether the window can scroll either way.
+        // A change of topline is a scroll however nvim redraws it: a fast scroll of many lines
+        // may come as a whole redraw, with no grid_scroll at all.
         const [id, , topline, botline, , , count] = args;
-        this.grid(id).viewport = { top: topline, bottom: botline, count };
+        const g = this.grid(id), was = g.viewport?.top;
+        if (was !== undefined && topline !== was) this.moved.set(id, (this.moved.get(id) ?? 0) + topline - was);
+        g.viewport = { top: topline, bottom: botline, count };
         break;
       }
       case "win_hide":
@@ -204,10 +209,26 @@ export class Grid {
     }
   }
 
+  // Each window's scroll since the last call: { id, rows (+ = down), lines (rows that left,
+  // when nvim sent them as a grid_scroll) }. The rows come from the topline when nvim reported
+  // it (win_viewport), else from the grid_scrolls. A jump of a window's height or more (another
+  // file, a search) isn't a scroll.
   takeScrolls() {
-    const out = this.scrolls;
+    const by = new Map();
+    for (const s of this.scrolls) {
+      const e = by.get(s.id) ?? { id: s.id, rows: 0, lines: [] };
+      e.rows += s.rows;
+      e.lines = s.rows > 0 ? [...e.lines, ...s.lines] : [...s.lines, ...e.lines];
+      by.set(s.id, e);
+    }
+    for (const [id, rows] of this.moved) {
+      const e = by.get(id) ?? { id, rows: 0, lines: [] };
+      e.rows = rows;
+      by.set(id, e);
+    }
     this.scrolls = [];
-    return out;
+    this.moved = new Map();
+    return [...by.values()].filter((e) => e.rows && Math.abs(e.rows) < (this.grids.get(e.id)?.rows ?? 0));
   }
 
   // A row of cells (a grid's, or one kept by a scroll) as runs of one highlight.

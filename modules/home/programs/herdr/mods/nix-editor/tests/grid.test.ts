@@ -143,14 +143,28 @@ test("a whole-window scroll keeps the rows it pushed out, for the view's slide",
   for (let r = 0; r < 4; r++) g.apply([["grid_line", [2, r, 0, [[String(r), 0, 3]]]]]);
   g.apply([["grid_scroll", [2, 0, 4, 0, 3, 1, 0]]]);
   g.apply([["grid_scroll", [2, 0, 4, 0, 3, -2, 0]]]);
-  const [down, up] = g.takeScrolls();
-  assert.equal(down.rows, 1);
-  assert.deepEqual(down.lines.map((l) => l.map((c) => c[0]).join("")), ["000"]);
-  assert.equal(up.rows, -2);
-  // (nvim hasn't drawn the row the first scroll uncovered: it still shows "333".)
-  assert.deepEqual(up.lines.map((l) => l.map((c) => c[0]).join("")), ["333", "333"]);
+  // Taken together: one line down then two up is one line up.
+  const [both] = g.takeScrolls();
+  assert.equal(both.rows, -1);
   assert.deepEqual(g.takeScrolls(), []);
+  g.apply([["grid_scroll", [2, 0, 4, 0, 3, 1, 0]]]);
+  const [down] = g.takeScrolls();
+  assert.equal(down.rows, 1);
+  assert.deepEqual(down.lines.map((l) => l.map((c) => c[0]).join("")), ["111"]);
   // Part of a window (a region) or the screen grid: nothing to slide.
   g.apply([["grid_scroll", [2, 1, 4, 0, 3, 1, 0]]]);
+  assert.deepEqual(g.takeScrolls(), []);
+});
+
+test("a topline change is a scroll even when nvim redraws instead of scrolling", () => {
+  const g = new Grid();
+  g.apply([["grid_resize", [2, 3, 10]]]);
+  g.apply([["win_viewport", [2, null, 20, 30, 20, 0, 100, 0]]]);
+  assert.deepEqual(g.takeScrolls(), []);
+  // 6 lines up, drawn as grid_lines only.
+  g.apply([["win_viewport", [2, null, 14, 24, 14, 0, 100, -6]]]);
+  assert.deepEqual(g.takeScrolls().map((s) => s.rows), [-6]);
+  // Another file in the window: not a scroll.
+  g.apply([["win_viewport", [2, null, 0, 10, 0, 0, 5, 0]]]);
   assert.deepEqual(g.takeScrolls(), []);
 });
