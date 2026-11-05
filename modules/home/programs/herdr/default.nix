@@ -5,20 +5,27 @@ let
   # unrelated to the `herdr` TUI formula. The app finds it on the login
   # shell's PATH and leaves updating a package-managed core to us: bump the
   # version from https://releases.herdr.dev/core/latest.json.
-  version = "0.1.17";
+  version = "0.1.18";
 
+  # Since 0.1.18 the core is an app of its own on macOS, Herdr Core.app (so macOS can grant it
+  # the local network and the microphone for the programs in its terminals). It wants to run
+  # from a complete signed bundle: the bundle is kept whole, and herdr-core and hc are its
+  # binary. A core in /nix/store is taken as Nix-managed: the app never updates it, which is
+  # why an older one here showed "belongs to nix (update it in your Nix configuration)".
   herdrCore = pkgs.stdenvNoCC.mkDerivation {
     pname = "herdr-core";
     inherit version;
     src = pkgs.fetchurl {
       url = "https://releases.herdr.dev/core/${version}/herdr-core-macos-aarch64.tar.gz";
-      hash = "sha256-ztvU1Nm6E4VYgZjdTTxn0mVEePM63VtkRdTQ652l/PM=";
+      hash = "sha256-d9ivCS4lrmUPRCTW2tJ1FPaRahHYB/sHUoWM0nwh5Pw=";
     };
     sourceRoot = ".";
-    # A signed release binary: leave it byte for byte.
+    # A signed release bundle: leave it byte for byte.
     dontFixup = true;
     installPhase = ''
-      install -Dm755 herdr-core $out/bin/herdr-core
+      mkdir -p $out/Applications $out/bin
+      cp -R "Herdr Core.app" $out/Applications/
+      ln -s "$out/Applications/Herdr Core.app/Contents/MacOS/herdr-core" $out/bin/herdr-core
       ln -s herdr-core $out/bin/hc
     '';
     meta.platforms = [ "aarch64-darwin" ];
