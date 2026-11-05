@@ -5,7 +5,7 @@
 // opens on its details, and closes it again. The newest run stays open until another one
 // comes, unless a click said otherwise.
 import { AssistantMessageComponent, type ExtensionAPI, type Theme } from "@earendil-works/pi-coding-agent";
-import { faint } from "./faint.ts";
+import { type Fade, fadeOf, faint } from "./faint.ts";
 import { displayMessage, isDisplayed, renderMarkdown, rowDetail, rowText, type Message, type Row } from "./row.ts";
 
 // Pi draws thinking italic and compact-tools bolds its first line: both ended for the row.
@@ -79,11 +79,15 @@ export default function (pi: ExtensionAPI) {
 	// Painted as compact-tools paints a tool row, faint as tool-rows-faint makes those, and
 	// not in Pi's italic thinking style, so a thinking row reads as one more step.
 	let theme: Theme | undefined;
+	let fade: { key: string; value?: Fade } | undefined;
 	const style = (row: Row) => {
 		if (!theme) return rowText(row);
 		const t = theme;
+		const key = t.getFgAnsi("text");
+		if (fade?.key !== key) fade = { key, value: fadeOf(t as never, 0.3) };
+		const dim = (text: string) => (fade?.value ? faint(text, fade.value) : text);
 		const dot = row.running ? t.fg("muted", "⦁") : t.fg("success", "⦁");
-		return PLAIN + faint(`${dot} ${t.fg("toolTitle", t.bold("Thinking"))}${t.fg("toolOutput", rowDetail(row))}`);
+		return PLAIN + dim(`${dot} ${t.fg("toolTitle", t.bold("Thinking"))}${t.fg("toolOutput", rowDetail(row))}`);
 	};
 	pi.registerMarkdownTransformer((markdown, { messageType }) =>
 		messageType === "assistant-thinking" ? renderMarkdown(markdown, style) : markdown,
