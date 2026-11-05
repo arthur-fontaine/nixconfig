@@ -144,6 +144,7 @@ top of `predictor.ts`, `editor.ts` and `prediction.ts`.
 - `context.ts`: conversation payload and branch prompts from session data
 - `history.ts`: skips Pi's replay of in-context prompts
 - `scroll.ts`: the mouse wheel over the input. No Pi imports.
+- `popup.ts`: whether the editor is still mounted, for its popup. No Pi imports.
 - `paste.ts`: a paste joining the paste marker before the cursor. No Pi imports.
 - `tests/`: `node --test 'modules/home/programs/pi/extensions/input-autocomplete/tests/*.test.ts'`
 
@@ -151,7 +152,8 @@ top of `predictor.ts`, `editor.ts` and `prediction.ts`.
 
 - A slash command Pi knows is drawn in the theme's accent color as you type it.
 - The slash and `@` popup floats over the chat, just above the editor, instead
-  of pushing the input line and the chat up (fullscreen mode).
+  of pushing the input line and the chat up (fullscreen mode). It closes on
+  submit, and whenever Pi swaps the editor for a selector such as /resume's.
 - In fullscreen mode the mouse wheel over the input scrolls it when it holds
   more lines than it shows (the cursor follows at the edge, since Pi keeps it
   in view), and goes to the chat when everything fits. A click places the

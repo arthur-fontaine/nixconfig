@@ -19,6 +19,7 @@ import { commandName, paintCommand } from "./command.ts";
 import { ReplayFilter } from "./history.ts";
 import { arbitrate, cycle, type Step } from "./keys.ts";
 import { type Draft, joinPaste } from "./paste.ts";
+import { mounted } from "./popup.ts";
 import { wantsPrediction } from "./prediction.ts";
 import type { Predictor } from "./predictor.ts";
 import { wheel } from "./scroll.ts";
@@ -106,7 +107,13 @@ export class GhostEditor extends CustomEditor {
 		Object.defineProperty(this, "onSubmit", {
 			configurable: true,
 			enumerable: true,
-			get: () => submit && ((text: string) => submit?.(this.aliased(text))),
+			get: () =>
+				submit &&
+				((text: string) => {
+					// What's submitted may replace the editor (/resume's picker) before it renders again.
+					this.hidePopup();
+					submit?.(this.aliased(text));
+				}),
 			set: (handler?: (text: string) => void) => {
 				submit = handler;
 			},
@@ -287,7 +294,9 @@ export class GhostEditor extends CustomEditor {
 			this.popup.lines = popup;
 			this.popup.editorRows = editor.length;
 		} else {
-			const options: OverlayOptions = { row, col: 0, width, nonCapturing: true };
+			// Checked on every frame: Pi may swap the editor out without rendering it again.
+			const visible = () => this.isShowingAutocomplete() && mounted(this, this.tui.children);
+			const options: OverlayOptions = { row, col: 0, width, nonCapturing: true, visible };
 			const view: Component = {
 				render: () => this.popup?.lines ?? [],
 				invalidate() {},
