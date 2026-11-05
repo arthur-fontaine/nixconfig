@@ -132,6 +132,14 @@ function painter(theme: Theme): Paint {
 	};
 }
 
+// The offer's wording: a bare "related" reads as "keep the context", while it means a new task
+// whose finished predecessor can be compacted.
+const LOOKS_LIKE: Record<string, string> = {
+	related: "a new task building on this one, so the finished work's details can go",
+	return: "a return to an earlier task, so the rest can be summarized",
+	independent: "an unrelated task",
+};
+
 export interface Deps {
 	summarizeMessages: typeof generateSummaryWithUsage;
 }
@@ -485,8 +493,10 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 	async function summarizeContext(ctx: ExtensionContext, instructions: string, signal: AbortSignal) {
 		const model = ctx.model;
 		if (!model) throw new Error("no model selected");
+		// The session's thinking level, as Pi's /compact passes: without one the request disables
+		// thinking, which adaptive-only Claude models reject.
 		return deps.summarizeMessages(ctx.sessionManager.buildSessionProjection().messages, model, undefined, undefined,
-			undefined, signal, instructions, undefined, undefined,
+			undefined, signal, instructions, undefined, pi.getThinkingLevel(),
 			(m, context, options) => ctx.modelRegistry.streamSimple(m, context, options));
 	}
 
@@ -506,8 +516,8 @@ export function autoCompact(pi: ExtensionAPI, deps: Deps) {
 		if (!ctx.hasUI) return false; // no one to ask (a -p run): nothing happens without the press
 		const verb = decision.action === "clear" ? "Clear the context first" : "Compact the context first";
 		const usage = ctx.getContextUsage();
-		const question = "auto-compact: this prompt looks " + decision.category!.replace("_", " ") + " (" +
-			Math.round(decision.confidence! * 100) + "%). " + verb + "?" +
+		const question = "auto-compact: this prompt looks like " + (LOOKS_LIKE[decision.category!] ?? decision.category!.replace("_", " ")) +
+			" (" + Math.round(decision.confidence! * 100) + "%). " + verb + "?" +
 			(usage?.tokens ? " The context holds " + tokens(usage.tokens) + " tokens (" + Math.round(usage.percent ?? 0) + "%)." : "");
 		const options = [verb, "Send as is"];
 		const local = (signal: AbortSignal) => ctx.ui.select(question, options, { signal });

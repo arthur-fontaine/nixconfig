@@ -157,6 +157,7 @@ function stub({ env = MAMMOTH, messages = MESSAGES, fetch, complete, select, com
 			return () => {};
 		},
 		registerCommand: (name: string, options: any) => commands.set(name, options),
+		getThinkingLevel: () => "medium",
 		getSettings: () => ({ compaction: { reserveTokens: 16_384, ...(keepRecentTokens !== undefined && { keepRecentTokens }) } }),
 		exec: async () => ({ stdout: "", stderr: "", code: 1, killed: false }),
 		events: {
@@ -239,7 +240,7 @@ test("in suggest mode nothing happens without the press, and the line says it wa
 	const { seen, input } = stub({ fetch: () => ({ status: 200, body: answer("independent", 0.91) }) });
 	await input("unrelated: write me a haiku about rain");
 	assert.equal(seen.selects.length, 1);
-	assert.match(seen.selects[0]!, /looks independent \(91%\)\. Clear the context first\? The context holds 82k tokens \(41%\)\.$/);
+	assert.match(seen.selects[0]!, /looks like an unrelated task \(91%\)\. Clear the context first\? The context holds 82k tokens \(41%\)\.$/);
 	assert.equal(seen.compactions.length, 0);
 	assert.deepEqual(decisions(), ["[auto-compact] independent · 0.91 → suggested"]);
 	// Under the prompt: there is no compaction block to go under.
@@ -276,7 +277,7 @@ test("with Remote Control on, the offer is also a choice in the Claude apps, and
 	assert.equal(asked.length, 1);
 	assert.deepEqual(asked[0].options, ["Compact the context first", "Send as is"]);
 	assert.equal(asked[0].header, "auto-compact");
-	assert.match(asked[0].question, /^auto-compact: this prompt looks related \(70%\)\. Compact the context first\?/);
+	assert.match(asked[0].question, /^auto-compact: this prompt looks like a new task building on this one, so the finished work's details can go \(70%\)\. Compact the context first\?/);
 	assert.equal(seen.selects.length, 1);
 	assert.equal(seen.compactions.length, 1);
 });
@@ -296,6 +297,7 @@ test("auto compacts a related task with the view lines as what to keep, keeping 
 	assert.match(seen.compactions[0].customInstructions, /0\+1\|user: Add a --verbose flag to the CLI/);
 	assert.equal(seen.summarized.length, 1);
 	assert.equal(seen.summarized[0][6], seen.compactions[0].customInstructions);
+	assert.equal(seen.summarized[0][8], "medium");
 	assert.deepEqual(seen.compacted[0].compaction, {
 		summary: "## Goal\nCI for this repo", firstKeptEntryId: null, tokensBefore: 1234, usage: { input: 1, output: 1 },
 		details: { autoCompact: { action: "compact_view", category: "related", confidence: 0.9 } },
