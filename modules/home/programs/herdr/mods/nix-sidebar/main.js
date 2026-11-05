@@ -558,7 +558,10 @@ export default class Sidebar extends View {
     const machine = r.on ? h_flex().flex_none().gap(4).items_center().text_size(11).text_color(t.dim).child(svg(ICON("server")).size(11)).child(r.on) : null;
     const count = r.items.length + r.idle.length;
     const fold = (cx) => r.closed ? this.toggle(this.folded, "folded", `open:${r.key}`, cx) : this.toggle(this.folded, "folded", r.key, cx);
-    const on = Boolean(r.project?.active);
+    // The project row stands for its orchestrator, as a worktree row does: selected when that
+    // is the tab shown, not when one of the tabs listed under it is (two selected rows).
+    const shown = (r.project?.tabs ?? []).find((x) => x.active);
+    const on = Boolean(r.project?.active && (!shown || isOrchestrator(shown)));
     const head = this.hoverable(id, h_flex().h(28).px(10).gap(8).items_center().rounded(6).cursor_pointer()
       .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
       .on_click((_e, cx) => this.openProject(r, cx))
