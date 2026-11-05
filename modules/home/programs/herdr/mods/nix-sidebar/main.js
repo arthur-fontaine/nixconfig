@@ -215,6 +215,48 @@ export default class Sidebar extends View {
     localStorage.setItem("repos", JSON.stringify(this.repos));
   }
 
+  // The projects' order, as dragged: repo keys, the rest after them.
+  repoOrder() {
+    try { return JSON.parse(localStorage.getItem("repoOrder") ?? "[]"); } catch { return []; }
+  }
+
+  // A project's rows, which a dragged project can be dropped above or below: a line in the
+  // accent color shows where (over the gap between two projects, so nothing moves), and the
+  // dragged project fades while it moves.
+  dragBlock(r, rows, t) {
+    const d = this.drag, at = this.dropAt;
+    const line = (where) => div().absolute().left(4).right(4).h(2).rounded(1).bg(t.accent).when(where === "before", (e) => e.top(-4)).when(where === "after", (e) => e.bottom(-4));
+    return v_flex().id(`block-${r.key}`).relative()
+      .when(Boolean(d?.moved && d.key === r.key), (e) => e.opacity(0.5))
+      .on_mouse_move((e, cx) => {
+        if (!this.drag) return;
+        if (!this.drag.moved && Math.abs(e.position.y - this.drag.y) < 4) return;
+        this.drag.moved = true;
+        // The click that ends a drag isn't one (it comes before the tree hears the release).
+        this.dragged = true;
+        const before = e.local_position.y < (e.bounds?.height ?? 0) / 2;
+        const next = this.drag.key === r.key ? null : { key: r.key, before };
+        if (next?.key !== this.dropAt?.key || next?.before !== this.dropAt?.before || !this.wasMoving) { this.dropAt = next; this.wasMoving = true; cx.notify(); }
+      })
+      .children(rows)
+      .when(Boolean(d?.moved && at?.key === r.key), (e) => e.child(line(at.before ? "before" : "after")));
+  }
+
+  // The drag ends where the pointer is released: the project moves there, and the order is kept.
+  drop(cx) {
+    const d = this.drag, at = this.dropAt;
+    this.drag = null; this.dropAt = null; this.wasMoving = false;
+    if (!d?.moved) return;
+    cx.timer.after(50, () => { this.dragged = false; });
+    if (at && at.key !== d.key) {
+      const keys = (this.shownOrder ?? []).filter((k) => k !== d.key);
+      const i = keys.indexOf(at.key);
+      if (i >= 0) keys.splice(at.before ? i : i + 1, 0, d.key);
+      localStorage.setItem("repoOrder", JSON.stringify(keys));
+    }
+    cx.notify();
+  }
+
   forget(key, cx) {
     this.repos = this.repos.filter((r) => r.key !== key);
     localStorage.setItem("repos", JSON.stringify(this.repos));
@@ -309,8 +351,11 @@ export default class Sidebar extends View {
       r.ahead = r.items.reduce((n, { g }) => n + g.ahead, 0);
       r.behind = r.items.reduce((n, { g }) => n + g.behind, 0);
     }
-    const open = [...repos.values()].filter((r) => !r.closed);
-    const closed = [...repos.values()].filter((r) => r.closed).sort((a, b) => a.name.localeCompare(b.name));
+    // In the order the projects were dragged into (repoOrder), the others after them as before.
+    const rank = new Map(this.repoOrder().map((k, i) => [k, i]));
+    const by = (a, b) => (rank.get(a.key) ?? Infinity) - (rank.get(b.key) ?? Infinity);
+    const open = [...repos.values()].filter((r) => !r.closed).sort(by);
+    const closed = [...repos.values()].filter((r) => r.closed).sort((a, b) => by(a, b) || a.name.localeCompare(b.name));
     return { open, closed, folders, ps };
   }
 
@@ -564,7 +609,8 @@ export default class Sidebar extends View {
     const on = Boolean(r.project?.active && (!shown || isOrchestrator(shown)));
     const head = this.hoverable(id, h_flex().h(28).px(10).gap(8).items_center().rounded(6).cursor_pointer()
       .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
-      .on_click((_e, cx) => this.openProject(r, cx))
+      .on_mouse_down("left", (e) => { this.drag = { key: r.key, y: e.position.y, moved: false }; })
+      .on_click((_e, cx) => { if (this.dragged) { this.dragged = false; return; } this.openProject(r, cx); })
       .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 96, props: { tab: "project", target: {
         key: r.key,
         spaces: [...r.items.map(({ s }) => s.id), ...(r.project ? [r.project.id] : [])],
@@ -642,11 +688,12 @@ export default class Sidebar extends View {
     this.first = null; this.firstAny = null;
     const order = [];
     const info = (s) => this.git[where(s, ps)] ?? null;
+    this.shownOrder = [...open, ...closed].map((r) => r.key);
     const body = [
-      ...open.flatMap((r) => [...this.repoBlock(r, ps, t, order), div().h(6).flex_none()]),
+      ...open.flatMap((r) => [this.dragBlock(r, this.repoBlock(r, ps, t, order), t), div().h(6).flex_none()]),
       ...folders.flatMap((f) => [...this.folderRow(f, ps, t, order), div().h(6).flex_none()]),
     ];
-    const rest = closed.flatMap((r) => this.repoBlock(r, ps, t, order));
+    const rest = closed.map((r) => this.dragBlock(r, this.repoBlock(r, ps, t, order), t));
     setAgentOrder(order);
     const remote = machines().filter((m) => m.name && m.layout === "loading");
     const need = this.needsYou(t, ps, info);
@@ -675,6 +722,9 @@ export default class Sidebar extends View {
           }))
           .child(svg(ICON("folder-plus")).size(14))))
       .child(v_flex().id("sidebar-tree").flex_1().min_h(0).px(6).overflow_y_scrollbar()
+        .on_mouse_up("left", (_e, cx) => this.drop(cx))
+        // Released outside the tree: the drag is dropped where it started.
+        .on_hover((hovered, cx) => { if (!hovered && this.drag) { this.drag = null; this.dropAt = null; this.wasMoving = false; this.dragged = false; cx.notify(); } })
         .when(Boolean(need), (e) => e.child(need))
         .child(v_flex().children(body))
         .when(rest.length > 0, (e) => e.child(v_flex().pt(6).mt(4).border_t(1).border_color(t.border).children(rest)))
