@@ -1,0 +1,15 @@
+Thinking drawn as a row by the thinking-rows extension is left as it is:
+summarized, the thinking a click opens under the row was cut away.
+
+--- a/extensions/compact-tools-thinking.ts
++++ b/extensions/compact-tools-thinking.ts
+@@ -213,6 +213,9 @@
+ 			// Off also applies before session_start, during transcript reconstruction
+ 			// and HTML exports. Do not summarize or restyle native thinking there.
+ 			if (!enabled() || context.messageType !== "assistant-thinking") return markdown;
++			// Drawn as a row by the thinking-rows extension: its marker line, then the thinking
++			// once the row is opened by a click. Summarized here, the opened text would be cut.
++			if (markdown.includes("\u27e6pi-thinking-row ")) return markdown;
+ 			const sections = splitThinkingSections(markdown);
+ 			this.hasToggleableThinking ||= sectionsHaveDetail(sections);
+ 			const theme = this.theme;

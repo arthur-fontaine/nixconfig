@@ -108,7 +108,9 @@ let
   '';
   # nedleeds/pi-compact-tools 0.16.7 with patches/pi-compact-tools-claude-bash.patch: bash
   # titles leave the folding of long commands to syntax-highlighting, and an opened command
-  # ends with Pi's "Took 4.2s", which auto-mode's note goes beside. Loaded
+  # ends with Pi's "Took 4.2s", which auto-mode's note goes beside. With
+  # patches/pi-compact-tools-thinking-rows.patch, thinking drawn as a row by thinking-rows
+  # isn't summarized, so the thinking a click opens under it shows. Loaded
   # from the extensions folder, not as a package, for its place among them (see
   # extensionsManifest). Its imports are Pi's own packages; its theme isn't loaded.
   piCompactTools = pkgs.runCommand "pi-compact-tools-0.16.7-patched" { } ''
@@ -120,6 +122,7 @@ let
       }
     } -C $out --strip-components=1
     patch -d $out -p1 < ${./patches/pi-compact-tools-claude-bash.patch}
+    patch -d $out -p1 < ${./patches/pi-compact-tools-thinking-rows.patch}
   '';
   # Tool rows as Claude Code draws them. compact-tools rewrites the file (/compact-tools),
   # so it is merged, not replaced.
