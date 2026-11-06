@@ -3,15 +3,17 @@
 // through the claude-code provider. Tab or Right accepts, Down/Up switch.
 // Also keeps the editor's up-arrow history complete for the session branch.
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AutocompleteProvider } from "@earendil-works/pi-tui";
+import type { AutocompleteProvider, TUI } from "@earendil-works/pi-tui";
 import { prompts } from "./context.ts";
 import { GhostEditor } from "./editor.ts";
 import { MODEL, PROVIDER, Predictor } from "./predictor.ts";
+import { skipQuoteBorders } from "./quote-copy.ts";
 
 export default function (pi: ExtensionAPI) {
 	let predictor: Predictor | undefined;
 	let editor: GhostEditor | undefined;
 	let stopKeys: (() => void) | undefined;
+	let renderer: TUI | undefined;
 
 	// /rename (the session-name extension) replaces Pi's /name: typing /name runs it,
 	// and only /rename is offered.
@@ -22,6 +24,9 @@ export default function (pi: ExtensionAPI) {
 	// /tree it has to hold the new branch's prompts.
 	function install(ctx: ExtensionContext, current: Predictor) {
 		ctx.ui.setEditorComponent((tui, theme, keys) => {
+			// Read at each copy: the theme can change. Pi draws a quote's edge with `quoteBorder("│ ")`.
+			skipQuoteBorders(tui, () => ctx.ui.theme.fg("mdQuoteBorder", "│ "));
+			renderer = tui;
 			const next = new GhostEditor(tui, theme, keys, {
 				predictor: current,
 				style: (text) => ctx.ui.theme.fg("dim", text),
@@ -71,6 +76,8 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", async () => {
 		stopKeys?.();
 		stopKeys = undefined;
+		if (renderer) skipQuoteBorders(renderer, undefined);
+		renderer = undefined;
 		editor?.dispose();
 		editor = undefined;
 		predictor = undefined;

@@ -162,6 +162,10 @@ top of `predictor.ts`, `editor.ts` and `prediction.ts`.
   more lines than it shows (the cursor follows at the edge, since Pi keeps it
   in view), and goes to the chat when everything fits. A click places the
   cursor; a drag still selects text for Ctrl+C / Cmd+C.
+- A copied selection leaves out the `│ ` border Pi draws down a markdown
+  quote (and the padding before it, nested borders included): only the
+  quoted text is copied. The border is still drawn and highlighted; a
+  table's `│` is copied as before (`quote-copy.ts`).
 - A paste with the cursor right after a `[paste #N …]` marker (nothing typed
   since) goes into that marker, as in Claude Code: two long pastes in a row
   are one marker and are sent as one block, as is. Undo takes the second paste
