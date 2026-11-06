@@ -1,7 +1,7 @@
 // What Herdr's Info panel reads about a Pi session: the terminal is labelled with its
 // session file (hc label <terminal> pi.session=<file>), and the Claude usage is kept in
 // ~/.pi/agent/claude-usage.json, account-wide: from each response, and asked of the
-// account every minute between them (poll.ts), so it moves while no agent works.
+// account every 20 s between them (poll.ts), so it moves while no agent works.
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";

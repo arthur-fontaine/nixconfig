@@ -9,7 +9,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 import type { Window } from "./usage.ts";
 
-export const INTERVAL = 60_000;
+// The endpoint 429s after a short burst (anthropics/claude-code#31637); failures back off below.
+export const INTERVAL = 20_000;
 // A lock older than this belongs to a session that died while asking.
 const LOCK_TTL = 30_000;
 const MAX_BACKOFF = 15 * 60_000;
