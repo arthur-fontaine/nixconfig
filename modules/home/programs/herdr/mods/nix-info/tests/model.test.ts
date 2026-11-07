@@ -4,6 +4,7 @@ import {
   infoCache, infoCategory, infoCommand, infoFiles, infoLastCall, infoContext, infoDuration, infoFeed, infoLineDiff, infoLines, infoNewSession, infoParseTitle,
   infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length,
   infoCapValue, infoClock, infoEditDiff, infoJsonLines, infoParseDiff, infoResultLines, RESULT_CAP,
+  infoPace, FIVE_HOURS, SEVEN_DAYS,
 } from "../model.js";
 
 const line = (o) => JSON.stringify(o) + "\n";
@@ -96,6 +97,30 @@ test("usage: ratios, reset times, staleness", () => {
   assert.equal(u.sevenDay.resetsAt, null);
   assert.equal(infoUsage({ at: now - 11 * 60000, fiveHour: { utilization: 0.1 } }, now).stale, true);
   assert.equal(infoUsage(null), null);
+});
+
+test("usage: the normal pace is the elapsed share of each window", () => {
+  const now = 1_793_700_000_000;
+  const h = 3600 * 1000;
+  // 2h30 into the 5 h window: halfway.
+  assert.equal(infoPace(now + 2.5 * h, FIVE_HOURS, now), 0.5);
+  assert.equal(infoPace(now + FIVE_HOURS, FIVE_HOURS, now), 0);
+  assert.equal(infoPace(now, FIVE_HOURS, now), 1);
+  // Out of range (a stale reset time, a clock skew) stays on the bar.
+  assert.equal(infoPace(now - h, FIVE_HOURS, now), 1);
+  assert.equal(infoPace(now + 6 * h, FIVE_HOURS, now), 0);
+  assert.equal(infoPace(null, FIVE_HOURS, now), null);
+  // 5 days left of 7: 2/7 gone.
+  assert.equal(infoPace(now + 5 * 24 * h, SEVEN_DAYS, now), 2 / 7);
+
+  const u = infoUsage({ at: now, fiveHour: { utilization: 0.62, resetsAt: (now + 2.5 * h) / 1000 }, sevenDay: { utilization: 0.1 } }, now);
+  assert.equal(u.fiveHour.pace, 0.5);
+  assert.ok(Math.abs(u.fiveHour.ahead - 0.12) < 1e-9);
+  assert.equal(u.sevenDay.pace, null);
+  assert.equal(u.sevenDay.ahead, null);
+  const w = infoUsage({ at: now, sevenDay: { utilization: 0.1, resetsAt: (now + 3.5 * 24 * h) / 1000 } }, now);
+  assert.equal(w.sevenDay.pace, 0.5);
+  assert.ok(Math.abs(w.sevenDay.ahead + 0.4) < 1e-9);
 });
 
 test("last call, last compaction, touched files", () => {

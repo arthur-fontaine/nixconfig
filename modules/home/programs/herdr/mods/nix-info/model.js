@@ -400,15 +400,28 @@ export function infoLines(state) {
   return { rows, files: rows.reduce((n, r) => n + r.files, 0) };
 }
 
+export const FIVE_HOURS = 5 * 3600 * 1000;
+export const SEVEN_DAYS = 7 * 86400 * 1000;
+
+// The normal pace: how much of a window has gone by (0–1), from when it resets; null when unknown.
+export function infoPace(resetsAt, length, now = Date.now()) {
+  if (typeof resetsAt !== "number" || !(length > 0)) return null;
+  return Math.max(0, Math.min(1, 1 - (resetsAt - now) / length));
+}
+
 // ~/.pi/agent/claude-usage.json (herdr-session's) as the panel reads it. Utilization is 0–1;
-// stale when the file is older than 10 minutes.
+// stale when the file is older than 10 minutes. Each window has its pace and how far usage
+// is ahead of it (negative: under it).
 export function infoUsage(record, now = Date.now()) {
   if (!record || (!record.fiveHour && !record.sevenDay)) return null;
   const stale = now - (record.at ?? 0) > 10 * 60 * 1000;
-  const window = (w) => (w && typeof w.utilization === "number"
-    ? { ratio: w.utilization, resetsAt: typeof w.resetsAt === "number" ? w.resetsAt * 1000 : null }
-    : null);
-  return { at: record.at ?? null, stale, fiveHour: window(record.fiveHour), sevenDay: window(record.sevenDay), overage: record.usingOverage === true, overageStatus: record.overageStatus ?? null };
+  const window = (w, length) => {
+    if (!w || typeof w.utilization !== "number") return null;
+    const resetsAt = typeof w.resetsAt === "number" ? w.resetsAt * 1000 : null;
+    const pace = infoPace(resetsAt, length, now);
+    return { ratio: w.utilization, resetsAt, pace, ahead: pace === null ? null : w.utilization - pace };
+  };
+  return { at: record.at ?? null, stale, fiveHour: window(record.fiveHour, FIVE_HOURS), sevenDay: window(record.sevenDay, SEVEN_DAYS), overage: record.usingOverage === true, overageStatus: record.overageStatus ?? null };
 }
 
 // ---- Formatting ----------------------------------------------------------------------
