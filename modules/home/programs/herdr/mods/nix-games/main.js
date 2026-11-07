@@ -2,13 +2,21 @@
 // resume: no timer, no game over (a loss restarts quietly), no sound, no flashing. A game
 // moves only while the panel has the keyboard, so clicking back into a terminal pauses it.
 // The rules live in model.js; this view only draws them and feeds keys and time.
-import { View, div } from "gpui-kit";
+// On top, the agent strip keeps the active tab's Pi in view; when it finishes or waits for
+// input, the game holds still with a quiet line, and ⏎ goes to it.
+import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { layout, theme, window } from "herdr";
-import { BRICK, GAMES, RUN, SNAKE, gamesAnimated, gamesBeatPos, gamesPausable, gamesPopScale, gamesKey, gamesNew, gamesPick, gamesPopLeft, gamesPopPress, gamesTick } from "./model.js";
+import { exec, focused, layout, panes, run, spaces, terminals, theme, window } from "herdr";
+import { BRICK, GAMES, RUN, SNAKE, gamesAgentAlert, gamesAgentPane, gamesAgentStrip, gamesAgentTail, gamesAnimated, gamesBeatPos, gamesPausable, gamesPopScale, gamesKey, gamesNew, gamesPick, gamesPopLeft, gamesPopPress, gamesTick } from "./model.js";
 
 const FRAME = 33;
 const MONO = "JetBrains Mono";
+// The agent strip: the pane checked every POLL, its session's tail read at most every READ.
+const POLL = 250;
+const READ = 1000;
+const TAIL_BYTES = 64 * 1024;
+const ICON = (name) => `mods/nix-head/icons/${name}.svg`;
+const TOOL_ICON = { bash: "terminal", read: "file", edit: "pen", write: "pen", ask: "help-circle", fetch: "globe", agent: "user" };
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -39,15 +47,74 @@ export default class Games extends View {
     this.area = { width: 0, height: 0 };
     this.last = null;
     this.wasPlaying = false;
+    this.cx = cx;
+    this.loop = false;
+    this.agent = null; // { pane, tail, status, since }
+    this.alert = null; // "done" | "blocked" while the game waits for a look at the agent
     cx.timer.every(FRAME, (cx) => this.frame(cx));
+  }
+
+  // One loop for the view's life, started on the first render: every await runs under
+  // cx.spawn, so it ends with the view.
+  start() {
+    if (this.loop) return;
+    this.loop = true;
+    this.cx.spawn(async (cx) => {
+      let readAt = 0, file = null;
+      for (;;) {
+        if (visible()) {
+          const changed = await this.watch(Date.now() - readAt >= READ, file);
+          if (changed.read) { readAt = Date.now(); file = changed.file; }
+          if (changed.notify || this.agent?.status === "working") cx.notify();
+        }
+        await new Promise((r) => cx.timer.after(POLL, r));
+      }
+    });
+  }
+
+  // The active tab's Pi: its status every poll, its session's tail when due or when the
+  // status moved. Raises the alert when it stops while the panel shows.
+  async watch(due, lastFile) {
+    const space = spaces().find((s) => s.active);
+    const tab = space?.tabs.find((t) => t.active);
+    const f = focused();
+    const p = gamesAgentPane(panes(), tab?.id, f?.pane);
+    const prev = this.agent;
+    const status = p?.status ?? null;
+    const moved = p?.pane !== prev?.pane?.pane || status !== prev?.status;
+    let notify = moved;
+    const since = status === "working" ? (prev?.status === "working" && !moved ? prev.since : Date.now()) : prev?.since ?? null;
+    const alert = p && p.pane === prev?.pane?.pane ? gamesAgentAlert(prev?.status, status, this.alert) : null;
+    // Looking at the agent answers the alert (focused() may still name it while the panel
+    // has the keyboard, so only once the panel lost it).
+    const seen = alert && !this.handle.is_focused() && f?.pane === p?.pane;
+    if ((seen ? null : alert) !== this.alert) { this.alert = seen ? null : alert; notify = true; }
+    let tail = p && p.pane === prev?.pane?.pane ? prev.tail : null;
+    let read = false, file = lastFile;
+    if (p && (due || moved)) {
+      file = terminals().find((t) => t.address === p.terminal)?.labels?.["pi.session"] ?? null;
+      const r = file ? await exec("tail", ["-c", String(TAIL_BYTES), file]).catch(() => null) : null;
+      tail = r?.code === 0 ? gamesAgentTail(r.stdout, p.cwd) : null;
+      read = true; notify = true;
+    }
+    this.agent = p ? { pane: p, tail, status, since } : null;
+    return { notify, read, file };
+  }
+
+  goToAgent(cx) {
+    const pane = this.agent?.pane?.pane;
+    this.alert = null;
+    if (pane) run("pane.focus", { pane });
+    cx.notify();
   }
 
   state() {
     return (this.states[this.game] ??= gamesNew(this.game, this.seed++));
   }
 
+  // An alert holds the game still until it is answered.
   playing() {
-    return this.handle.is_focused() && window()?.active !== false && visible();
+    return this.handle.is_focused() && window()?.active !== false && visible() && !this.alert;
   }
 
   // The clock: a paused game keeps no time, so nothing jumps when it comes back.
@@ -77,6 +144,12 @@ export default class Games extends View {
   // Chords with cmd or ctrl are Herdr's and the terminal's; everything else stays here.
   keyDown(e, cx) {
     if (e.modifiers.platform || e.modifiers.control) return;
+    if (this.alert) {
+      // ⏎ goes to the agent; esc stays here and plays on.
+      if (e.key === "enter") { cx.stop_propagation(); this.goToAgent(cx); return; }
+      if (e.key === "escape") { cx.stop_propagation(); this.alert = null; cx.notify(); return; }
+      return;
+    }
     const picked = gamesPick(this.game, e.keystroke);
     if (picked) { cx.stop_propagation(); this.pick(picked, cx); return; }
     if (e.key === "escape") return;
@@ -195,7 +268,40 @@ export default class Games extends View {
 
   // ---- the view -------------------------------------------------------------------------
 
+  // One or two lines: π, the session name, its state, elapsed; then the call running (or the
+  // last one). Calm when it stops: the tone changes, nothing flashes.
+  strip(t) {
+    const now = Date.now();
+    const a = this.agent ? gamesAgentStrip(this.agent.pane, this.agent.tail, now, this.agent.since) : null;
+    const row = h_flex().id("agent-strip").flex_none().px(16).py(7).gap(8).items_center().border_b(1).border_color(t.border);
+    if (!a) return row.child(div().text_size(12).text_color(t.dim).child("No Pi agent in this tab"));
+    const tone = t[a.tone] ?? t.muted;
+    const stopped = Boolean(this.alert);
+    const pi = div().size(16).flex_none().rounded(4).bg(stopped ? alpha(tone, "33") : t.raised).flex().items_center().justify_center()
+      .font_family(MONO).font_bold().text_size(10).text_color(stopped ? tone : t.foreground).child("π");
+    const mark = a.state === "working"
+      ? svg(ICON("loader")).size(12).flex_none().text_color(tone).spin(900)
+      : div().size(7).flex_none().rounded(4).bg(a.state === "idle" ? t.border : tone);
+    const head = h_flex().min_w(0).gap(6).items_center()
+      .child(div().min_w(0).truncate().text_size(12.5).font_medium().text_color(t.foreground).child(a.name))
+      .child(div().flex_1())
+      .child(mark)
+      .child(div().flex_none().text_size(11.5).text_color(a.state === "idle" ? t.dim : tone).child(a.word))
+      .when(Boolean(a.elapsed), (e) => e.child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(a.elapsed)));
+    const call = a.call ? h_flex().min_w(0).gap(6).items_center().text_size(11.5).text_color(t.dim)
+      .child(svg(ICON(TOOL_ICON[a.call.kind] ?? "box")).size(11).flex_none().text_color(t.dim))
+      .child(div().flex_none().text_color(a.call.running ? t.muted : t.dim).child(a.call.running ? a.call.kind : `last: ${a.call.kind}`))
+      .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11).text_color(a.call.running ? t.muted : t.dim).child(a.call.arg))
+      .when(Boolean(a.call.elapsed), (e) => e.child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(a.call.elapsed))) : null;
+    return row.cursor_pointer().hover((e) => e.bg(t.hover)).when(stopped, (e) => e.bg(alpha(tone, "12")))
+      .tooltip("Go to the agent")
+      .on_click((_e, cx) => this.goToAgent(cx))
+      .child(pi)
+      .child(v_flex().flex_1().min_w(0).gap(2).child(head).when(Boolean(call), (e) => e.child(call)));
+  }
+
   render() {
+    this.start();
     const t = theme();
     const playing = this.playing();
     const info = GAMES.find((g) => g.id === this.game);
@@ -211,11 +317,14 @@ export default class Games extends View {
     const { width: w, height: h } = this.area;
     const drawn = w > 0 && h > 0 ? this[this.game](t, w, h) : { children: [], status: "" };
     // A paused game stays in view, dimmed; a click (or any key once focused) takes it back up.
-    const paused = !playing && gamesPausable(this.game);
+    const paused = !playing && gamesPausable(this.game) && !this.alert;
+    const alertTone = this.alert === "blocked" ? t.blocked : t.done;
+    const alertText = this.alert === "blocked" ? "Agent is waiting for you · ⏎ to go back" : "Agent is done · ⏎ to go back";
     return v_flex().id("games").track_focus(this.handle).size_full().min_h(0).bg(t.chrome).text_color(t.foreground)
       .on_key_down((e, cx) => this.keyDown(e, cx))
       .on_key_up((e) => this.keyUp(e))
       .on_mouse_down("left", (_e, cx) => { if (!this.handle.is_focused()) { this.handle.focus(); cx.notify(); } })
+      .child(this.strip(t))
       .child(h_flex().h(36).flex_none().px(16).gap(6).items_center().border_b(1).border_color(t.border)
         .child(div().flex_none().text_size(13).font_medium().child("Games"))
         .child(div().flex_1())
@@ -225,7 +334,10 @@ export default class Games extends View {
         .on_size_change((size, cx) => {
           if (size.width !== this.area.width || size.height !== this.area.height) { this.area = size; cx.notify(); }
         })
-        .child(div().absolute().left(0).top(0).size_full().opacity(paused ? 0.45 : 1).children(drawn.children))
+        .child(div().absolute().left(0).top(0).size_full().opacity(paused || this.alert ? 0.45 : 1).children(drawn.children))
+        .when(Boolean(this.alert), (e) => e.child(div().absolute().left(0).top(0).size_full().flex().items_center().justify_center()
+          .child(div().id("agent-alert").px(12).py(5).rounded(6).bg(t.chrome).border_1().border_color(alpha(alertTone, "80"))
+            .text_size(12).text_color(t.muted).cursor_pointer().on_click((_e, cx) => this.goToAgent(cx)).child(alertText))))
         .when(paused, (e) => e.child(div().absolute().left(0).top(0).size_full().flex().items_center().justify_center()
           .child(div().px(10).py(4).rounded(6).bg(t.chrome).border_1().border_color(t.border).text_size(12).text_color(t.muted)
             .child(this.handle.is_focused() ? "Paused" : "Click to play")))))
