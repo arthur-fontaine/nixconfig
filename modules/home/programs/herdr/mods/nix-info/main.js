@@ -221,9 +221,33 @@ export default class Info extends View {
       .font_family(MONO).font_bold().text_size(10).text_color(t.foreground).child("π");
   }
 
-  bar(t, ratio, color) {
+  // `pace` (0–1), when given, draws the normal-pace tick, a little taller than the bar.
+  bar(t, ratio, color, pace = null) {
     const r = Math.max(0, Math.min(1, ratio ?? 0));
-    return div().h(4).w_full().rounded(2).bg(t.raised).child(div().h(4).rounded(2).bg(color).w(`${(r * 100).toFixed(1)}%`));
+    return div().relative().h(4).w_full().rounded(2).bg(t.raised).child(div().h(4).rounded(2).bg(color).w(`${(r * 100).toFixed(1)}%`))
+      .when(pace !== null && pace !== undefined, (e) => e.child(div().absolute().top(-2).h(8).w(2).ml(-1).rounded(1).bg("#ffffff")
+        .left(`${(Math.max(0, Math.min(1, pace)) * 100).toFixed(1)}%`)));
+  }
+
+  // A usage window: label, bar with the pace tick, %, time to reset. The % turns amber more
+  // than 10 points ahead of pace; the tooltip gives the gap either way.
+  usageRow(t, u, key, label, w, now) {
+    const ahead = w.ahead ?? 0;
+    const tip = w.ahead === null ? null : `${Math.abs(Math.round(ahead * 100))}% ${ahead >= 0 ? "ahead of" : "under"} the normal pace (white tick)`;
+    const reset = w.resetsAt ? `in ${key === "week" ? days(w.resetsAt - now) : infoSpan(w.resetsAt - now)}` : "";
+    return h_flex().id(`usage-${key}`).h(20).gap(10).items_center().when(Boolean(tip), (e) => e.tooltip(tip))
+      .child(div().w(40).flex_none().text_size(12).text_color(t.muted).child(label))
+      .child(div().flex_1().min_w(0).child(this.bar(t, w.ratio, usageColor(t, w.ratio), w.pace)))
+      .child(div().w(36).flex_none().text_right().text_size(13).font_medium()
+        .text_color(u.stale ? t.muted : ahead > 0.1 ? t.ansi3 : t.foreground).child(pct(w.ratio)))
+      .child(div().w(62).flex_none().text_right().text_size(12).text_color(t.dim).truncate().child(reset));
+  }
+
+  usageRows(t, u, now) {
+    return [
+      ...(u.fiveHour ? [this.usageRow(t, u, "five", "5 hours", u.fiveHour, now)] : []),
+      ...(u.sevenDay ? [this.usageRow(t, u, "week", "Week", u.sevenDay, now)] : []),
+    ];
   }
 
   // Values in `muted` among `dim` words: parts are strings (dim) or [text] (muted).
@@ -405,16 +429,20 @@ export default class Info extends View {
 
   // ---- views ---------------------------------------------------------------------------
 
+  // Both windows at a glance, in the tile's frame (label line, chevron to the detail).
   usageTile(t, f, now) {
-    const u = f.usage, w = u?.fiveHour;
-    if (!u || !w) return this.tile(t, "usage", "Usage · 5 h", this.figure(t, "—", t.muted), "no usage reported yet", null, null);
-    const qualifier = u.stale ? `${infoAge(now - u.at)} ago` : w.resetsAt ? `resets in ${infoSpan(w.resetsAt - now)}` : "";
-    const week = u.sevenDay;
-    const sub = u.overage
-      ? div().text_size(12).text_color(t.blocked).truncate().child(`Overage on · ${u.overageStatus ?? ""}`)
-      : this.mixed(t, week ? ["This week ", [pct(week.ratio)], ...(week.resetsAt ? [` · resets in ${days(week.resetsAt - now)}`] : [])] : [" "]);
-    return this.tile(t, "usage", "Usage · 5 h", this.figure(t, pct(w.ratio), u.stale ? t.muted : t.foreground), qualifier,
-      this.bar(t, w.ratio, usageColor(t, w.ratio)), sub);
+    const u = f.usage;
+    if (!u) return this.tile(t, "usage", "Usage", this.figure(t, "—", t.muted), "no usage reported yet", null, null);
+    const note = u.overage ? [`Overage on${u.overageStatus ? ` · ${u.overageStatus}` : ""}`, t.blocked] : u.stale ? [`${infoAge(now - (u.at ?? now))} ago`, t.dim] : null;
+    return h_flex().id("tile-usage").px(16).py(10).gap(10).items_center().border_b(1).border_color(t.border)
+      .cursor_pointer().hover((e) => e.bg(t.hover)).active((e) => e.bg(t.selected))
+      .on_click((_e, cx) => this.open("usage", cx))
+      .child(v_flex().flex_1().min_w(0).gap(4)
+        .child(h_flex().gap(8).items_baseline()
+          .child(div().flex_1().text_size(12).font_medium().text_color(t.muted).line_height("16px").child("Usage"))
+          .when(Boolean(note), (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(note[1]).child(note[0]))))
+        .children(this.usageRows(t, u, now)))
+      .child(svg(ICON("chevron-right")).size(12).flex_none().text_color(t.dim));
   }
 
   overview(t, f, now) {
@@ -471,16 +499,15 @@ export default class Info extends View {
       case "usage": {
         const u = f.usage;
         if (!u) return [div().px(16).py(14).text_size(12).text_color(t.dim).child("No usage reported yet")];
-        const row = (label, w) => this.kv(t, label,
-          h_flex().flex_1().gap(10).items_center().child(div().flex_1().child(this.bar(t, w.ratio, usageColor(t, w.ratio))))
-            .child(div().w(40).text_right().text_size(13).font_medium().text_color(u.stale ? t.muted : t.foreground).child(pct(w.ratio))),
-          div().w(70).text_right().text_size(12).text_color(t.dim).child(w.resetsAt ? `in ${infoSpan(w.resetsAt - now)}` : ""));
+        const pace = (label, w) => w?.ahead === null || w?.ahead === undefined ? []
+          : [this.kv(t, label, div().text_size(12).text_color(w.ahead > 0.1 ? t.ansi3 : t.muted)
+            .child(`${Math.abs(Math.round(w.ahead * 100))}% ${w.ahead >= 0 ? "ahead of" : "under"} pace`))];
         return [
-          div().h(8),
-          ...(u.fiveHour ? [row("This 5 hours", u.fiveHour)] : []),
-          ...(u.sevenDay ? [row("This week", u.sevenDay)] : []),
+          v_flex().px(16).py(10).gap(8).children(this.usageRows(t, u, now)),
+          ...pace("5 hours", u.fiveHour),
+          ...pace("Week", u.sevenDay),
           ...(u.overage ? [this.kv(t, "Overage", div().text_size(12).text_color(t.blocked).child(u.overageStatus ?? "on"))] : []),
-          div().px(16).pt(8).text_size(12).text_color(t.dim).child(`Updated ${infoAge(now - (u.at ?? now))} ago`),
+          div().px(16).pt(8).text_size(12).text_color(t.dim).child(`Updated ${infoAge(now - (u.at ?? now))} ago · the white tick is the normal pace`),
         ];
       }
       case "context": {
