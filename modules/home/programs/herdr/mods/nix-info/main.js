@@ -56,7 +56,7 @@ const ICON = (name) => `mods/nix-head/icons/${name}.svg`;
 const MONO = "JetBrains Mono";
 const SHOWN = 200;
 const TOOL_ICON = { bash: "terminal", read: "file", edit: "pen", write: "pen", ask: "help-circle", fetch: "globe", agent: "user" };
-const LABELS = { usage: "Usage", context: "Context window", activity: "Agent activity", lines: "Lines changed" };
+const LABELS = { context: "Context window", activity: "Agent activity", lines: "Lines changed" };
 const KINDS = [
   { key: "all", label: "All" },
   { key: "bash", label: "bash", keep: (c) => c.kind === "bash" },
@@ -81,7 +81,7 @@ export default class Info extends View {
     this.windows = {}; // model id → context window
     this.resolved = new Map(); // terminal + title → session file
     this.loop = false;
-    // "usage" | "context" | "activity" | "lines"; a layout may open on one (props.detail).
+    // "context" | "activity" | "lines"; a layout may open on one (props.detail).
     this.detail = null;
     this.asked = undefined;
     this.all = false; // every tool call rendered, not just the latest 200
@@ -225,7 +225,8 @@ export default class Info extends View {
   bar(t, ratio, color, pace = null) {
     const r = Math.max(0, Math.min(1, ratio ?? 0));
     return div().relative().h(4).w_full().rounded(2).bg(t.raised).child(div().h(4).rounded(2).bg(color).w(`${(r * 100).toFixed(1)}%`))
-      .when(pace !== null && pace !== undefined, (e) => e.child(div().absolute().top(-2).h(8).w(2).ml(-1).rounded(1).bg("#ffffff")
+      // Outlined in the panel colour so it reads over both the track and the fill.
+      .when(pace !== null && pace !== undefined, (e) => e.child(div().absolute().top(-3).h(10).w(4).ml(-2).rounded(1).bg(t.foreground).border_l(1).border_r(1).border_color(t.chrome)
         .left(`${(Math.max(0, Math.min(1, pace)) * 100).toFixed(1)}%`)));
   }
 
@@ -236,7 +237,7 @@ export default class Info extends View {
     const tip = w.ahead === null ? null : `${Math.abs(Math.round(ahead * 100))}% ${ahead >= 0 ? "ahead of" : "under"} the normal pace (white tick)`;
     const reset = w.resetsAt ? `in ${key === "week" ? days(w.resetsAt - now) : infoSpan(w.resetsAt - now)}` : "";
     return h_flex().id(`usage-${key}`).h(20).gap(10).items_center().when(Boolean(tip), (e) => e.tooltip(tip))
-      .child(div().w(40).flex_none().text_size(12).text_color(t.muted).child(label))
+      .child(div().w(52).flex_none().whitespace_nowrap().text_size(12).text_color(t.muted).child(label))
       .child(div().flex_1().min_w(0).child(this.bar(t, w.ratio, usageColor(t, w.ratio), w.pace)))
       .child(div().w(36).flex_none().text_right().text_size(13).font_medium()
         .text_color(u.stale ? t.muted : ahead > 0.1 ? t.ansi3 : t.foreground).child(pct(w.ratio)))
@@ -429,20 +430,17 @@ export default class Info extends View {
 
   // ---- views ---------------------------------------------------------------------------
 
-  // Both windows at a glance, in the tile's frame (label line, chevron to the detail).
+  // Both windows at a glance; there is no detail behind it.
   usageTile(t, f, now) {
     const u = f.usage;
     if (!u) return this.tile(t, "usage", "Usage", this.figure(t, "—", t.muted), "no usage reported yet", null, null);
     const note = u.overage ? [`Overage on${u.overageStatus ? ` · ${u.overageStatus}` : ""}`, t.blocked] : u.stale ? [`${infoAge(now - (u.at ?? now))} ago`, t.dim] : null;
     return h_flex().id("tile-usage").px(16).py(10).gap(10).items_center().border_b(1).border_color(t.border)
-      .cursor_pointer().hover((e) => e.bg(t.hover)).active((e) => e.bg(t.selected))
-      .on_click((_e, cx) => this.open("usage", cx))
       .child(v_flex().flex_1().min_w(0).gap(4)
         .child(h_flex().gap(8).items_baseline()
           .child(div().flex_1().text_size(12).font_medium().text_color(t.muted).line_height("16px").child("Usage"))
           .when(Boolean(note), (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(note[1]).child(note[0]))))
-        .children(this.usageRows(t, u, now)))
-      .child(svg(ICON("chevron-right")).size(12).flex_none().text_color(t.dim));
+        .children(this.usageRows(t, u, now)));
   }
 
   overview(t, f, now) {
@@ -492,24 +490,10 @@ export default class Info extends View {
 
   detailView(t, f, now) {
     const s = this.session;
-    if (this.detail !== "usage" && (!this.pane || !s || !f.started)) {
+    if (!this.pane || !s || !f.started) {
       return [div().px(16).py(14).text_size(12).text_color(t.dim).child(this.pane ? "…" : "No Pi session in this tab")];
     }
     switch (this.detail) {
-      case "usage": {
-        const u = f.usage;
-        if (!u) return [div().px(16).py(14).text_size(12).text_color(t.dim).child("No usage reported yet")];
-        const pace = (label, w) => w?.ahead === null || w?.ahead === undefined ? []
-          : [this.kv(t, label, div().text_size(12).text_color(w.ahead > 0.1 ? t.ansi3 : t.muted)
-            .child(`${Math.abs(Math.round(w.ahead * 100))}% ${w.ahead >= 0 ? "ahead of" : "under"} pace`))];
-        return [
-          v_flex().px(16).py(10).gap(8).children(this.usageRows(t, u, now)),
-          ...pace("5 hours", u.fiveHour),
-          ...pace("Week", u.sevenDay),
-          ...(u.overage ? [this.kv(t, "Overage", div().text_size(12).text_color(t.blocked).child(u.overageStatus ?? "on"))] : []),
-          div().px(16).pt(8).text_size(12).text_color(t.dim).child(`Updated ${infoAge(now - (u.at ?? now))} ago · the white tick is the normal pace`),
-        ];
-      }
       case "context": {
         if (!s) return [];
         const c = f.context, cache = f.cache;
