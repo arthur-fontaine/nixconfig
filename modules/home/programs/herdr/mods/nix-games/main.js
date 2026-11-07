@@ -177,7 +177,8 @@ export default class Games extends View {
     const size = Math.max(14, Math.floor(Math.min((w - 2 * pad) / s.cols, (h - hint - 2 * pad) / s.rows)));
     const d = Math.round(size * 0.72);
     const sw = size * s.cols + 2 * pad, sh = size * s.rows + 2 * pad;
-    const sx = (w - sw) / 2, sy = hint + Math.max(0, (h - hint - sh) / 2);
+    // The hint and the sheet centred together, so the hint reads as the sheet's caption.
+    const sx = (w - sw) / 2, sy = hint + Math.max(0, (h - hint - sh) / 2), hy = sy - hint - 2;
     const k = gamesPopScale(s);
     const mid = w / 2;
     // x squeezed toward the middle while the sheet flips; y untouched.
@@ -186,7 +187,7 @@ export default class Games extends View {
     const hue = hues[s.round % hues.length];
     const flipping = s.flip !== null && s.flip !== undefined;
     const kids = [
-      div().absolute().left(0).top(0).w(w).h(hint).flex().items_center().justify_center().gap(6).text_size(12)
+      div().absolute().left(0).top(hy).w(w).h(hint).flex().items_center().justify_center().gap(6).text_size(12)
         .child(div().text_color(t.muted).child("Pop them all · the sheet flips over"))
         .child(div().text_color(t.dim).child(flipping ? "" : `· ${gamesPopLeft(s)} left`)),
       box(fx(sx), sy, Math.max(1, sw * k), sh).rounded(12).bg(alpha(hue, "14")).border_1().border_color(alpha(hue, "40")),
@@ -199,7 +200,7 @@ export default class Games extends View {
       kids.push(box(bx, cy0 + (size - d) / 2, bw, d).id(`pop-${i}`).rounded(d / 2).cursor_pointer()
         .when(!popped, (e) => e.bg(alpha(hue, "a6")).border_1().border_color(hue).shadow_sm()
           .hover((x) => x.bg(alpha(hue, "cc")))
-          .child(div().absolute().left(bw * 0.24).top(d * 0.18).w(bw * 0.26).h(d * 0.2).rounded(d).bg(alpha(t.foreground, "40"))))
+          .child(div().absolute().left(bw * 0.24).top(d * 0.18).w(bw * 0.26).h(d * 0.2).rounded(d).bg("#ffffff73")))
         .when(popped, (e) => e.bg(alpha(t.background, "80")).border_1().border_color(alpha(hue, "33")))
         .on_click((_e, cx) => {
           this.handle.focus();
