@@ -25,9 +25,13 @@ export const GAMES_DIRS = {
 const ACTION = new Set(["space", "enter"]);
 
 // ---- a) Pop-it: a sheet of bubbles; popping the last one flips the sheet over -------------
+// A fidget, not a contest: no timer, no score. The flip is the only reward.
+
+// ms the flip takes; the sheet is edge-on (and swapped for a fresh one) halfway.
+export const POP = { flip: 520 };
 
 export function gamesPopNew(cols = 6, rows = 6, round = 0, at = { x: 0, y: 0 }) {
-  return { cols, rows, cells: Array(cols * rows).fill(false), x: at.x, y: at.y, round };
+  return { cols, rows, cells: Array(cols * rows).fill(false), x: at.x, y: at.y, round, flip: null };
 }
 
 // The cursor wraps at the edges, so a held arrow keeps flowing round the sheet.
@@ -35,13 +39,29 @@ export function gamesPopMove(s, dx, dy) {
   return { ...s, x: wrap(s.x + dx, s.cols), y: wrap(s.y + dy, s.rows) };
 }
 
+// Presses wait while the sheet turns over.
 export function gamesPopPress(s) {
+  if (s.flip !== null && s.flip !== undefined) return s;
   const i = s.y * s.cols + s.x;
   if (s.cells[i]) return s;
   const cells = s.cells.slice();
   cells[i] = true;
-  if (cells.every(Boolean)) return gamesPopNew(s.cols, s.rows, s.round + 1, { x: s.x, y: s.y });
-  return { ...s, cells };
+  return { ...s, cells, flip: cells.every(Boolean) ? 0 : null };
+}
+
+// The flip's clock: the fresh sheet replaces the popped one when it is edge-on.
+export function gamesPopStep(s, dtMs) {
+  if (s.flip === null || s.flip === undefined) return s;
+  const flip = s.flip + dtMs;
+  const turned = s.flip < POP.flip / 2 && flip >= POP.flip / 2;
+  const next = turned ? gamesPopNew(s.cols, s.rows, s.round + 1, { x: s.x, y: s.y }) : s;
+  return { ...next, flip: flip >= POP.flip ? null : flip };
+}
+
+// How wide the sheet is drawn (1 flat, 0 edge-on) during the flip, eased.
+export function gamesPopScale(s) {
+  if (s.flip === null || s.flip === undefined) return 1;
+  return Math.abs(Math.cos(Math.PI * Math.min(1, s.flip / POP.flip)));
 }
 
 export function gamesPopLeft(s) {
@@ -289,7 +309,7 @@ export function gamesSnakeStep(s, dtMs) {
 // ---- the picker -------------------------------------------------------------------------
 
 export const GAMES = [
-  { id: "pop", label: "Pop", hint: "←↑↓→ / hjkl move · space pops" },
+  { id: "pop", label: "Pop", hint: "←↑↓→ / hjkl move · space pops · click pops" },
   { id: "run", label: "Run", hint: "space jumps" },
   { id: "beat", label: "Beat", hint: "space on the line" },
   { id: "bricks", label: "Bricks", hint: "← → / h l move" },
@@ -307,8 +327,13 @@ export function gamesNew(id, seed = 1) {
   return null;
 }
 
-// Whether a game moves on its own (and needs the clock).
-export function gamesAnimated(id) {
+// Whether a game moves on its own (and needs the clock); pop only while its sheet flips.
+export function gamesAnimated(id, s = null) {
+  return id === "pop" ? s?.flip !== null && s?.flip !== undefined : true;
+}
+
+// Whether leaving the panel pauses the game (pop has nothing to pause).
+export function gamesPausable(id) {
   return id !== "pop";
 }
 
@@ -351,6 +376,7 @@ export function gamesTick(id, s, dtMs, held = new Set()) {
   // A long gap (a stall, a sleep) is not played through.
   const dt = Math.min(dtMs, 100);
   switch (id) {
+    case "pop": return gamesPopStep(s, dt);
     case "run": return gamesRunStep(s, dt / 1000);
     case "beat": return gamesBeatStep(s, dt);
     case "bricks": {

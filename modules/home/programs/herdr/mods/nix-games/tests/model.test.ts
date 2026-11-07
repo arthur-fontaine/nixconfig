@@ -3,7 +3,7 @@ import { test } from "node:test";
 import {
   BEAT, BRICK, GAMES, RUN, SNAKE,
   gamesAnimated, gamesBeatNew, gamesBeatPress, gamesBeatStep, gamesBrickNew, gamesBrickStep, gamesKey, gamesNew, gamesPick,
-  gamesPopLeft, gamesPopMove, gamesPopNew, gamesPopPress, gamesRand, gamesRunJump, gamesRunNew, gamesRunStep,
+  POP, gamesPausable, gamesPopLeft, gamesPopMove, gamesPopNew, gamesPopPress, gamesPopScale, gamesPopStep, gamesRand, gamesRunJump, gamesRunNew, gamesRunStep,
   gamesSnakeNew, gamesSnakeStep, gamesSnakeTurn, gamesTick,
 } from "../model.js";
 
@@ -27,9 +27,25 @@ test("pop: the cursor wraps and a bubble pops once", () => {
   assert.equal(gamesPopPress(s), s);
 });
 
-test("pop: the last bubble refills the sheet and keeps the cursor", () => {
+test("pop: the last bubble flips the sheet over, then a fresh one keeps the cursor", () => {
   let s = gamesPopNew(2, 2);
   for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [-1, 0]]) s = gamesPopPress(gamesPopMove(s, dx, dy));
+  assert.equal(gamesPopLeft(s), 0);
+  assert.equal(s.flip, 0);
+  assert.equal(gamesAnimated("pop", s), true);
+  assert.equal(gamesPopScale(s), 1);
+  // Presses wait while it turns.
+  assert.equal(gamesPopPress(s), s);
+  s = gamesPopStep(s, POP.flip / 2 - 10);
+  assert.equal(s.round, 0);
+  assert.ok(gamesPopScale(s) < 0.1);
+  s = gamesTick("pop", s, 20);
+  assert.equal(s.round, 1);
+  assert.equal(gamesPopLeft(s), 4);
+  s = gamesPopStep(s, POP.flip);
+  assert.equal(s.flip, null);
+  assert.equal(gamesPopScale(s), 1);
+  assert.equal(gamesAnimated("pop", s), false);
   assert.equal(gamesPopLeft(s), 4);
   assert.equal(s.round, 1);
   assert.deepEqual([s.x, s.y], [0, 1]);
@@ -187,4 +203,6 @@ test("every game starts, takes its keys and ticks", () => {
   }
   assert.equal(gamesAnimated("pop"), false);
   assert.equal(gamesAnimated("run"), true);
+  assert.equal(gamesPausable("pop"), false);
+  assert.equal(gamesPausable("snake"), true);
 });
