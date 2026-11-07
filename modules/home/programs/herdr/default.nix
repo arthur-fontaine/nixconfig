@@ -71,6 +71,8 @@ let
     nix-editor = { modules = [ "grid.js" "nvim.js" ]; };
     # The Info panel: the selected Pi session and the Claude usage; model.js (the figures) joined in.
     nix-info = { shared = [ "editor.js" ]; modules = [ "model.js" ]; };
+    # The Games panel: micro-breaks while an agent works; model.js (the rules) joined in.
+    nix-games = { modules = [ "model.js" ]; };
   };
   modFiles = lib.listToAttrs (lib.concatLists (lib.mapAttrsToList (mod: o: [
     { name = "herdr-app/mods/${mod}/main.js"; value.source = if o == { } then ./mods/${mod}/main.js else bundle mod o; }
@@ -103,7 +105,7 @@ let
   shared = {
     layout = "nix";
     # The Files and Changes panels the tab bar offers (picked in the welcome).
-    "workspace.panels" = [ "changes" "files" "info" ];
+    "workspace.panels" = [ "changes" "files" "info" "games" ];
   };
 in
 {

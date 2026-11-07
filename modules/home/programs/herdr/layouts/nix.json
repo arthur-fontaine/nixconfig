@@ -148,6 +148,13 @@
                       "content": {
                         "mod": "nix-info"
                       }
+                    },
+                    {
+                      "id": "games",
+                      "type": "block",
+                      "content": {
+                        "mod": "nix-games"
+                      }
                     }
                   ]
                 }

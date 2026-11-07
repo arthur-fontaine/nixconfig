@@ -137,7 +137,8 @@ export default class Tabs extends View {
       .child(h_flex().flex_none().self_center().gap(2)
         .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "file")))
         .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "git-compare")))
-        .when(enabled.includes("info"), el => el.child(panelButton("info", "Info", "info"))))
+        .when(enabled.includes("info"), el => el.child(panelButton("info", "Info", "info")))
+        .when(enabled.includes("games"), el => el.child(panelButton("games", "Games", "gamepad"))))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs/win-min.svg").size(16) : svg(ICON("minus")).size(14), () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs/win-close.svg").size(16) : svg(ICON("x")).size(14), () => run("window.close"))));
