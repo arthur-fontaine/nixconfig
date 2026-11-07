@@ -5,7 +5,7 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { layout, theme, window } from "herdr";
-import { BRICK, GAMES, RUN, SNAKE, gamesAnimated, gamesBeatPos, gamesKey, gamesNew, gamesPick, gamesPopLeft, gamesPopPress, gamesTick } from "./model.js";
+import { BRICK, GAMES, RUN, SNAKE, gamesAnimated, gamesBeatPos, gamesPausable, gamesPopScale, gamesKey, gamesNew, gamesPick, gamesPopLeft, gamesPopPress, gamesTick } from "./model.js";
 
 const FRAME = 33;
 const MONO = "JetBrains Mono";
@@ -58,7 +58,7 @@ export default class Games extends View {
       if (!playing) this.held.clear();
       cx.notify();
     }
-    if (!playing || !gamesAnimated(this.game)) { this.last = null; return; }
+    if (!playing || !gamesAnimated(this.game, this.state())) { this.last = null; return; }
     const now = Date.now();
     const dt = this.last === null ? FRAME : now - this.last;
     this.last = now;
@@ -94,30 +94,47 @@ export default class Games extends View {
 
   // ---- the games ------------------------------------------------------------------------
 
+  // Unpopped: a full, domed bubble with a highlight. Popped: a flat, hollow dent. The cursor
+  // is a ring around its cell. Clearing the sheet turns it over (its width eases to nothing
+  // and back) and the next one comes in another colour.
   pop(t, w, h) {
     const s = this.state();
-    const size = Math.floor(Math.min(w / s.cols, h / s.rows));
-    const d = Math.max(10, Math.round(size * 0.74));
-    const ox = (w - size * s.cols) / 2, oy = (h - size * s.rows) / 2;
-    // Each sheet a different colour, all of them soft.
+    const hint = 22;
+    const pad = 10;
+    const size = Math.max(14, Math.floor(Math.min((w - 2 * pad) / s.cols, (h - hint - 2 * pad) / s.rows)));
+    const d = Math.round(size * 0.72);
+    const sw = size * s.cols + 2 * pad, sh = size * s.rows + 2 * pad;
+    const sx = (w - sw) / 2, sy = hint + Math.max(0, (h - hint - sh) / 2);
+    const k = gamesPopScale(s);
+    const mid = w / 2;
+    // x squeezed toward the middle while the sheet flips; y untouched.
+    const fx = (x) => mid + (x - mid) * k;
     const hues = [t.accent, t.ansi4, t.ansi6, t.ansi2, t.ansi5, t.ansi3];
     const hue = hues[s.round % hues.length];
-    const cells = [];
-    for (let y = 0; y < s.rows; y++) for (let x = 0; x < s.cols; x++) {
-      const i = y * s.cols + x, popped = s.cells[i], cursor = x === s.x && y === s.y;
-      const cx0 = ox + x * size + (size - d) / 2, cy0 = oy + y * size + (size - d) / 2;
-      cells.push(box(cx0, cy0, d, d).id(`pop-${i}`).rounded(d / 2).cursor_pointer()
-        .when(!popped, (e) => e.bg(alpha(hue, "59")).border_1().border_color(alpha(hue, "8c")))
-        .when(popped, (e) => e.bg(t.background).border_1().border_color(t.border))
-        .when(cursor, (e) => e.border_2().border_color(t.foreground))
+    const flipping = s.flip !== null && s.flip !== undefined;
+    const kids = [
+      div().absolute().left(0).top(0).w(w).h(hint).flex().items_center().justify_center().gap(6).text_size(12)
+        .child(div().text_color(t.muted).child("Pop them all · the sheet flips over"))
+        .child(div().text_color(t.dim).child(flipping ? "" : `· ${gamesPopLeft(s)} left`)),
+      box(fx(sx), sy, Math.max(1, sw * k), sh).rounded(12).bg(alpha(hue, "14")).border_1().border_color(alpha(hue, "40")),
+    ];
+    if (k > 0.08) for (let y = 0; y < s.rows; y++) for (let x = 0; x < s.cols; x++) {
+      const i = y * s.cols + x, popped = s.cells[i], cursor = !flipping && x === s.x && y === s.y;
+      const cx0 = sx + pad + x * size, cy0 = sy + pad + y * size;
+      const bx = fx(cx0 + (size - d) / 2), bw = Math.max(1, d * k);
+      if (cursor) kids.push(box(fx(cx0 + 2), cy0 + 2, (size - 4) * k, size - 4).rounded((size - 4) / 2).border_2().border_color(t.foreground));
+      kids.push(box(bx, cy0 + (size - d) / 2, bw, d).id(`pop-${i}`).rounded(d / 2).cursor_pointer()
+        .when(!popped, (e) => e.bg(alpha(hue, "a6")).border_1().border_color(hue).shadow_sm()
+          .hover((x) => x.bg(alpha(hue, "cc")))
+          .child(div().absolute().left(bw * 0.24).top(d * 0.18).w(bw * 0.26).h(d * 0.2).rounded(d).bg(alpha(t.foreground, "40"))))
+        .when(popped, (e) => e.bg(alpha(t.background, "80")).border_1().border_color(alpha(hue, "33")))
         .on_click((_e, cx) => {
           this.handle.focus();
-          const p = this.state();
-          this.states.pop = gamesPopPress({ ...p, x, y });
+          this.states.pop = gamesPopPress({ ...this.state(), x, y });
           cx.notify();
         }));
     }
-    return { children: cells, status: `${gamesPopLeft(s)} left` };
+    return { children: kids, status: "" };
   }
 
   run(t, w, h) {
@@ -194,7 +211,7 @@ export default class Games extends View {
     const { width: w, height: h } = this.area;
     const drawn = w > 0 && h > 0 ? this[this.game](t, w, h) : { children: [], status: "" };
     // A paused game stays in view, dimmed; a click (or any key once focused) takes it back up.
-    const paused = !playing && gamesAnimated(this.game);
+    const paused = !playing && gamesPausable(this.game);
     return v_flex().id("games").track_focus(this.handle).size_full().min_h(0).bg(t.chrome).text_color(t.foreground)
       .on_key_down((e, cx) => this.keyDown(e, cx))
       .on_key_up((e) => this.keyUp(e))
