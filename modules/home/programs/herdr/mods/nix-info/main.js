@@ -234,7 +234,7 @@ export default class Info extends View {
   // than 10 points ahead of pace; the tooltip gives the gap either way.
   usageRow(t, u, key, label, w, now) {
     const ahead = w.ahead ?? 0;
-    const tip = w.ahead === null ? null : `${Math.abs(Math.round(ahead * 100))}% ${ahead >= 0 ? "ahead of" : "under"} the normal pace (white tick)`;
+    const tip = w.ahead === null ? null : `${Math.abs(Math.round(ahead * 100))}% ${ahead >= 0 ? "ahead of" : "under"} the normal pace (the tick)`;
     const reset = w.resetsAt ? `in ${key === "week" ? days(w.resetsAt - now) : infoSpan(w.resetsAt - now)}` : "";
     return h_flex().id(`usage-${key}`).h(20).gap(10).items_center().when(Boolean(tip), (e) => e.tooltip(tip))
       .child(div().w(52).flex_none().whitespace_nowrap().text_size(12).text_color(t.muted).child(label))
