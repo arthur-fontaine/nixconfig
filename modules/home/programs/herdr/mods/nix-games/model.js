@@ -2,6 +2,8 @@
 // and feeds keys and time. Nothing here ends a game: a loss is a quiet restart, and there is no
 // timer, no lives and no prompt, so a game can be left mid-move and nothing waits to be resumed.
 // Names carry a `games` prefix: Nix joins this file into main.js's scope.
+// It uses nix-info's session helpers (infoTool, infoParseTitle, infoDuration), joined in before it.
+import { infoDuration, infoParseTitle, infoTool } from "../nix-info/model.js";
 
 // mulberry32: a seeded generator kept in the state, so a step stays a pure function.
 export function gamesRand(seed) {
@@ -387,4 +389,77 @@ export function gamesTick(id, s, dtMs, held = new Set()) {
     case "snake": return gamesSnakeStep(s, dt);
   }
   return s;
+}
+
+// ---- The agent strip: the active tab's Pi, at a glance, while a game runs -----------------
+// Only the tail of the session file is read (the last few tool calls), so this stays small.
+
+// The Pi pane to follow in a tab: the focused one, else a working one, else the first.
+export function gamesAgentPane(panes, tab, focusedPane = null) {
+  const pis = panes.filter((p) => p.tab === tab && p.terminal && p.app === "pi");
+  return pis.find((p) => p.pane === focusedPane) ?? pis.find((p) => p.status === "working") ?? pis[0] ?? null;
+}
+
+// The end of a session JSONL: its first line may be cut, and is skipped. What it gives:
+// the session name if renamed there, when the last user turn began, the calls still running
+// (newest last) and the last call made.
+export function gamesAgentTail(text, cwd = null) {
+  const out = { name: null, turn: null, last: null, running: [], lastCall: null };
+  const open = new Map();
+  for (const line of String(text ?? "").split("\n")) {
+    if (!line.trim()) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    const t = typeof e.timestamp === "number" ? e.timestamp : Date.parse(e.timestamp ?? "") || null;
+    if (t) out.last = t;
+    if (e.type === "session") cwd = e.cwd ?? cwd;
+    if (e.type === "session_info" && e.name) out.name = e.name;
+    if (e.type !== "message") continue;
+    const m = e.message ?? {};
+    if (m.role === "user") { out.turn = t; open.clear(); }
+    else if (m.role === "assistant") {
+      for (const b of Array.isArray(m.content) ? m.content : []) {
+        if (b?.type !== "toolCall" || !b.id) continue;
+        const call = { ...infoTool(b, cwd), started: t };
+        open.set(b.id, call);
+        out.lastCall = call;
+      }
+    } else if (m.role === "toolResult") open.delete(m.toolCallId);
+  }
+  out.running = [...open.values()];
+  return out;
+}
+
+const STATES = {
+  working: { word: "Working", tone: "working" },
+  blocked: { word: "Waiting for you", tone: "blocked" },
+  done: { word: "Done", tone: "done" },
+  idle: { word: "Idle", tone: "dim" },
+};
+
+// What the strip shows. `since` is when the view saw it start working (a fallback when the
+// tail no longer holds the user's message). Lines: { name, state, word, tone, elapsed,
+// call: { kind, arg, running, elapsed } | null }, or null when the tab has no Pi.
+export function gamesAgentStrip(pane, tail, now = Date.now(), since = null) {
+  if (!pane) return null;
+  const state = STATES[pane.status] ? pane.status : "idle";
+  const name = infoParseTitle(pane.title)?.name ?? tail?.name ?? infoParseTitle(pane.title)?.folder ?? pane.title ?? "Pi";
+  const begun = tail?.turn ?? since;
+  const elapsed = state === "working"
+    ? (begun ? infoDuration(Math.max(0, now - begun)) : "")
+    : (begun && tail?.last && tail.last >= begun ? infoDuration(tail.last - begun) : "");
+  const live = state === "working" ? tail?.running?.at(-1) : null;
+  const c = live ?? tail?.lastCall ?? null;
+  const call = c ? { kind: c.kind, arg: c.arg || c.name, running: Boolean(live), elapsed: live && c.started ? infoDuration(Math.max(0, now - c.started)) : "" } : null;
+  return { name, state, word: STATES[state].word, tone: STATES[state].tone, elapsed, call };
+}
+
+// The agent stopped while a game ran: "done" when it finished, "blocked" when it waits for
+// input, else null. Going back to work clears it.
+export function gamesAgentAlert(prev, next, current = null) {
+  if (next === "working") return null;
+  if (next === "blocked" && prev !== "blocked") return "blocked";
+  if (prev === "working" && (next === "done" || next === "idle")) return "done";
+  if (!next) return null;
+  return current;
 }

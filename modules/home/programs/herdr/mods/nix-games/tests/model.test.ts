@@ -4,7 +4,7 @@ import {
   BEAT, BRICK, GAMES, RUN, SNAKE,
   gamesAnimated, gamesBeatNew, gamesBeatPress, gamesBeatStep, gamesBrickNew, gamesBrickStep, gamesKey, gamesNew, gamesPick,
   POP, gamesPausable, gamesPopLeft, gamesPopMove, gamesPopNew, gamesPopPress, gamesPopScale, gamesPopStep, gamesRand, gamesRunJump, gamesRunNew, gamesRunStep,
-  gamesSnakeNew, gamesSnakeStep, gamesSnakeTurn, gamesTick,
+  gamesAgentAlert, gamesAgentPane, gamesAgentStrip, gamesAgentTail, gamesSnakeNew, gamesSnakeStep, gamesSnakeTurn, gamesTick,
 } from "../model.js";
 
 test("rand is deterministic and in [0, 1)", () => {
@@ -205,4 +205,68 @@ test("every game starts, takes its keys and ticks", () => {
   assert.equal(gamesAnimated("run"), true);
   assert.equal(gamesPausable("pop"), false);
   assert.equal(gamesPausable("snake"), true);
+});
+
+const line = (o) => JSON.stringify(o);
+const at = (s) => new Date(Date.UTC(2026, 10, 7, 12, 0, s)).toISOString();
+const T0 = Date.parse(at(0));
+
+test("agent pane: the focused Pi, else a working one, else the first, in the tab", () => {
+  const ps = [
+    { pane: "a", tab: "t1", terminal: "x", app: "pi", status: "idle" },
+    { pane: "b", tab: "t1", terminal: "y", app: "pi", status: "working" },
+    { pane: "c", tab: "t1", terminal: "z", app: null, status: null },
+    { pane: "d", tab: "t2", terminal: "w", app: "pi", status: "working" },
+    { pane: "e", tab: "t1", terminal: null, mod: "nix-games", app: null },
+  ];
+  assert.equal(gamesAgentPane(ps, "t1", "a").pane, "a");
+  assert.equal(gamesAgentPane(ps, "t1", "e").pane, "b");
+  assert.equal(gamesAgentPane(ps, "t3"), null);
+});
+
+test("agent tail: skips a cut first line, keeps running and last calls", () => {
+  const text = [
+    `ial","foo":1}`,
+    line({ type: "session_info", name: "fix bug", timestamp: at(0) }),
+    line({ type: "message", timestamp: at(1), message: { role: "user", content: "go" } }),
+    line({ type: "message", timestamp: at(2), message: { role: "assistant", content: [{ type: "toolCall", id: "1", name: "read", arguments: { path: "/r/a.js" } }] } }),
+    line({ type: "message", timestamp: at(3), message: { role: "toolResult", toolCallId: "1", content: "x" } }),
+    line({ type: "message", timestamp: at(4), message: { role: "assistant", content: [{ type: "toolCall", id: "2", name: "bash", arguments: { command: "cd /r && pnpm test" } }] } }),
+  ].join("\n");
+  const t = gamesAgentTail(text, "/r");
+  assert.equal(t.name, "fix bug");
+  assert.equal(t.turn, T0 + 1000);
+  assert.deepEqual(t.running.map((c) => c.arg), ["pnpm test"]);
+  assert.equal(t.lastCall.kind, "bash");
+  assert.equal(t.last, T0 + 4000);
+});
+
+test("agent strip: state words, elapsed and the call shown", () => {
+  const tail = gamesAgentTail([
+    line({ type: "message", timestamp: at(0), message: { role: "user", content: "go" } }),
+    line({ type: "message", timestamp: at(5), message: { role: "assistant", content: [{ type: "toolCall", id: "1", name: "edit", arguments: { path: "/r/m.js" } }] } }),
+  ].join("\n"), "/r");
+  const pane = { title: "π - fix bug - main", status: "working" };
+  const s = gamesAgentStrip(pane, tail, T0 + 65_000);
+  assert.equal(s.name, "fix bug");
+  assert.equal(s.word, "Working");
+  assert.equal(s.elapsed, "1m 05s");
+  assert.deepEqual(s.call, { kind: "edit", arg: "m.js", running: true, elapsed: "1m 00s" });
+  const done = gamesAgentStrip({ ...pane, status: "done" }, { ...tail, running: [], last: T0 + 9000 }, T0 + 65_000);
+  assert.equal(done.word, "Done");
+  assert.equal(done.elapsed, "9.0s");
+  assert.equal(done.call.running, false);
+  assert.equal(gamesAgentStrip({ title: "π - main", status: "blocked" }, null).name, "main");
+  assert.equal(gamesAgentStrip({ title: "π - main", status: "blocked" }, null).tone, "blocked");
+  assert.equal(gamesAgentStrip(null, null), null);
+});
+
+test("agent alert: raised when work stops or input is wanted, cleared by new work", () => {
+  assert.equal(gamesAgentAlert("working", "done"), "done");
+  assert.equal(gamesAgentAlert("working", "idle"), "done");
+  assert.equal(gamesAgentAlert("working", "blocked"), "blocked");
+  assert.equal(gamesAgentAlert("done", "done", "done"), "done");
+  assert.equal(gamesAgentAlert("done", "done", null), null);
+  assert.equal(gamesAgentAlert("done", "working", "done"), null);
+  assert.equal(gamesAgentAlert("idle", "idle"), null);
 });
