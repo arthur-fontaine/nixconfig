@@ -22,7 +22,7 @@
 
 ## Done means seen working
 
-- A change is done when you have seen it work where it really runs: the device, the server, the browser, the real command and its output. Tests, a simulator, a fake or a mock are steps toward that, not the proof. The `verification-before-completion` skill has the details.
+- A change is done when you have seen it work where it really runs: the device, the server, the browser, the real command and its output. Tests, a simulator, a fake or a mock are steps toward that, not the proof. The `run-and-verify` skill has the recipes per platform, `verification-before-completion` the discipline.
 - If you can't reach where it really runs, say exactly what isn't verified and what I'd have to run or look at. Never call it fixed.
 - A bug: reproduce it first (a failing test, a log line, a screenshot of the bug), then fix it, then show the same check passing. A test that also passes on the unfixed code proves nothing.
 - Never weaken, skip or rewrite a test to make it pass. Fix the code, or tell me why the test is wrong.

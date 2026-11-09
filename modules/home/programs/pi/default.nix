@@ -305,6 +305,7 @@ let
   };
   skills = pluginSkills // {
     context7-mcp = ../claude/skills/context7-mcp;
+    run-and-verify = ./skills/run-and-verify;
   };
 in
 {
