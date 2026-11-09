@@ -19,6 +19,18 @@ manual) and Pi's `intercom`. Herdr's own view is `herdr-app ls`.
   `hc run --bg --name <short-name> --cwd "$PWD" pi "<task>. Don't start other agents.
   Report with hc send $HC_TERMINAL_ID when done or stuck."` It shows under you in
   Herdr's sidebar. Pi only.
+- **Feedback loop**: before workers start on a task, make sure a check exists that an
+  agent can run alone and that fails while the task isn't done: the cheapest that can
+  catch it (type check, test, build), and where the code really runs (device, server,
+  browser, with logs and screenshots) when that's where it shows. If there is none,
+  building it is the first task. Each brief names the check, and a worker reports done
+  with its output. A bug the person found becomes a check. Ask the person only what no
+  check or reviewer agent can settle; when they're away, take the reversible option,
+  note the assumption, and go on.
+- **Parallel workers share nothing but this worktree**: give each its own files, build
+  folder, simulator or emulator, port and data directory; two tasks on the same files
+  run one after the other. Something only one can use at a time, like a physical
+  device, is used through `with-lease <name> <command>`.
 - **Cost**: every worker spends the person's Claude quota. One worker per independent
   task; ask (`ask_user_question`) before running more than three at once, and stop the ones that are done.
 - **Ask the person with `ask_user_question`**, never with a question at the end of your
