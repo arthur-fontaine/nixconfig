@@ -323,6 +323,28 @@ in
     repo = "modules/home/programs/pi/default.nix (mcpServers)";
   };
 
+  # `with-lease <name> <command>`: runs the command once no other agent holds <name> (a
+  # physical device, say), so parallel workers take turns. mkdir is atomic; the lease goes
+  # when the command ends, and one left by a crash goes after 30 minutes without refresh.
+  home.packages = [
+    (pkgs.writeShellScriptBin "with-lease" ''
+      set -eu
+      [ $# -ge 2 ] || { echo "usage: with-lease <name> <command...>" >&2; exit 2; }
+      d="''${LEASE_DIR:-$HOME/.cache/leases}/$1"; shift
+      mkdir -p "$(dirname "$d")"
+      until mkdir "$d" 2>/dev/null; do
+        if [ -n "$(find "$d" -maxdepth 0 -mmin +30 2>/dev/null)" ]; then rm -rf "$d"; continue; fi
+        echo "with-lease: waiting for $(basename "$d"), held by $(cat "$d/owner" 2>/dev/null || echo '?')" >&2
+        sleep 10
+      done
+      echo "''${HC_TERMINAL_ID:-pid $$}: $*" > "$d/owner"
+      # Refresh the lease while this shell lives; no output, so it holds no pipe open.
+      (while kill -0 $$ 2>/dev/null; do touch "$d"; sleep 60; done) >/dev/null 2>&1 &
+      trap 'rm -rf "$d"' EXIT INT TERM
+      "$@"
+    '')
+  ];
+
   # The same global instructions as Claude Code. Pi has no rules/ directory,
   # so Claude Code's rules are appended to them. Extensions and skills are each
   # one link to the declared set, so anything else in those folders goes, as
