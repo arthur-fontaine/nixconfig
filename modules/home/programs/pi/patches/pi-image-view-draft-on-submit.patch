@@ -1,0 +1,47 @@
+--- a/src/extension-runtime.ts
++++ b/src/extension-runtime.ts
+@@ -203,6 +203,10 @@
+ 	let failedScanText: string | undefined;
+ 	let failedScanAttempts = 0;
+ 	let sessionGeneration = 0;
++	// Images whose marker left the editor. Pi empties the editor before the input
++	// handlers run, so a slow handler ahead of ours lets a scan see an empty draft
++	// and drop the images the submitted text still names; submit looks here too.
++	const leftEditor = new Map<string, TrackedImage>();
+ 
+ 	// ── Helpers ────────────────────────────────────────────
+ 
+@@ -263,6 +267,7 @@
+ 		presenter?.dispose();
+ 		presenter = null;
+ 		draft.reset();
++		leftEditor.clear();
+ 		scanGeneration += 1;
+ 		lastScannedText = undefined;
+ 		failedScanText = undefined;
+@@ -301,6 +306,8 @@
+ 			let changed = false;
+ 			for (const placeholder of nextTracked.keys()) {
+ 				if (!visiblePlaceholders.has(placeholder)) {
++					const left = nextTracked.get(placeholder);
++					if (left) leftEditor.set(placeholder, left);
+ 					nextTracked.delete(placeholder);
+ 					changed = true;
+ 				}
+@@ -476,7 +483,7 @@
+ 		}
+ 
+ 		const candidates: Array<{ token: string; entry: TrackedImage; index: number }> = [];
+-		for (const [placeholder, entry] of draft.images) {
++		for (const [placeholder, entry] of new Map([...leftEditor, ...draft.images])) {
+ 			const index = fullText.indexOf(placeholder);
+ 			if (index >= 0) candidates.push({ token: placeholder, entry, index });
+ 		}
+@@ -554,6 +561,7 @@
+ 			for (const { entry } of candidates) {
+ 				if (draft.has(entry)) draft.images.delete(entry.placeholder);
+ 			}
++			leftEditor.clear();
+ 			scanGeneration += 1;
+ 			lastScannedText = undefined;
+ 			refreshWidget(ctx);

@@ -44,7 +44,8 @@ let
       # /goal: goals with tracked progress and an independent completion auditor.
       "npm:pi-goal-x@0.34.1"
       # Pasted screenshots as [Image #N] markers with clickable links.
-      "npm:pi-image-view@0.5.0"
+      # Patched (see piImageView below), so a local path rather than npm.
+      "${piImageView}"
       # Claude Code's subagents: the Agent tool, FleetView, /agents, @agent mentions.
       # Patched (see piSubagents below), so a local path rather than npm.
       "${piSubagents}"
@@ -57,6 +58,20 @@ let
       }
     ];
   };
+  # pi-image-view 0.5.0 with patches/pi-image-view-draft-on-submit.patch: Pi empties the editor
+  # before the input handlers run, and auto-effort's (ahead of it, waiting on its local model)
+  # gave pi-image-view's 250 ms scan the time to see no marker and forget the pasted images,
+  # so the prompt went out with "[Image #1]" and no image. No dependencies.
+  piImageView = pkgs.runCommand "pi-image-view-0.5.0-patched" { } ''
+    mkdir -p $out
+    tar xzf ${
+      pkgs.fetchurl {
+        url = "https://registry.npmjs.org/pi-image-view/-/pi-image-view-0.5.0.tgz";
+        hash = "sha256-k/HHsdYH7rxeB0tqozifPYq/xReFDG45trO459+FcVQ=";
+      }
+    } -C $out --strip-components=1
+    patch -d $out -p1 < ${./patches/pi-image-view-draft-on-submit.patch}
+  '';
   # @tintinweb/pi-subagents 0.22.1 with patches/pi-subagents-fleet-refresh.patch, until a
   # release fixes FleetView staying hidden for background agents, and
   # patches/pi-subagents-deferred-workflow.patch: SubagentWorkflow's 6k-token description is
