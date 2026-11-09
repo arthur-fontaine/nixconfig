@@ -201,8 +201,7 @@ let
         rev = "523374dee72d67c7b2b5f858ea0094ffda49c3ac";
         hash = "sha256-qJIMwaas5Wnz270rUbPa4E5v2GQ62SQ1rKT0jmjYhyw=";
       };
-      # Root cause before any fix, evidence before any "done", a failing test before the
-      # fix. The three refer to each other, so they come together.
+      # Root cause before any fix: fix workers stacked guesses on bugs they never traced.
       superpowers = pkgs.fetchFromGitHub {
         owner = "obra";
         repo = "superpowers";
@@ -216,8 +215,6 @@ let
       eli5 = "${community}/eli5/skills/eli5";
       inherit humanizer;
       systematic-debugging = "${superpowers}/skills/systematic-debugging";
-      verification-before-completion = "${superpowers}/skills/verification-before-completion";
-      test-driven-development = "${superpowers}/skills/test-driven-development";
     };
 
   extensions = {
