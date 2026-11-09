@@ -345,8 +345,6 @@ in
     # Role prompts for the orchestrator chats Herdr's sidebar opens on a worktree or a
     # project click (pi --append-system-prompt).
     ".pi/agent/orchestrator".source = ./orchestrator;
-    # pi-subagents' global agent types (subagent_type), such as the read-only verifier.
-    ".pi/agent/agents".source = ./agents;
     ".pi/agent/skills".source = pkgs.linkFarm "pi-skills" skills;
   };
 
