@@ -210,7 +210,14 @@ export default function (pi: ExtensionAPI) {
 	function loadBranch() {
 		records = recordsOn(branch());
 		for (const [id, { startedAt }] of placeholdersOn(branch())) {
-			if (!records.has(id) && !calls.has(id)) remember(interruptedRecord(id, TOOL, startedAt, startedAt));
+			if (records.has(id) || calls.has(id)) continue;
+			const record = interruptedRecord(id, TOOL, startedAt, startedAt);
+			remember(record);
+			// The placeholder promises a message; it comes with the next prompt.
+			pi.sendMessage(
+				{ customType: NOTICE_TYPE, content: completionNotice(record), display: false, details: { toolCallId: id, ending: record.ending } },
+				{ deliverAs: "nextTurn" },
+			);
 		}
 	}
 

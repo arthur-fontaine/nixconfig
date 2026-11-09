@@ -83,6 +83,7 @@ test("the placeholder says the output comes as a message, not in its place", () 
 
 test("an interrupted record is an error that explains itself", () => {
 	const interrupted = interruptedRecord("call_1", "bash", T, T);
+	assert.match(completionNotice(interrupted), /status="interrupted"[\s\S]*not resumed/);
 	assert.equal(interrupted.ending, "interrupted");
 	assert.match(textOf(interrupted.content), /not resumed/);
 	assert.deepEqual(readRecord(recordEntry("e", interrupted)), interrupted);

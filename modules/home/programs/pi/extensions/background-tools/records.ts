@@ -167,7 +167,7 @@ export function unknownCall(id: string, running: readonly string[]): string {
  * rewrote 896k tokens.
  */
 export function completionNotice(record: DetachedRecord): string {
-	const status = record.ending === "completed" ? "completed" : "failed";
+	const status = record.ending === "completed" ? "completed" : record.ending === "interrupted" ? "interrupted" : "failed";
 	const images = record.content.filter((part) => part.type === "image").length;
 	return [
 		`<background-result tool="${record.toolName}" id="${record.toolCallId}" status="${status}" elapsed="${formatDuration(record.endedAt - record.startedAt)}">`,
