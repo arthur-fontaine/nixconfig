@@ -21,19 +21,15 @@ manual) and Pi's `intercom`. Herdr's own view is `herdr-app ls`.
   other agents. Report with hc send $HC_TERMINAL_ID when done or stuck."` Work that
   needs its own branch gets a new worktree first, beside the others (`git worktree add`
   from origin's default branch). Pi only.
-- **Feedback loop**: before workers start on a task, make sure a check exists that an
-  agent can run alone and that fails while the task isn't done: the cheapest that can
-  catch it (type check, test, build), and where the code really runs (device, server,
-  browser, with logs and screenshots) when that's where it shows. If there is none,
-  building it is the first task. Each brief names the check, and a worker reports done
-  with its output. A bug the person found becomes a check. Ask the person only what no
-  check or reviewer agent can settle; when they're away, take the reversible option,
-  note the assumption, and go on.
-- **Parallel workers share nothing**: each has its own worktree, build folder,
-  simulator or emulator, port and data directory, and owns its files; two tasks on the
-  same files run one after the other. An interface between them (protocol, schema, API)
-  is agreed and merged before they start. Something only one can use at a time, like a
-  physical device, is used through `with-lease <name> <command>`.
+- **Feedback loop**: before workers start, make sure a check exists that an agent runs
+  alone and that fails until the task is done: the cheapest that catches it, on the real
+  device, server or browser when that's where it shows. If none does, building it is
+  the first task. Briefs name it, workers report done with its output, and a bug the
+  person found becomes one. Ask the person only what no check can settle; when they're
+  away, take the reversible option and say so.
+- **Parallel workers share nothing**: each gets its own worktree, files, build folder,
+  simulator and port, and the interfaces between them are agreed before they start. A
+  device only one can use goes through `with-lease <name> <command>`.
 - **Cost**: every worker spends the person's Claude quota. One worker per independent
   task; ask (`ask_user_question`) before running more than three at once, and stop the ones that are done.
 - **Ask the person with `ask_user_question`**, never with a question at the end of your

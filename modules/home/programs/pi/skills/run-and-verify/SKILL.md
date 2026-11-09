@@ -5,29 +5,18 @@ description: How to see a change working where it really runs (web app, CLI, ser
 
 # Run and verify
 
-Tests, simulators and fakes tell you the code does what you think. Only the real target
-tells you it does what the person sees. Set up the loop below once per task, early: it is
-what lets you find causes instead of guessing, and it keeps the person from being your test
-suite.
+Tests and simulators show the code does what you think; only the real target shows what the
+person sees. Set this up early in the task.
 
-## The loop
+1. Put your build where it runs (deploy, install, restart) and check it is yours: a build
+   number, a commit, a log line you added.
+2. Reproduce the bug, or use the feature, the way the person does.
+3. Keep the evidence (logs, screenshot or recording, output) in a folder for the task, and
+   read it before concluding.
+4. After the fix, the same steps show the bug gone.
 
-1. **Build and put the change where it runs**: deploy, install, restart. Check that what
-   runs is your build (a version, a build number, a commit hash, a log line you added).
-2. **Reproduce** the bug, or exercise the feature, the way the person does.
-3. **Collect evidence**: logs, a screenshot or recording, the command output. Save it in a
-   folder for the task (`evidence/<task>/`, git-ignored, or a temp dir), so you and others
-   can compare before and after.
-4. **Read it** before concluding. Exit codes, the full error, the timestamps: does it show
-   your build?
-5. After the fix, the **same steps** must show the bug gone.
-
-If a step needs something only the person can give (a password, a tap on a dialog, a cable),
-ask for exactly that, once, and automate the rest. When you can't reach the target at all,
-say what remains unverified.
-
-Give the app logs you can read: one logging subsystem, extra detail in debug builds, and a
-line at each boundary (request in, response out, state applied) of the area under work.
+Ask the person only for what you can't do (a password, a tap on a dialog, a cable), once. Give
+the app logs you can read: one subsystem, a line at each boundary of the area you work on.
 
 ## Recipes
 

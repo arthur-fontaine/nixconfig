@@ -22,9 +22,8 @@
 
 ## Checking your work
 
-- A change is done when you have seen it work where it really runs: the device, the server, the browser, the real command. Tests and simulators help but don't prove it. The `run-and-verify` skill has the recipes. If you can't reach it, say what isn't verified instead of calling it fixed.
-- A bug: find its cause before changing code (the `systematic-debugging` skill), and for a platform or library behaviour look for the known issue first, on the web (`web_search`, `web_fetch`) as much as in the code. A fix that didn't work is reverted, not stacked under the next one.
-- Handing work to another agent: give it the same means of checking its work that you have.
+- A change is done when you have seen it work where it really runs: the device, the server, the browser, the real command. Tests and simulators don't prove it; the `run-and-verify` skill has the recipes. If you can't reach it, say what isn't verified. An agent you hand work to gets the same means of checking.
+- A bug: find its cause before changing code (the `systematic-debugging` skill), looking for the known issue on the web (`web_search`, `web_fetch`) too. A fix that didn't work is reverted, not stacked under the next one.
 - Building or reshaping a user interface: load the `frontend-design` skill first.
 
 ## Working efficiently
