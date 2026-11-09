@@ -279,9 +279,6 @@ let
     bash-titles = ./extensions/bash-titles;
     # Tool rows drawn faint, apart from the agent's own words.
     tool-rows-faint = ./extensions/tool-rows-faint;
-    # A run that changed code and ran nothing since is sent back once: check it, or say
-    # what isn't verified.
-    verify-gate = ./extensions/verify-gate;
   };
   # Pi loads the folder's extensions in directory order, unsorted, and each tool renderer
   # wraps those of the extensions loaded after it. A manifest fixes the order: these first,
