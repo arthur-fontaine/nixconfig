@@ -78,9 +78,11 @@ cache-timer.
 
 ### Added in Pi
 
-- A compaction you start, a `/tree` jump, or a model or thinking level
-  change stops pending pings: the next request won't extend the one a ping
-  would replay.
+- A compaction you start, a `/tree` jump, or a model change stops pending
+  pings: the next request won't extend the one a ping would replay. A
+  thinking level change doesn't: the cached prefix stays the same, and
+  auto-effort puts the session's level back at the end of every run it
+  decided, which used to leave the warm window with nothing to replay.
 - `/warm` also says when the warm window ends and whether the session will
   then be compacted or left to cool.
 - A model with budget-based thinking (Anthropic models without adaptive

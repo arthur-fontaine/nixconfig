@@ -284,10 +284,9 @@ export default function (api: ExtensionAPI) {
 		if (event.source !== "restore") contextChanged();
 	});
 
-	pi.on("thinking_level_select", async (_event, next) => {
-		ctx = next;
-		contextChanged();
-	});
+	// A thinking level change leaves the cached prefix as it is, so it isn't a context change.
+	// Counting it as one dropped the captured request whenever auto-effort put the session's
+	// level back at agent_settled, and the warm window then had nothing to replay.
 
 	// Pi's own idle refreshes stop 30 minutes after the last request and use the
 	// model's declared lifetime, so they can't keep a 1-hour cache warm for hours.

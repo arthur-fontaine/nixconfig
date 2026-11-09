@@ -395,7 +395,7 @@ export class Warmer {
 	}
 
 	// Pi only: the next request won't extend the one a ping would replay (the
-	// conversation was compacted or rewound, the model or thinking level changed).
+	// conversation was compacted or rewound, or the model changed).
 	contextChanged(): void {
 		if (this.s.phase !== "warming") return;
 		this.cancel();
