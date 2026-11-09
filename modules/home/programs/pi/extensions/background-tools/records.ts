@@ -1,6 +1,6 @@
-// What a detached call leaves in the session, and how it is laid back over the
-// placeholder its tool call returned. No Pi runtime imports, so tests run
-// without node_modules.
+// What a detached call leaves in the session, and the message that brings its
+// final output to the model. No Pi runtime imports, so tests run without
+// node_modules.
 
 export const RECORD_TYPE = "background-tools.result";
 
@@ -47,12 +47,6 @@ export interface Entry {
 	message?: { role: string; toolCallId?: string; details?: unknown };
 }
 
-export interface ContextEditDraft {
-	type: "context_edit";
-	targetId: string;
-	replacement: { content: Content[] };
-}
-
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
 export function placeholderDetails(startedAt: number): PlaceholderDetails {
@@ -68,7 +62,7 @@ export function placeholderStart(details: unknown): number | undefined {
 export function placeholderText(toolCallId: string): string {
 	return [
 		`Detached: the command keeps running in the background as ${toolCallId}.`,
-		"When it ends, its final output replaces this result and you are notified.",
+		"When it ends, its final output is sent to you as a message.",
 		"Until then, bash_output shows what it has printed so far and bash_kill stops it.",
 	].join(" ");
 }
@@ -134,54 +128,6 @@ export function interruptedRecord(toolCallId: string, toolName: string, startedA
 	};
 }
 
-const sameContent = (a: readonly Content[], b: readonly Content[]) => JSON.stringify(a) === JSON.stringify(b);
-
-function isPlaceholderContent(message: ToolResultMessage): boolean {
-	const [only, ...rest] = message.content;
-	return rest.length === 0 && only?.type === "text" && only.text === placeholderText(message.toolCallId);
-}
-
-/**
- * Lays final results over the placeholders of a request's messages. Only a
- * placeholder still showing its own text is replaced, so another extension's
- * later edit or omission of that result stays in effect.
- */
-export function projectRecords<M>(messages: readonly M[], records: ReadonlyMap<string, DetachedRecord>): M[] | undefined {
-	let changed = false;
-	const projected = messages.map((message) => {
-		const result = message as unknown as ToolResultMessage;
-		if (result?.role !== "toolResult" || placeholderStart(result.details) === undefined) return message;
-		const record = records.get(result.toolCallId);
-		if (!record) return message;
-		const error = isError(record.ending);
-		if (isPlaceholderContent(result)) {
-			changed = true;
-			return { ...result, content: record.content, isError: error } as M;
-		}
-		// A context edit can't carry the error flag, so it is set here too.
-		if (result.isError !== error && sameContent(result.content, record.content)) {
-			changed = true;
-			return { ...result, isError: error } as M;
-		}
-		return message;
-	});
-	return changed ? projected : undefined;
-}
-
-/**
- * Context edits writing final results into the session, for the records whose
- * placeholder is on the branch and has no edit yet (from here or elsewhere).
- */
-export function pendingEdits(branch: readonly Entry[], records: ReadonlyMap<string, DetachedRecord>): ContextEditDraft[] {
-	const edited = new Set(branch.flatMap((entry) => (entry.type === "context_edit" && entry.targetId ? [entry.targetId] : [])));
-	const drafts: ContextEditDraft[] = [];
-	for (const [toolCallId, { entryId }] of placeholdersOn(branch)) {
-		const record = records.get(toolCallId);
-		if (record && !edited.has(entryId)) drafts.push({ type: "context_edit", targetId: entryId, replacement: { content: record.content } });
-	}
-	return drafts;
-}
-
 export function formatDuration(ms: number): string {
 	if (ms < 1_000) return `${Math.max(0, Math.round(ms))}ms`;
 	if (ms < 60_000) return `${(ms / 1_000).toFixed(1)}s`;
@@ -214,12 +160,19 @@ export function unknownCall(id: string, running: readonly string[]): string {
 	return `No background call ${id}. Running in the background: ${running.length ? running.join(", ") : "none"}.`;
 }
 
-/** The follow-up that wakes the model when a detached call ends on its own. */
+/**
+ * The follow-up that wakes the model when a detached call ends on its own, with
+ * its final output. Writing the output over the placeholder instead would change
+ * an earlier message and void the prompt cache from there on: one such edit
+ * rewrote 896k tokens.
+ */
 export function completionNotice(record: DetachedRecord): string {
 	const status = record.ending === "completed" ? "completed" : "failed";
+	const images = record.content.filter((part) => part.type === "image").length;
 	return [
 		`<background-result tool="${record.toolName}" id="${record.toolCallId}" status="${status}" elapsed="${formatDuration(record.endedAt - record.startedAt)}">`,
-		"The detached call has ended and its tool result above now holds the final output. Carry on from it.",
+		textOf(record.content).trim() || "(no output)",
+		...(images ? [`(${images} image${images === 1 ? "" : "s"} in the output, not shown)`] : []),
 		"</background-result>",
 	].join("\n");
 }

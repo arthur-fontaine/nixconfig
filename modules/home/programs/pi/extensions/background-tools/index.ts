@@ -1,16 +1,9 @@
 // Background tools for Pi: Ctrl+B detaches a running bash call from its turn
 // without stopping the command, and the model can ask for the same up front
 // with bash's `background: true`. bash_output and bash_kill follow and stop
-// detached calls; each one's final result replaces its placeholder.
+// detached calls; each one's final output reaches the model as a message.
 import { Type } from "@earendil-works/pi-ai";
-import {
-	type AgentBeforeSettleEvent,
-	type BoundaryResult,
-	createBashToolDefinition,
-	type ExtensionAPI,
-	type ExtensionContext,
-	type TurnEndEvent,
-} from "@earendil-works/pi-coding-agent";
+import { createBashToolDefinition, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
 import { type CallEvents, DetachableCall, type Outcome } from "./call.ts";
 import {
@@ -19,9 +12,7 @@ import {
 	type Entry,
 	interruptedRecord,
 	lastLines,
-	pendingEdits,
 	placeholdersOn,
-	projectRecords,
 	RECORD_TYPE,
 	recordsOn,
 	report,
@@ -51,8 +42,6 @@ export default function (pi: ExtensionAPI) {
 	const calls = new Map<string, DetachableCall>();
 	// Final results on the current branch.
 	let records = new Map<string, DetachedRecord>();
-	// Records already written into the session as context edits (or found to need none).
-	const synced = new Set<string>();
 	// Top-level model calls in the TUI, between tool_call and their execution.
 	const eligible = new Set<string>();
 	const repaints = new Map<string, () => void>();
@@ -77,7 +66,6 @@ export default function (pi: ExtensionAPI) {
 	function remember(record: DetachedRecord) {
 		pi.appendEntry(RECORD_TYPE, record);
 		records.set(record.toolCallId, record);
-		synced.delete(record.toolCallId);
 	}
 
 	const events: CallEvents = {
@@ -217,30 +205,10 @@ export default function (pi: ExtensionAPI) {
 		eligible.delete(event.toolCallId);
 	});
 
-	// Model requests see final results before their context edits land.
-	pi.on("context", (event) => {
-		if (records.size === 0) return;
-		const messages = projectRecords(event.messages, records);
-		return messages && { messages };
-	});
-
-	// Context edits make the final results part of the session itself, for
-	// compaction and for sessions opened without this extension.
-	const writeEdits = (event: TurnEndEvent | AgentBeforeSettleEvent): BoundaryResult | undefined => {
-		if ([...records.keys()].every((id) => synced.has(id))) return;
-		const drafts = pendingEdits(branch(), records);
-		for (const id of records.keys()) synced.add(id);
-		if (drafts.length === 0) return;
-		return { entries: [...event.entries, ...drafts] };
-	};
-	pi.on("turn_end", writeEdits);
-	pi.on("agent_before_settle", writeEdits);
-
 	// Placeholders whose call is gone (Pi quit or reloaded while it ran) get a
 	// final result saying so.
 	function loadBranch() {
 		records = recordsOn(branch());
-		synced.clear();
 		for (const [id, { startedAt }] of placeholdersOn(branch())) {
 			if (!records.has(id) && !calls.has(id)) remember(interruptedRecord(id, TOOL, startedAt, startedAt));
 		}
