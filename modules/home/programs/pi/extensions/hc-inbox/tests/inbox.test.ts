@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ENTER_WINDOW_MS, hcMessageOf, Inbox, Outbox } from "../inbox.ts";
+import { ENTER_WINDOW_MS, HEAD_CHARS, hcMessageOf, Inbox, needsShortening, Outbox, shorten } from "../inbox.ts";
 
 // Bytes captured from `hc send` into a terminal reporting OSC 7501 status.
 const paste = (text: string) => `\x1b[200~${text}\x1b[201~`;
@@ -62,4 +62,21 @@ test("messages wait for a compaction to end", () => {
 	assert.deepEqual(sent, []);
 	outbox.compactionEnded();
 	assert.deepEqual(sent, [["a", "now"], ["b", "now"]]);
+});
+
+test("a long message keeps its head and points to the whole of it", () => {
+	const body = Array.from({ length: 200 }, (_, i) => `line ${i} of the report`).join("\n");
+	const long = `<hc from="t6q app-backend">${body}</hc>`;
+	const short = shorten(long, "/tmp/r.md");
+	assert.ok(short.startsWith('<hc from="t6q app-backend">line 0 of the report\n'));
+	assert.ok(short.endsWith("</hc>"));
+	assert.ok(short.length <= HEAD_CHARS + 200);
+	assert.match(short, /more characters; the whole message is in \/tmp\/r\.md\]<\/hc>$/);
+	// Cut at a line break, never mid-line.
+	assert.match(short, /of the report\n\[…/);
+});
+
+test("a short message is left as it is", () => {
+	assert.equal(needsShortening(tagged), false);
+	assert.equal(shorten(tagged, "/tmp/r.md"), tagged);
 });

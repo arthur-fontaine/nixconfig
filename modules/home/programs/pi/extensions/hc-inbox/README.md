@@ -23,6 +23,13 @@ Measured with `hc run --bg` and a raw-mode capture of stdin:
 - With `notes = false` in hc's config, messages are untagged and can't be told
   apart from a paste, so they go to the editor as before.
 
+## Long messages
+
+A message whose body is over 3,000 characters (a worker's whole report) is
+saved to `~/.pi/agent/tmp/hc-inbox/<time>-<sender>.md`, and the agent gets
+the first 1,500 characters, cut at a line break, with that path. A relayed
+report otherwise stays in the receiver's context for the rest of the chat.
+
 The extension only loads when `HC_TERMINAL_ID` is set, i.e. in terminals
 hc runs. During a compaction Pi refuses prompts, so messages wait for it to end.
 
