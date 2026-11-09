@@ -1,0 +1,89 @@
+--- a/src/claude-cli.ts
++++ b/src/claude-cli.ts
+@@ -819,6 +819,39 @@
+   return changed ? Buffer.from(JSON.stringify(payload)) : body;
+ }
+ 
++/**
++ * Claude Code sends the tool result of the turn it is asked about trimmed, with one newline
++ * after it, but the same result replayed in the history of the next request as Pi has it. The
++ * two differ whenever the output has leading or trailing whitespace, which voids the prompt
++ * cache from that result on, and from the system prompt on when a turn of many tool calls puts
++ * it out of the API's 20-block lookback. Every text result is sent as Pi has it.
++ */
++type ResultBlock = { type?: string; tool_use_id?: unknown; content?: unknown };
++
++export function restoreToolResults(body: Buffer, frames: NativeFrame[]): Buffer {
++  const kept = new Map<string, string>();
++  for (const frame of frames) {
++    if (frame.type !== "user") continue;
++    for (const block of frame.message.content as ResultBlock[]) {
++      if (block?.type === "tool_result" && typeof block.content === "string") kept.set(String(block.tool_use_id), block.content);
++    }
++  }
++  if (!kept.size) return body;
++  const payload = JSON.parse(body.toString("utf8")) as { messages?: NativeRequestMessage[] };
++  let changed = false;
++  for (const message of payload.messages ?? []) {
++    if (message.role !== "user" || !Array.isArray(message.content)) continue;
++    for (const block of message.content as ResultBlock[]) {
++      if (block?.type !== "tool_result" || typeof block.content !== "string") continue;
++      const raw = kept.get(String(block.tool_use_id));
++      if (raw === undefined || raw === block.content) continue;
++      block.content = raw;
++      changed = true;
++    }
++  }
++  return changed ? Buffer.from(JSON.stringify(payload)) : body;
++}
++
+ export function rewriteInitialRequest(
+   body: Buffer,
+   prefix: unknown[] | undefined,
+@@ -1105,7 +1138,7 @@
+     this.relay.beginTurn(
+       deliver,
+       (body) => {
+-        let out = restoreThinking(body, history);
++        let out = restoreToolResults(restoreThinking(body, history), history);
+         if (rewrite) out = rewrite(out);
+         return callerCache ? keepCallerCacheBreakpoints(out, canonicalInitialUser) : out;
+       },
+--- a/tests/claude-cli.test.ts
++++ b/tests/claude-cli.test.ts
+@@ -8,6 +8,7 @@
+   closeClaudeProcesses,
+   discoverClaudeModels,
+   restoreThinking,
++  restoreToolResults,
+   rewriteInitialRequest,
+   runClaudeRequest,
+ } from "../src/claude-cli.ts";
+@@ -383,6 +384,27 @@
+     await closeClaudeProcesses();
+     await rm(root, { recursive: true, force: true });
+   }
++});
++
++test("sends every text tool result as Pi has it, so the cached prefix stays the same", () => {
++  const frames = [
++    { type: "user" as const, message: { role: "user" as const, content: [{ type: "text", text: "go" }] } },
++    { type: "assistant" as const, message: { role: "assistant" as const, content: [{ type: "tool_use", id: "t1", name: "bash", input: {} }] } },
++    { type: "user" as const, message: { role: "user" as const, content: [{ type: "tool_result", tool_use_id: "t1", content: "     300 nums.txt\n" }] } },
++  ];
++  // Claude Code's own rendering of the turn's result: trimmed, one newline.
++  const body = Buffer.from(JSON.stringify({
++    messages: [
++      { role: "user", content: [{ type: "text", text: "go" }] },
++      { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "mcp__pi__bash", input: {} }] },
++      { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "300 nums.txt\n", cache_control: { type: "ephemeral" } }] },
++    ],
++  }));
++  const out = JSON.parse(restoreToolResults(body, frames).toString("utf8"));
++  assert.deepEqual(out.messages[2].content[0], { type: "tool_result", tool_use_id: "t1", content: "     300 nums.txt\n", cache_control: { type: "ephemeral" } });
++  // Already as Pi has it: the very same body.
++  const raw = Buffer.from(JSON.stringify(out));
++  assert.equal(restoreToolResults(raw, frames), raw);
+ });
+ 
+ test("puts back the signed thinking Claude Code leaves out of replayed turns", () => {
