@@ -214,12 +214,23 @@ let
         rev = "523374dee72d67c7b2b5f858ea0094ffda49c3ac";
         hash = "sha256-qJIMwaas5Wnz270rUbPa4E5v2GQ62SQ1rKT0jmjYhyw=";
       };
+      # Root cause before any fix, evidence before any "done", a failing test before the
+      # fix. The three refer to each other, so they come together.
+      superpowers = pkgs.fetchFromGitHub {
+        owner = "obra";
+        repo = "superpowers";
+        rev = "22f0b463e7a5e579904dd6211a520321035526f7";
+        hash = "sha256-rP5YsyGuPd9YSW/Fj3aukrq1bLuV+nwwQMK4JaZQgkI=";
+      };
     in
     {
       skill-creator = "${official}/plugins/skill-creator/skills/skill-creator";
       frontend-design = "${official}/plugins/frontend-design/skills/frontend-design";
       eli5 = "${community}/eli5/skills/eli5";
       inherit humanizer;
+      systematic-debugging = "${superpowers}/skills/systematic-debugging";
+      verification-before-completion = "${superpowers}/skills/verification-before-completion";
+      test-driven-development = "${superpowers}/skills/test-driven-development";
     };
 
   extensions = {
