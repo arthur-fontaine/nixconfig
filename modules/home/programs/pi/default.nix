@@ -282,6 +282,8 @@ let
     # A run that changed code and ran nothing since is sent back once: check it, or say
     # what isn't verified.
     verify-gate = ./extensions/verify-gate;
+    # Long bash outputs as their head and tail, the whole of them in a file.
+    output-budget = ./extensions/output-budget;
   };
   # Pi loads the folder's extensions in directory order, unsorted, and each tool renderer
   # wraps those of the extensions loaded after it. A manifest fixes the order: these first,
