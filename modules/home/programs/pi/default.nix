@@ -8,6 +8,19 @@ let
     defaultModel = "claude-opus-5-5";
     defaultThinkingLevel = "high";
 
+    # Pi compacts when the context is within reserveTokens of the window, so ~984k on these
+    # 1M models: chats reached 760–980k and each request re-read all of it. 400k is a
+    # judgment call, not a measured optimum: it halves the cost per request of those chats
+    # while compacting mid-task rarely. Idle chats are compacted earlier by cache-warmer.
+    compaction.modelOverrides = lib.genAttrs (map (m: "claude-code/${m}") [
+      "claude-opus-5-5"
+      "claude-sonnet-5-5"
+      "claude-sonnet-5"
+      "claude-fable-5-1"
+      "claude-haiku-5-5"
+      "default"
+    ]) (_: { reserveTokens = 1000000 - 400000; });
+
     # Pi's light theme or its dark one, switched live as the terminal reports
     # its appearance. Ghostty and Zed follow macOS, so Pi does too, like
     # Claude Code's theme "auto".
