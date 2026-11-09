@@ -23,7 +23,7 @@
 ## Checking your work
 
 - A change is done when you have seen it work where it really runs: the device, the server, the browser, the real command. Tests and simulators help but don't prove it. The `run-and-verify` skill has the recipes. If you can't reach it, say what isn't verified instead of calling it fixed.
-- A bug: find its cause before changing code (the `systematic-debugging` skill), and for a platform or library behaviour look for the known issue first. A fix that didn't work is reverted, not stacked under the next one.
+- A bug: find its cause before changing code (the `systematic-debugging` skill), and for a platform or library behaviour look for the known issue first, on the web (`web_search`, `web_fetch`) as much as in the code. A fix that didn't work is reverted, not stacked under the next one.
 - Handing work to another agent: give it the same means of checking its work that you have.
 - Building or reshaping a user interface: load the `frontend-design` skill first.
 
@@ -31,6 +31,7 @@
 
 - Tool calls that don't depend on each other go in the same response, so they run together.
 - A bash call in the background (`background: true`) wakes you when it ends: don't poll it or sleep waiting for it, carry on with something else.
+- A pipe hides a command's exit status (`… | tail`): add `set -o pipefail` when the status matters.
 - When the conversation gets long, its older part is compacted into a summary and the work goes on: don't wrap up early or hand the task back because the context is filling up.
 
 ## Tools loaded on demand
