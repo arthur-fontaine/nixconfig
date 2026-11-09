@@ -70,26 +70,3 @@ export class Outbox {
 		for (const message of held) this.push(message);
 	}
 }
-
-// A worker's report pasted whole stays in the receiver's context for the rest of the
-// chat (relayed reports of 2–5k characters each filled an orchestrator to 760k). The
-// head carries the gist; the rest is a file read away.
-export const SHORTEN_ABOVE = 3000;
-export const HEAD_CHARS = 1500;
-const PARTS = /^(<hc [^>]*>)([\s\S]*)(<\/hc>)$/;
-
-export function needsShortening(message: string): boolean {
-	const body = PARTS.exec(message)?.[2];
-	return body !== undefined && body.length > SHORTEN_ABOVE;
-}
-
-/** The message with its body cut at a line break near HEAD_CHARS, and where the rest is. */
-export function shorten(message: string, savedTo: string): string {
-	const parts = PARTS.exec(message);
-	if (!parts || !needsShortening(message)) return message;
-	const [, open, body, close] = parts;
-	const lineEnd = body.lastIndexOf("\n", HEAD_CHARS);
-	const head = body.slice(0, lineEnd > HEAD_CHARS / 2 ? lineEnd : HEAD_CHARS);
-	const rest = body.length - head.length;
-	return `${open}${head}\n[… ${rest} more characters; the whole message is in ${savedTo}]${close}`;
-}
