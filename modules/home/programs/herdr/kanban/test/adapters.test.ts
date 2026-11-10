@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseVmStat } from "../src/system.ts";
-import { estimatorArgv, parseEstimate } from "../src/estimator.ts";
+import { parseEstimate } from "../src/estimator.ts";
 import { distinct, projectOf, repoName, repoPath } from "../src/projects.ts";
 import { dispatchText, findOrchestrator, orchestratorArgv, orchestratorName, type LsSpace } from "../src/herdr.ts";
 import type { Card } from "../src/types.ts";
@@ -71,12 +71,4 @@ test("the dispatched prompt carries the card id and the review command", () => {
   assert.match(text, /k7/);
   assert.match(text, /The button does nothing\./);
   assert.match(text, /herdr-kanban review k7 "/);
-});
-
-test("the estimator runs on the Claude Code provider, never a bare model name", () => {
-  const argv = estimatorArgv(undefined);
-  assert.equal(argv[argv.indexOf("--provider") + 1], "claude-code");
-  assert.equal(argv[argv.indexOf("--model") + 1], "claude-sonnet-5-5");
-  assert.deepEqual(estimatorArgv('["echo", "{}"]'), ["echo", "{}"]);
-  assert.deepEqual(estimatorArgv("my-est --fast"), ["my-est", "--fast"]);
 });

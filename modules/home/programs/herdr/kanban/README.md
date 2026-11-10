@@ -35,7 +35,7 @@ clients' token hashes), written atomically (temp file + rename).
 | `HERDR_KANBAN_MCP_PORT` | `7744` | MCP, all interfaces, only while enabled |
 | `HERDR_KANBAN_NAME` | `Herdr Kanban` | the Bonjour instance name |
 | `HERDR_KANBAN_CLI` | `herdr-kanban` | how the orchestrator's prompt says to call `review` |
-| `HERDR_KANBAN_ESTIMATOR` | `pi --print --provider claude-code --model claude-sonnet-5-5 …` | argv, space-separated or a JSON array; the prompt is appended |
+| `HERDR_KANBAN_ESTIMATOR` | `pi --print --model sonnet …` | argv, space-separated or a JSON array; the prompt is appended |
 | `HERDR_KANBAN_TICK_MS` | `15000` | scheduler pass interval (it also runs on every change) |
 
 Why TypeScript without a build: Node 24 strips types itself, so `src/*.ts` run as they
@@ -66,9 +66,8 @@ reasons of those that object are shown on the card (`waiting`). A factor is
 
 Dragging a card to In progress by hand starts it at once, whatever the factors say.
 
-**Estimates**: on creation, and when the prompt changes, Sonnet (`pi --print --provider
-claude-code --model claude-sonnet-5-5`, no session, no tools; the provider is named so the
-estimate stays on the Claude Code subscription) answers `{tokens, ramGB, exclusive, notes}` for the
+**Estimates**: on creation, and when the prompt changes, Sonnet (`pi --print --model
+sonnet`, no session, no tools) answers `{tokens, ramGB, exclusive, notes}` for the
 card, one card at a time in the background; the answer is cached on the card.
 
 ## Local API

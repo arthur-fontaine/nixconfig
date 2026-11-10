@@ -53,21 +53,11 @@ export function parseEstimate(text: string): { tokens: number; factors: Factors 
 
 export type Ask = (prompt: string) => Promise<string>;
 
-/** `pi --print` on Sonnet: no session, no tools, no context files. The provider is named:
- * a bare `sonnet` could resolve to another connected provider that serves Claude models,
- * and estimates must run on the Claude Code subscription. Extensions stay on: that
- * provider is one. */
-export const DEFAULT_ESTIMATOR = ["pi", "--print", "--provider", "claude-code", "--model", "claude-sonnet-5-5", "--thinking", "off",
-  "--no-session", "--no-tools", "--no-skills", "--no-context-files", "--no-prompt-templates", "--no-mcp"];
-
-/** The estimator's argv: $HERDR_KANBAN_ESTIMATOR (a JSON array, or space-separated), else the default. */
-export function estimatorArgv(env: string | undefined): string[] {
-  if (!env) return DEFAULT_ESTIMATOR;
-  return env.startsWith("[") ? JSON.parse(env) : env.split(" ");
-}
-
+/** `pi --print` on Sonnet: no session, no tools, no context files. */
 export const askSonnet: Ask = async (prompt) => {
-  const argv = estimatorArgv(process.env.HERDR_KANBAN_ESTIMATOR);
+  // Extensions stay on: Pi's claude-code provider, which `sonnet` resolves to, is one.
+  const env = process.env.HERDR_KANBAN_ESTIMATOR;
+  const argv: string[] = env?.startsWith("[") ? JSON.parse(env) : (env ?? "pi --print --model sonnet --thinking off --no-session --no-tools --no-skills --no-context-files --no-prompt-templates --no-mcp").split(" ");
   const r = await run(argv[0], [...argv.slice(1), prompt], { cwd: tmpdir(), timeout: 180_000 });
   if (r.code !== 0) throw new Error(`estimator exited ${r.code}: ${r.stderr.trim().slice(-300)}`);
   return r.stdout;
