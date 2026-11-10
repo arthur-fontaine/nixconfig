@@ -8,6 +8,7 @@ import { z } from "zod";
 import { readBody, send } from "./http.ts";
 import { CODE_TTL_MS, PairingError } from "./pairing.ts";
 import { StoreError } from "./store.ts";
+import { KNOWN_EXCLUSIVE } from "./estimator.ts";
 import type { Kanban } from "./kanban.ts";
 import { COLUMNS, type PairedClient } from "./types.ts";
 
@@ -70,8 +71,15 @@ export function mcpServer(k: Kanban, client: PairedClient | null, onPairing: (cl
     },
   }, authed((a: any) => k.create(a)));
   server.registerTool("update_card", {
-    description: "Change a card's title, prompt, project or priority. A new prompt is estimated again.",
-    inputSchema: { id: z.string(), title: z.string().min(1).max(500).optional(), prompt: z.string().max(100_000).optional(), project: z.string().optional(), priority: priority.optional() },
+    description: "Change a card's title, prompt, project or priority, or correct its estimate: tokens, RAM and the exclusive resources it holds (e.g. drop \"ios-simulator\" when it needs none). Edited values are kept by background estimates. A new prompt is estimated again.",
+    inputSchema: {
+      id: z.string(), title: z.string().min(1).max(500).optional(), prompt: z.string().max(100_000).optional(), project: z.string().optional(), priority: priority.optional(),
+      estimate: z.number().int().positive().optional().describe("Tokens the card will take"),
+      factors: z.object({
+        ramGB: z.number().min(0).max(512).optional(),
+        exclusive: z.array(z.string()).optional().describe(`Resources only one running card may hold, e.g. ${KNOWN_EXCLUSIVE.join(", ")}`),
+      }).strict().optional(),
+    },
   }, authed(({ id, ...rest }: any) => k.update(id, rest)));
   server.registerTool("move_card", {
     description: "Move a card. `in_progress` sends it to its orchestrator now; Review is reached only when the orchestrator reports the work done.",

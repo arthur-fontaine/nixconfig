@@ -7,12 +7,44 @@
 //   { edit, column }  the card dialog (edit: a card id, or null for a new card)
 //   { settings: true } MCP on/off, pairing code, paired agents, scheduler limits
 //   { move, column }  a card's right-click menu: the column it goes to
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
-import { theme, settings, run, props, shared, setShared, spaces, openOverlay, closeOverlay, notify, pickFolder, layout, nextCommand } from "herdr";
-import { API, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces, SIDE_ORDER, isFolded, waitLabel, waitLabels, firstLine } from "./model.js";
+import { theme, settings, run, props, shared, setShared, spaces, openOverlay, closeOverlay, notify, pickFolder, layout, nextCommand, exec, appHome } from "herdr";
+import { KNOWN_EXCLUSIVE, estimateDraft, estimateEdits, isEdited, resourceName, apiBase, fileSize, isImage, pickedPaths, pastedName, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces, SIDE_ORDER, isFolded, waitLabel, waitLabels, firstLine } from "./model.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
+// An image attachment's thumbnail height in the card dialog.
+const THUMB = 64;
+// $1 the image, $2 its preview, $3 convert (a PNG at most 240 px) or copy (an SVG). Prints "width height".
+const PREVIEW = `mkdir -p "$(dirname "$2")" || exit 1
+if [ "$3" = copy ]; then cp "$1" "$2" || exit 1; echo "1 1"; exit 0; fi
+sips -s format png -Z 240 "$1" --out "$2" >/dev/null 2>&1 || exit 1
+sips -g pixelWidth -g pixelHeight "$2" | awk '/pixelWidth/ { w = $2 } /pixelHeight/ { h = $2 } END { print w, h }'`;
+// The clipboard's image written to the path given after the script: "ok", or "none".
+const PASTE = [
+  "on run argv",
+  "try",
+  "set png to the clipboard as «class PNGf»",
+  "on error",
+  'return "none"',
+  "end try",
+  "set f to open for access (POSIX file (item 1 of argv)) with write permission",
+  "set eof f to 0",
+  "write png to f",
+  "close access f",
+  'return "ok"',
+  "end run",
+];
+// The system's file picker, several files at once: one POSIX path a line.
+const PICK = [
+  "activate",
+  'set picked to choose file with prompt "Attach to the card" with multiple selections allowed',
+  'set out to ""',
+  "repeat with f in picked",
+  "set out to out & POSIX path of f & linefeed",
+  "end repeat",
+  "return out",
+];
 // The sidebar's stack (layouts/nix.json) and this sidebar in it.
 const SWITCH = { stack: "sidebar-body", child: "sidebar-kanban" };
 // A board column's narrowest: a card title on two lines, the header's name whole.
@@ -29,8 +61,8 @@ function find(node, id) {
 }
 const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
 
-async function api(method, path, body) {
-  const r = await fetch(API + path, {
+async function api(base, method, path, body) {
+  const r = await fetch(base + path, {
     method,
     headers: body === undefined ? {} : { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -43,6 +75,9 @@ async function api(method, path, body) {
 export default class Kanban extends View {
   init(_props, cx) {
     const p = props() ?? {};
+    // A test daemon's port; every dialog this copy opens is given it too.
+    this.port = p.port ?? null;
+    this.base = apiBase(this.port);
     this.mode = p.settings ? "settings" : "move" in p ? "move" : "edit" in p ? "edit" : p.full ? "board" : "side";
     this.state = null;
     this.offline = false;
@@ -72,7 +107,7 @@ export default class Kanban extends View {
   async poll(cx) {
     for (;;) {
       try {
-        const s = await api("GET", `/state?since=${this.version}`);
+        const s = await api(this.base, "GET", `/state?since=${this.version}`);
         this.state = s;
         this.version = s.version;
         this.offline = false;
@@ -89,7 +124,8 @@ export default class Kanban extends View {
   }
 
   react(s, cx) {
-    if (this.mode === "edit" && !this.loaded) this.fillEditor(s);
+    if (this.mode === "edit" && !this.loaded) this.fillEditor(s, cx);
+    else if (this.mode === "edit") this.followEstimate(s);
     if (this.mode === "settings" && !this.fields) this.fillSettings(s);
     // For the sidebar switcher's needs-you dot.
     const review = s.cards.filter((c) => c.column === "review").length;
@@ -116,7 +152,7 @@ export default class Kanban extends View {
   act(cx, method, path, body, then) {
     cx.spawn(async (cx) => {
       try {
-        const out = await api(method, path, body);
+        const out = await api(this.base, method, path, body);
         this.error = null;
         then?.(out, cx);
       } catch (e) {
@@ -127,9 +163,10 @@ export default class Kanban extends View {
     });
   }
 
-  openBoard() { run("tab.new", { name: "Kanban", mod: "nix-kanban", props: { full: true } }); }
-  openCard(id, column = "backlog") { openOverlay({ mod: "nix-kanban", kind: "dialog", width: 600, height: 640, props: { edit: id, column } }); }
-  openSettings() { openOverlay({ mod: "nix-kanban", kind: "dialog", width: 540, height: 660, props: { settings: true } }); }
+  withPort(p) { return this.port ? { ...p, port: this.port } : p; }
+  openBoard() { run("tab.new", { name: "Kanban", mod: "nix-kanban", props: this.withPort({ full: true }) }); }
+  openCard(id, column = "backlog") { openOverlay({ mod: "nix-kanban", kind: "dialog", width: 600, height: 760, props: this.withPort({ edit: id, column }) }); }
+  openSettings() { openOverlay({ mod: "nix-kanban", kind: "dialog", width: 540, height: 660, props: this.withPort({ settings: true }) }); }
 
   // ---- Small parts, in the nix-* mods' vocabulary ----
 
@@ -311,7 +348,7 @@ export default class Kanban extends View {
       const m = cx.mouse_position(), v = cx.viewport_size();
       at = { x: Math.min(m.x, v.width - 200 - 8), y: Math.max(8, Math.min(m.y, v.height - height - 8)) };
     } catch {}
-    openOverlay({ mod: "nix-kanban", kind: "popup", width: 200, height, at, props: { move: c.id, column: c.column } });
+    openOverlay({ mod: "nix-kanban", kind: "popup", width: 200, height, at, props: this.withPort({ move: c.id, column: c.column }) });
   }
 
   // ---- The board ----
@@ -422,6 +459,8 @@ export default class Kanban extends View {
       .when(chips.length > 0 || c.estimating, (e) => e.child(h_flex().flex_wrap().gap(4)
         .children(chips.map((x, i) => div().id(`chip-${c.id}-${i}`).h(18).px(6).rounded(4).bg(t.raised).flex().items_center().text_size(10.5).text_color(t.muted)
           .when(i === 0 && Boolean(c.factors?.notes), (e) => e.tooltip(c.factors.notes)).child(x)))
+        .when(isEdited(c), (e) => e.child(div().id(`edited-${c.id}`).h(18).flex().items_center().text_color(t.dim).tooltip("Estimate set by hand")
+          .child(svg(ICON("pen")).size(10))))
         .when(c.estimating, (e) => e.child(div().h(18).px(6).flex().items_center().text_size(10.5).text_color(t.dim).frames(["sizing up", "sizing up.", "sizing up..", "sizing up..."], 400)))))
       .when(c.column === "todo" && c.waiting.length > 0, (e) => e.child(v_flex().gap(2)
         .tooltip(c.waiting.join("\n"))
@@ -452,13 +491,31 @@ export default class Kanban extends View {
     // that clips the last lines out of reach.
     this.prompt = TextareaState.new({ placeholder: "Details for the orchestrator: context, where to look, what done means", rows: 7 });
     this.prompt.set_soft_wrap(true);
+    // ⌘V with no text on the clipboard: maybe a screenshot.
+    this.prompt.on("paste_other", (_e, cx) => this.pasteImage(cx));
+    this.title.on("paste_other", (_e, cx) => this.pasteImage(cx));
+    // The card's attachments as the dialog has them: those it had, then those staged here
+    // (pasted, dropped, picked), which the daemon throws away unless the card is saved.
+    this.files = [];
+    this.staged = new Set();
+    this.copying = 0;
+    this.token = Math.random().toString(36).slice(2, 8);
     this.project = null;
     this.priority = 1;
     this.column = p.column === "backlog" ? "backlog" : "todo";
+    // The estimate's fields: what they showed when filled (`sized`), to send only what changed.
+    this.tokens = InputState.new({ placeholder: "not sized" });
+    this.ram = InputState.new({ placeholder: "0" });
+    this.exclusive = [];
+    this.sized = null;
+    this.sizedFrom = null;
+    this.adding = false;
+    this.other = InputState.new({ placeholder: "another…" });
+    this.other.on("submit", (_e, cx) => this.addOther(cx));
     this.loaded = this.cardId === null;
   }
 
-  fillEditor(s) {
+  fillEditor(s, cx) {
     this.loaded = true;
     const c = s.cards.find((x) => x.id === this.cardId);
     if (!c) return;
@@ -467,16 +524,225 @@ export default class Kanban extends View {
     this.project = c.project;
     this.priority = c.priority;
     this.column = c.column;
+    this.files = (c.attachments ?? []).map((a) => ({ ...a }));
+    this.fillEstimate(c);
+    cx.spawn(async (cx) => {
+      for (const f of this.files) await this.preview(f);
+      cx.notify();
+    });
+  }
+
+  // ---- The estimate ----
+
+  fillEstimate(c) {
+    this.sized = estimateDraft(c);
+    this.sizedFrom = JSON.stringify([c.estimate, c.factors]);
+    this.tokens.set_value(this.sized.tokens);
+    this.ram.set_value(this.sized.ram);
+    this.exclusive = [...this.sized.exclusive];
+  }
+
+  draftNow() { return { tokens: this.tokens.value(), ram: this.ram.value(), exclusive: this.exclusive }; }
+
+  // A new estimate (Estimate again, Sonnet answering) shows in fields the person hasn't touched.
+  followEstimate(s) {
+    const c = s.cards.find((x) => x.id === this.cardId);
+    if (!c || !this.sized || JSON.stringify([c.estimate, c.factors]) === this.sizedFrom) return;
+    const e = estimateEdits(this.draftNow(), this.sized);
+    if (!e.error && !Object.keys(e.body).length) this.fillEstimate(c);
+  }
+
+  addResource(name, cx) {
+    if (!this.exclusive.includes(name)) this.exclusive = [...this.exclusive, name];
+    this.adding = false;
+    this.error = null;
+    cx.notify();
+  }
+
+  addOther(cx) {
+    const text = this.other.value().trim();
+    if (!text) return;
+    const name = resourceName(text);
+    if (!name) { this.error = "A resource is a short name: letters, digits and dashes."; cx.notify(); return; }
+    this.other.set_value("");
+    this.addResource(name, cx);
+  }
+
+  estimateSection(c, t) {
+    const small = (state, w) => Input.new(state).w(w).h(28).px(8).items_center().rounded(6).border_1().border_color(t.input).bg(t.background).text_size(12.5);
+    const unit = (text) => div().text_size(11.5).text_color(t.dim).child(text);
+    const resource = (x) => h_flex().id(`ex-${x}`).h(24).pl(8).pr(3).gap(4).flex_none().items_center().rounded(5).bg(t.raised).text_size(11.5)
+      .child(x)
+      .child(div().id(`ex-rm-${x}`).size(18).rounded(9).flex().items_center().justify_center().text_color(t.muted).cursor_pointer().tooltip(`Remove ${x}`)
+        .hover((h) => h.bg(t.hover).text_color(t.foreground))
+        .on_click((_e, cx) => { cx.stop_propagation(); this.exclusive = this.exclusive.filter((y) => y !== x); cx.notify(); })
+        .child(svg(ICON("x")).size(10)));
+    const suggest = (x) => div().id(`ex-add-${x}`).h(24).px(8).flex_none().flex().items_center().rounded(5).border_1().border_color(t.border)
+      .text_size(11.5).text_color(t.muted).cursor_pointer().hover((h) => h.bg(t.hover).text_color(t.foreground))
+      .on_click((_e, cx) => this.addResource(x, cx)).child(x);
+    const missing = KNOWN_EXCLUSIVE.filter((x) => !this.exclusive.includes(x));
+    const edited = isEdited(c);
+    return v_flex().gap(8)
+      .child(h_flex().gap(8).items_center()
+        .child(div().text_size(12).font_medium().text_color(t.muted).child("Estimate"))
+        .when(edited, (e) => e.child(h_flex().id("edited").h(18).px(6).gap(4).items_center().rounded(4).border_1().border_color(t.border)
+          .text_size(10.5).text_color(t.muted).tooltip(`Set by hand: ${c.factors.manual.map((m) => ({ estimate: "tokens", ramGB: "RAM", exclusive: "resources" })[m] ?? m).join(", ")}. Kept when Sonnet estimates in the background; Estimate again replaces it.`)
+          .child(svg(ICON("pen")).size(9)).child("edited")))
+        .when(c.estimating, (e) => e.child(div().text_size(11).text_color(t.dim).child("Sonnet is sizing it up…")))
+        .child(div().flex_1())
+        .child(div().id("reestimate").text_size(11).text_color(t.accent).cursor_pointer().hover((x) => x.opacity(0.8))
+          .tooltip(edited ? "Ask Sonnet again: its answer replaces the values set by hand" : "Ask Sonnet again")
+          .on_click((_e, cx) => this.act(cx, "POST", `/cards/${c.id}/estimate`, {})).child("Estimate again")))
+      .child(h_flex().gap(8).items_center()
+        .child(small(this.tokens, 96)).child(unit("tokens"))
+        .child(div().w(10))
+        .child(small(this.ram, 60)).child(unit("GB of RAM"))
+        .child(div().flex_1())
+        .child(div().text_size(11).text_color(t.dim).child("250k, 1.5M or 250000")))
+      .child(h_flex().id("exclusive").gap(6).items_center().flex_wrap()
+        .child(div().text_size(11.5).text_color(t.dim).tooltip("Only one running card may hold each").child("Holds"))
+        .children(this.exclusive.map(resource))
+        .when(!this.exclusive.length, (e) => e.child(div().text_size(11.5).text_color(t.dim).child("no exclusive resource")))
+        .when(!this.adding, (e) => e.child(h_flex().id("ex-add").h(24).px(7).gap(4).flex_none().items_center().rounded(5).text_size(11.5).text_color(t.muted)
+          .cursor_pointer().hover((h) => h.bg(t.hover).text_color(t.foreground))
+          .on_click((_e, cx) => { this.adding = true; cx.notify(); })
+          .child(svg(ICON("plus")).size(11)).child("Add"))))
+      .when(this.adding, (e) => e.child(v_flex().id("ex-menu").gap(6).p(6).rounded(6).border_1().border_color(t.border).bg(t.background)
+        .when(missing.length > 0, (e) => e.child(h_flex().gap(6).items_center().flex_wrap().children(missing.map(suggest))))
+        .child(h_flex().gap(6).items_center()
+          .child(Input.new(this.other).flex_1().h(28).px(8).items_center().rounded(5).border_1().border_color(t.input).text_size(11.5))
+          .child(this.button("ex-other", "Add", (cx) => this.addOther(cx), t))
+          .child(this.iconButton("ex-close", "x", "Close", (cx) => { this.adding = false; cx.notify(); }, t)))))
+      // Its own full-width line: a text in a wrapping row keeps its one-line width and is cut.
+      .when(Boolean(c.factors?.notes), (e) => e.child(div().w_full().text_size(11).text_color(t.dim).child(c.factors.notes)));
+  }
+
+  // ---- Attachments ----
+
+  // Herdr's image() reads only under its own folder: a small PNG copy goes there, sized
+  // so the thumbnail keeps the picture's shape.
+  async preview(f) {
+    if (!isImage(f) || f.preview) return;
+    const svg = /\.svg$/i.test(f.name);
+    const rel = `data/nix-kanban/previews/${f.id}-${this.token}.${svg ? "svg" : "png"}`;
+    try {
+      const r = await exec("sh", ["-c", PREVIEW, "sh", f.path, `${appHome()}/${rel}`, svg ? "copy" : "convert"]);
+      if (r.code !== 0) return;
+      const [w, h] = r.stdout.trim().split(" ").map(Number);
+      f.preview = rel;
+      f.aspect = w > 0 && h > 0 ? w / h : 1;
+    } catch {}
+  }
+
+  // Copies files in through the daemon, one at a time, each shown as soon as it's there.
+  async attach(cx, items) {
+    this.copying += items.length;
+    cx.notify();
+    for (const { path, name } of items) {
+      try {
+        const a = await api(this.base, "POST", "/attachments", { path, name });
+        this.staged.add(a.id);
+        this.files.push(a);
+        this.error = null;
+        await this.preview(a);
+      } catch (e) {
+        this.error = e.message;
+      }
+      this.copying--;
+      cx.notify();
+    }
+  }
+
+  pasteImage(cx) {
+    cx.spawn(async (cx) => {
+      const tmp = `/tmp/nix-kanban-paste-${this.token}-${Date.now()}.png`;
+      const r = await exec("osascript", [...PASTE.flatMap((l) => ["-e", l]), tmp]).catch(() => null);
+      if (r?.stdout.trim() !== "ok") {
+        notify({ title: "Kanban", body: "The clipboard holds no image to attach.", level: "info" });
+        return;
+      }
+      await this.attach(cx, [{ path: tmp, name: pastedName() }]);
+      await exec("rm", ["-f", tmp]).catch(() => {});
+    });
+  }
+
+  pickFiles(cx) {
+    cx.spawn(async (cx) => {
+      // The picker waits on the person: up to Herdr's 10 minutes. Cancel is code 1 (-128).
+      const r = await exec("osascript", PICK.flatMap((l) => ["-e", l]), { timeout: 600_000 }).catch(() => null);
+      if (r?.code === 0) await this.attach(cx, pickedPaths(r.stdout).map((path) => ({ path })));
+    });
+  }
+
+  removeFile(f, cx) {
+    this.files = this.files.filter((x) => x.id !== f.id);
+    // A staged file goes now; one the card had goes when the card is saved.
+    if (this.staged.delete(f.id)) api(this.base, "DELETE", `/attachments/${f.id}`).catch(() => {});
+    if (f.preview) exec("rm", ["-f", `${appHome()}/${f.preview}`]).catch(() => {});
+    cx.notify();
+  }
+
+  // The dialog's end (Save, Cancel, Esc): staged files not saved and every preview go.
+  async close() {
+    if (this.mode !== "edit") return;
+    const previews = this.files.filter((f) => f.preview).map((f) => `${appHome()}/${f.preview}`);
+    await Promise.all([
+      ...[...this.staged].map((id) => api(this.base, "DELETE", `/attachments/${id}`).catch(() => {})),
+      previews.length ? exec("rm", ["-f", ...previews]).catch(() => {}) : null,
+    ]);
+  }
+
+  attachments(t) {
+    const remove = (f) => div().id(`rm-${f.id}`).size(18).flex_none().rounded(9).flex().items_center().justify_center()
+      .bg(t.popover).border_1().border_color(t.border).text_color(t.muted).cursor_pointer().tooltip("Remove")
+      .hover((x) => x.text_color(t.foreground).bg(t.hover))
+      .on_click((_e, cx) => { cx.stop_propagation(); this.removeFile(f, cx); })
+      .child(svg(ICON("x")).size(10));
+    const thumb = (f) => {
+      const w = Math.round(Math.max(40, Math.min(144, THUMB * (f.aspect ?? 1))));
+      return div().id(`att-${f.id}`).relative().w(w).h(THUMB).flex_none().rounded(6).overflow_hidden().border_1().border_color(t.border).bg(t.raised)
+        .tooltip(`${f.name} · ${fileSize(f.size)}`)
+        .when(Boolean(f.preview), (e) => e.child(image(f.preview).w(w).h(THUMB)))
+        .child(div().absolute().top(3).right(3).child(remove(f)));
+    };
+    const chip = (f) => h_flex().id(`att-${f.id}`).h(30).pl(8).pr(5).gap(6).flex_none().items_center().rounded(6).border_1().border_color(t.border).bg(t.raised)
+      .tooltip(f.name)
+      .child(svg(ICON("file")).size(13).flex_none().text_color(t.muted))
+      .child(div().max_w(180).truncate().text_size(12).child(f.name))
+      .child(div().flex_none().text_size(11).text_color(t.dim).child(fileSize(f.size)))
+      .child(remove(f));
+    const pick = h_flex().id("attach").h(30).px(10).gap(6).flex_none().items_center().rounded(6).border_1().border_color(t.input)
+      .text_size(12).text_color(t.muted).cursor_pointer().hover((x) => x.bg(t.hover).text_color(t.foreground))
+      .on_click((_e, cx) => this.pickFiles(cx))
+      .child(svg(ICON("paperclip")).size(13).flex_none()).child("Attach files");
+    // Images first, as a row of thumbnails; the other files as chips; the button last.
+    const images = this.files.filter((f) => isImage(f) && f.preview), others = this.files.filter((f) => !(isImage(f) && f.preview));
+    return h_flex().id("attachments").flex_wrap().gap(8).items_end()
+      .children(images.map(thumb))
+      .children(others.map(chip))
+      .when(this.copying > 0, (e) => e.child(h_flex().h(30).px(8).gap(6).items_center().text_size(11.5).text_color(t.dim)
+        .child(svg(ICON("loader")).size(12).spin(900)).child("copying…")))
+      .child(pick)
+      .when(!this.files.length && !this.copying, (e) => e.child(div().h(30).flex().items_center().text_size(11.5).text_color(t.dim)
+        .child("or paste a screenshot, or drop files here")));
   }
 
   // Not `close`: that name is the View's teardown hook.
   closeDialog() { closeOverlay(props().overlay); }
 
   save(cx) {
-    const body = { title: this.title.value().trim(), prompt: this.prompt.value(), project: this.project, priority: this.priority };
+    const body = { title: this.title.value().trim(), prompt: this.prompt.value(), project: this.project, priority: this.priority,
+      attachments: this.files.map((f) => f.id) };
     if (!body.title) { this.error = "A card needs a title."; cx.notify(); return; }
-    if (this.cardId) this.act(cx, "PATCH", `/cards/${this.cardId}`, body, () => this.closeDialog());
-    else this.act(cx, "POST", "/cards", { ...body, column: this.column }, () => this.closeDialog());
+    if (this.cardId && this.sized) {
+      const e = estimateEdits(this.draftNow(), this.sized);
+      if (e.error) { this.error = e.error; cx.notify(); return; }
+      Object.assign(body, e.body);
+    }
+    // Saved, the card owns its staged files: closing mustn't throw them away.
+    const done = () => { this.staged.clear(); this.closeDialog(); };
+    if (this.cardId) this.act(cx, "PATCH", `/cards/${this.cardId}`, body, done);
+    else this.act(cx, "POST", "/cards", { ...body, column: this.column }, done);
   }
 
   renderEditor(t) {
@@ -487,13 +753,18 @@ export default class Kanban extends View {
       .child(child);
     const frame = (el) => el.px(10).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground);
     const projects = s?.projects ?? [];
-    const chips = c ? factorChips(c) : [];
     return v_flex().id("editor").size_full().p(18).gap(14).bg(t.popover).text_size(13).text_color(t.foreground)
+      // Files from Finder, anywhere on the dialog.
+      .on_drop((e, cx) => { if (e.paths?.length) cx.spawn(async (cx) => this.attach(cx, e.paths.map((path) => ({ path })))); })
       .child(h_flex().gap(10).items_center()
         .child(div().flex_1().text_size(15).font_semibold().child(c ? `${c.id} · ${COLUMNS.find((x) => x.id === c.column).name}` : "New card"))
         .when(Boolean(c), (e) => e.child(div().text_size(11).text_color(t.dim).child(`created ${ago(c.createdAt)} ago`))))
+      // Scrolls between the header and the buttons, so long notes or a long review never push the buttons out.
+      .child(v_flex().id("editor-body").flex_1().min_h(0).gap(14).pr(12).overflow_y_scrollbar()
       .child(field("Title", frame(Input.new(this.title).h(32).items_center().text_size(13))))
-      .child(field("Prompt", frame(Textarea.new(this.prompt).py(8).text_size(12.5))))
+      .child(v_flex().gap(8)
+        .child(field("Prompt", frame(Textarea.new(this.prompt).py(8).text_size(12.5))))
+        .child(this.attachments(t)))
       .child(field("Project", v_flex().id("projects").h(118).rounded(6).border_1().border_color(t.border).bg(t.background).p(4).overflow_y_scrollbar()
         .children(projects.map((p) => h_flex().id(`p-${p.key}`).h(26).px(8).gap(8).items_center().rounded(5).cursor_pointer()
           .when(this.project === p.key, (e) => e.bg(t.selected))
@@ -513,21 +784,14 @@ export default class Kanban extends View {
       .child(h_flex().gap(18).items_end()
         .child(field("Priority", this.segmented("prio", PRIORITIES.map((n, i) => [i, n]), this.priority, (v) => { this.priority = v; }, t)))
         .when(!c, (e) => e.child(field("Start", this.segmented("col", [["todo", "As soon as possible"], ["backlog", "Keep as an idea"]], this.column, (v) => { this.column = v; }, t)))))
-      .when(Boolean(c), (e) => e.child(h_flex().gap(6).items_center().flex_wrap()
-        .children(chips.map((x) => div().h(20).px(7).rounded(4).bg(t.raised).flex().items_center().text_size(11).text_color(t.muted).child(x)))
-        .when(c.estimating, (e) => e.child(div().text_size(11).text_color(t.dim).child("Sonnet is sizing it up…")))
-        .when(!c.estimating && c.estimate == null, (e) => e.child(div().text_size(11).text_color(t.dim).child("Not estimated yet.")))
-        .when(Boolean(c.factors?.notes), (e) => e.child(div().text_size(11).text_color(t.dim).child(c.factors.notes)))
-        .child(div().id("reestimate").text_size(11).text_color(t.accent).cursor_pointer().hover((x) => x.opacity(0.8))
-          .on_click((_e, cx) => this.act(cx, "POST", `/cards/${c.id}/estimate`, {})).child("Estimate again"))))
+      .when(Boolean(c), (e) => e.child(this.estimateSection(c, t)))
       .when(Boolean(c?.review), (e) => e.child(div().pl(8).border_l(2).border_color(columnColor(t, "review")).text_size(12).child(c.review)))
-      .when(Boolean(this.error), (e) => e.child(div().text_size(12).text_color(t.blocked).child(this.error)))
-      .child(div().flex_1())
+      .when(Boolean(this.error), (e) => e.child(div().text_size(12).text_color(t.blocked).child(this.error))))
       .child(h_flex().gap(8).items_center()
         .when(Boolean(c), (e) => e.child(this.button("delete", "Delete", (cx) => this.act(cx, "DELETE", `/cards/${c.id}`, undefined, () => this.closeDialog()), t, { danger: true })))
         .child(div().flex_1())
         .child(this.button("cancel", "Cancel", () => this.closeDialog(), t))
-        .child(this.button("save", c ? "Save" : "Create card", (cx) => this.save(cx), t, { primary: true, disabled: !s })));
+        .child(this.button("save", c ? "Save" : "Create card", (cx) => this.save(cx), t, { primary: true, disabled: !s || this.copying > 0 })));
   }
 
   // ---- Settings ----
@@ -618,7 +882,7 @@ export default class Kanban extends View {
     const go = (column) => {
       closeOverlay(p.overlay);
       if (column === p.column) return;
-      api("POST", `/cards/${p.move}/move`, { column }).catch((e) => notify({ title: "Kanban", body: e.message, level: "error" }));
+      api(this.base, "POST", `/cards/${p.move}/move`, { column }).catch((e) => notify({ title: "Kanban", body: e.message, level: "error" }));
     };
     const item = (id, icon, label, onClick, { on = false, off = false } = {}) => h_flex().id(id).h(28).px(8).gap(8).rounded(6).items_center()
       .text_color(off ? t.dim : t.foreground)

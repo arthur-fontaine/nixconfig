@@ -126,3 +126,78 @@ export function unrecordedSpaces(cards, recorded, liveSpaceIds) {
   }
   return out;
 }
+
+/** The daemon's API: the launchd one, or a test daemon's port (a `port` prop). */
+export function apiBase(port) {
+  const n = Number(port);
+  return Number.isInteger(n) && n > 0 && n < 65536 ? `http://127.0.0.1:${n}/api` : API;
+}
+
+/** "900 B", "117 KB", "3.2 MB": an attachment's size. */
+export function fileSize(n) {
+  if (n < 1024) return `${n} B`;
+  const [v, unit] = n < 1024 ** 2 ? [n / 1024, "KB"] : n < 1024 ** 3 ? [n / 1024 ** 2, "MB"] : [n / 1024 ** 3, "GB"];
+  return `${v < 10 ? Math.round(v * 10) / 10 : Math.round(v)} ${unit}`;
+}
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|heic|bmp|tiff?|svg)$/i;
+/** Whether an attachment shows as a thumbnail (others as a chip). */
+export const isImage = (a) => /^image\//.test(a.mime ?? "") || IMAGE_EXT.test(a.name ?? "");
+
+/** The file picker's answer: one POSIX path a line. */
+export const pickedPaths = (stdout) => String(stdout).split("\n").filter(Boolean);
+
+/** As macOS names screenshots: "Pasted image 2026-11-10 at 09.05.03.png". */
+export function pastedName(d = new Date()) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `Pasted image ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} at ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}.png`;
+}
+
+// ---- A card's estimate, edited in its dialog ----
+
+/** The names Sonnet picks exclusive resources from: the daemon's estimator.ts KNOWN_EXCLUSIVE. */
+export const KNOWN_EXCLUSIVE = ["ios-simulator", "android-emulator", "heavy-build", "browser", "docker"];
+// The daemon's bounds (kanban/src/store.ts).
+const MAX_ESTIMATE = 100_000_000;
+const MAX_RAM_GB = 512;
+
+/** Whether the person set some of the card's estimate by hand. */
+export const isEdited = (card) => (card.factors?.manual?.length ?? 0) > 0;
+
+/** The dialog's fields for a card's estimate, as text and a list. */
+export function estimateDraft(card) {
+  return {
+    tokens: card.estimate != null ? kTokens(card.estimate) : "",
+    ram: card.factors ? String(Math.round(card.factors.ramGB * 10) / 10) : "",
+    exclusive: [...(card.factors?.exclusive ?? [])],
+  };
+}
+
+/**
+ * What Save sends for the estimate: only the fields that differ from what the dialog
+ * showed (the tokens field shows "412k", not the exact count), or the first error.
+ */
+export function estimateEdits(draft, initial) {
+  const body = {};
+  const factors = {};
+  if (draft.tokens.trim() !== initial.tokens) {
+    const n = parseNumber(draft.tokens, { min: 1, integer: true });
+    if (n === null || n > MAX_ESTIMATE) return { error: "Tokens: a whole number, as 250k, 1.5M or 250000 (100M at most)." };
+    body.estimate = n;
+  }
+  if (draft.ram.trim() !== initial.ram) {
+    const n = parseNumber(draft.ram);
+    if (n === null || n > MAX_RAM_GB) return { error: `RAM: a number of GB, 0 to ${MAX_RAM_GB}.` };
+    factors.ramGB = Math.round(n * 10) / 10;
+  }
+  const a = draft.exclusive, b = initial.exclusive;
+  if (a.length !== b.length || a.some((x) => !b.includes(x))) factors.exclusive = [...a];
+  if (Object.keys(factors).length) body.factors = factors;
+  return { body };
+}
+
+/** A resource typed in the dialog, as the daemon takes it ("My GPU" → "my-gpu"), or null. */
+export function resourceName(text) {
+  const s = String(text).trim().toLowerCase().replace(/[\s_]+/g, "-").replace(/-+/g, "-");
+  return s.length <= 40 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s) ? s : null;
+}

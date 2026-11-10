@@ -11,12 +11,27 @@ export interface Factors {
   /** Resources only one card may hold at a time: "ios-simulator", "heavy-build", ... */
   exclusive: string[];
   notes: string;
+  /** What the person set by hand (the card's estimate included): a background estimate keeps it. */
+  manual?: ManualField[];
 }
+
+export const MANUAL_FIELDS = ["estimate", "ramGB", "exclusive"] as const;
+export type ManualField = (typeof MANUAL_FIELDS)[number];
 
 export interface OrchestratorRef {
   terminal: string;
   name: string;
   space: string | null;
+}
+
+/** A file attached to a card: the daemon's own copy, under its state dir. */
+export interface Attachment {
+  id: string;
+  name: string;
+  size: number;
+  mime: string | null;
+  /** Absolute. */
+  path: string;
 }
 
 export interface Card {
@@ -40,6 +55,7 @@ export interface Card {
   /** Why a To-do card hasn't started, from the last scheduler pass. */
   waiting: string[];
   error: string | null;
+  attachments: Attachment[];
 }
 
 export interface Settings {
