@@ -4,6 +4,11 @@ A kanban whose cards are tasks for the Pi project orchestrators in Herdr. The
 `nix-kanban` mod is its UI; this folder is the daemon behind it and the
 `herdr-kanban` CLI.
 
+In Herdr, the left sidebar is one of two sidebars, switched at its top (or ⌘⇧K):
+**Repos** (nix-sidebar's tree) or **Kanban**, the cards in sections (In progress,
+Review, To-do, Backlog, Done; click a card to edit it, right-click to move it, drag
+it to another section). ↗ opens the whole board as a tab.
+
 Backlog → **To-do** → **In progress** → **Review** → Done
 
 - **To-do** cards start by themselves, most urgent (then oldest) first, as soon as

@@ -71,7 +71,7 @@ let
     nix-editor = { modules = [ "grid.js" "nvim.js" ]; };
     # The Info panel: the selected Pi session and the Claude usage; model.js (the figures) joined in.
     nix-info = { shared = [ "editor.js" ]; modules = [ "model.js" ]; };
-    # The kanban (a block under the sidebar's tree, the board as a tab, its dialogs), on the
+    # The kanban (the Kanban sidebar, the board as a tab, its dialogs and menu), on the
     # herdr-kanban daemon below; model.js (its figures) joined in.
     nix-kanban = { modules = [ "model.js" ]; };
   };
@@ -135,6 +135,8 @@ let
     "cmd-shift-o" = "nix-status.editor";
     # ⇧ as in "find in the project"; ⌘F stays find-in-file for the editor.
     "cmd-shift-f" = "nix-sidebar.filter";
+    # Switches the sidebar: Repos ⇄ Kanban, two sidebars in one place.
+    "cmd-shift-k" = "nix-status.kanban";
   };
   shared = {
     layout = "nix";
