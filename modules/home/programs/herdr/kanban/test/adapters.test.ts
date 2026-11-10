@@ -22,6 +22,7 @@ test("Sonnet's estimate is read from the first JSON object, cleaned", () => {
   const r = parseEstimate('Sure!\n{"tokens": 120000.4, "ramGB": 6, "exclusive": ["ios-simulator", "a-spaceship"], "notes": "Xcode build"}');
   assert.deepEqual(r, { tokens: 120000, factors: { ramGB: 6, exclusive: ["ios-simulator"], notes: "Xcode build" } });
   assert.equal(parseEstimate("no idea"), null);
+  assert.equal(parseEstimate('{"a": 1} then {"tokens": 9, "notes": "x}y"} {"b": 2}')?.tokens, 9);
   assert.equal(parseEstimate('{"tokens": "lots"}'), null);
   assert.deepEqual(parseEstimate('{"tokens": 5000}')?.factors, { ramGB: 0, exclusive: [], notes: "" });
 });

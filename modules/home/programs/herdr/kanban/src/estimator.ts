@@ -25,11 +25,22 @@ Task:
 ${card.prompt || "(no details)"}`;
 }
 
+// The first JSON object in the text that has a token count (the answer may quote others).
+function firstEstimate(text: string): any {
+  for (let i = text.indexOf("{"); i >= 0; i = text.indexOf("{", i + 1)) {
+    for (let j = text.indexOf("}", i); j >= 0; j = text.indexOf("}", j + 1)) {
+      try {
+        const o = JSON.parse(text.slice(i, j + 1));
+        if (o && typeof o === "object" && "tokens" in o) return o;
+      } catch { /* not this one */ }
+    }
+  }
+  return null;
+}
+
 export function parseEstimate(text: string): { tokens: number; factors: Factors } | null {
-  const m = /\{[\s\S]*\}/.exec(text);
-  if (!m) return null;
-  let o: any;
-  try { o = JSON.parse(m[0]); } catch { return null; }
+  const o = firstEstimate(text);
+  if (!o) return null;
   const tokens = Number(o.tokens);
   if (!Number.isFinite(tokens) || tokens <= 0) return null;
   const ramGB = Number(o.ramGB);
@@ -44,7 +55,9 @@ export type Ask = (prompt: string) => Promise<string>;
 
 /** `pi --print` on Sonnet: no session, no tools, no context files. */
 export const askSonnet: Ask = async (prompt) => {
-  const argv = (process.env.HERDR_KANBAN_ESTIMATOR ?? "pi --print --model sonnet --thinking off --no-session --no-tools --no-skills --no-context-files --no-prompt-templates --no-mcp").split(" ");
+  // Extensions stay on: Pi's claude-code provider, which `sonnet` resolves to, is one.
+  const env = process.env.HERDR_KANBAN_ESTIMATOR;
+  const argv: string[] = env?.startsWith("[") ? JSON.parse(env) : (env ?? "pi --print --model sonnet --thinking off --no-session --no-tools --no-skills --no-context-files --no-prompt-templates --no-mcp").split(" ");
   const r = await run(argv[0], [...argv.slice(1), prompt], { cwd: tmpdir(), timeout: 180_000 });
   if (r.code !== 0) throw new Error(`estimator exited ${r.code}: ${r.stderr.trim().slice(-300)}`);
   return r.stdout;
