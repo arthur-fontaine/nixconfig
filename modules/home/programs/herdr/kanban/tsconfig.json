@@ -1,0 +1,16 @@
+{
+  // Only for editors and `tsc --noEmit`: node runs the .ts files as they are (type stripping),
+  // so only erasable syntax is allowed (no enums, namespaces or parameter properties).
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "strict": true,
+    "types": ["node"]
+  },
+  "include": ["src", "test"]
+}

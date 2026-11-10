@@ -1,0 +1,16 @@
+{
+  "name": "herdr-kanban",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A kanban that feeds Herdr's Pi project orchestrators",
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "start": "node src/daemon.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^3.25.0"
+  },
+  "engines": { "node": ">=24" }
+}
