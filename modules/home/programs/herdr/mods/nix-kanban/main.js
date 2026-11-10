@@ -50,12 +50,14 @@ export default class Kanban extends View {
     if (this.mode === "edit") this.initEditor(p);
     if (this.mode === "settings") this.fields = null;
     cx.spawn(async (cx) => this.poll(cx));
-    // Only the sidebar copy answers the pairing toast's click, so one dialog opens.
+    // Only the sidebar copy takes commands (the pairing toast's click, keys: settings, board,
+    // new), so one dialog opens.
     if (this.mode === "side") cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
         if (c === "settings") this.openSettings();
         if (c === "board") this.openBoard();
+        if (c === "new") this.openCard(null, "todo");
         cx.notify();
       }
     });
@@ -147,9 +149,10 @@ export default class Kanban extends View {
         .bg(i <= p ? (p === 3 ? t.blocked : t.muted) : t.border)));
   }
 
+  // In progress turns like the sidebar's working ring; the rest are dots.
   dot(column, t, size = 7) {
-    const d = div().size(size).flex_none().rounded(size / 2).bg(columnColor(t, column));
-    return column === "in_progress" ? d.loop("opacity", { from: 0.35, to: 1, period: 1400 }) : d;
+    if (column === "in_progress") return svg(ICON("loader")).size(size + 4).flex_none().text_color(columnColor(t, column)).spin(900);
+    return div().size(size).flex_none().rounded(size / 2).bg(columnColor(t, column));
   }
 
   segmented(id, options, value, onPick, t) {
@@ -331,12 +334,12 @@ export default class Kanban extends View {
         .on_click((_e, cx) => { cx.stop_propagation(); run("agent.focus", { terminal: c.orchestrator.terminal }); })
         .child(svg(ICON("terminal")).size(11).flex_none())
         .child(div().flex_1().min_w(0).truncate().child(`${c.orchestrator.terminal} · ${c.orchestrator.name}`))
-        .when(Boolean(status), (e) => e.child(div().flex_none().text_color(t[status] ?? t.dim).child(status)))))
+        .when(Boolean(status), (e) => e.child(div().flex_none().text_color(t[status] ?? t.dim).child(status === "missing" ? "not running" : status)))))
       .when(c.column === "review" && Boolean(c.review), (e) => e.child(v_flex().gap(8)
         .child(div().pl(8).border_l(2).border_color(t.blocked).text_size(12).text_color(t.foreground).child(c.review))
-        .child(h_flex().gap(6)
+        .child(h_flex().flex_wrap().gap(6)
           .child(this.button(`done-${c.id}`, "Mark done", (cx) => this.act(cx, "POST", `/cards/${c.id}/move`, { column: "done" }), t))
-          .child(this.button(`redo-${c.id}`, "Back to To-do", (cx) => this.act(cx, "POST", `/cards/${c.id}/move`, { column: "todo" }), t)))))
+          .child(this.button(`redo-${c.id}`, "Send back", (cx) => this.act(cx, "POST", `/cards/${c.id}/move`, { column: "todo" }), t)))))
       .when(c.column !== "todo" && c.column !== "backlog", (e) => e.child(div().text_size(10.5).text_color(t.dim).child(`${COLUMNS.find((x) => x.id === c.column).name} ${ago(c.movedAt)}`)));
   }
 

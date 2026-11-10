@@ -1,5 +1,6 @@
 // The repos Herdr knows, as the nix-sidebar names them: a space's folder → its git
 // common dir → a key `JSON [machine, common]`, a name and the repo's own folder.
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { run } from "./run.ts";
@@ -68,5 +69,6 @@ export async function discover(spaceFolders: string[], known: Project[]): Promis
     const c = await commonDir(f);
     if (c) commons.add(c);
   }
-  return distinct([...commons].sort().map(projectOf));
+  // A repo deleted since (a scratch clone, a removed checkout) leaves the list.
+  return distinct([...commons].filter((c) => existsSync(c)).sort().map(projectOf));
 }
