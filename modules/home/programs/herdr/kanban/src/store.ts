@@ -51,7 +51,9 @@ export class Store {
     if (!existsSync(this.file)) return empty;
     try {
       const s = JSON.parse(readFileSync(this.file, "utf8"));
-      return { ...empty, ...s, settings: { ...DEFAULT_SETTINGS, ...s.settings } };
+      // Cards saved before attachments existed have none.
+      const cards = (s.cards ?? []).map((c: Card) => ({ ...c, attachments: c.attachments ?? [] }));
+      return { ...empty, ...s, cards, settings: { ...DEFAULT_SETTINGS, ...s.settings } };
     } catch {
       renameSync(this.file, `${this.file}.corrupt-${this.now()}`);
       return empty;
@@ -112,7 +114,7 @@ export class Store {
       ...fields,
       estimate: null, estimating: false, factors: null,
       createdAt: now, updatedAt: now, movedAt: now, startedAt: null,
-      orchestrator: null, review: null, waiting: [], error: null,
+      orchestrator: null, review: null, waiting: [], error: null, attachments: [],
     };
     this.state.cards.push(card);
     this.changed_();

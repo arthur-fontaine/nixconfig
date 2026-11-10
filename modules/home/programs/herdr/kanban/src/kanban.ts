@@ -7,7 +7,12 @@ import { Estimator, askSonnet, estimatePrompt, parseEstimate, type Ask } from ".
 import { dispatchText, findOrchestrator, herdr as realHerdr, type Found, type Herdr } from "./herdr.ts";
 import { commonDir, discover, distinct, projectOf, projectSpaces } from "./projects.ts";
 import { freeRamGB } from "./system.ts";
-import type { Card, Column, OrchestratorStatus, Project } from "./types.ts";
+import { Attachments } from "./attachments.ts";
+import { join } from "node:path";
+import type { Attachment, Card, Column, OrchestratorStatus, Project } from "./types.ts";
+
+/** A card's fields, and its attachments: the full list of ids, kept or staged. */
+export type KanbanCardInput = CardInput & { attachments?: string[] };
 
 export interface KanbanOptions {
   dir: string;
@@ -32,6 +37,7 @@ const backoff: Factor = {
 export class Kanban {
   readonly store: Store;
   readonly pairing: Pairing;
+  readonly attachments: Attachments;
   readonly cli: string;
   private herdr: Herdr;
   private ram: () => Promise<number | null>;
@@ -47,6 +53,7 @@ export class Kanban {
 
   constructor(o: KanbanOptions) {
     this.store = new Store(o.dir);
+    this.attachments = new Attachments(join(o.dir, "attachments"));
     this.pairing = new Pairing({ clients: this.store.clients(), onChange: () => this.store.clientsChanged() });
     this.cli = o.cli ?? "herdr-kanban";
     this.herdr = o.herdr ?? realHerdr;
@@ -58,6 +65,7 @@ export class Kanban {
   }
 
   start() {
+    this.attachments.sweep(new Set(this.store.cards().map((c) => c.id)));
     // A card that was being estimated when the daemon stopped is asked again.
     for (const c of this.store.cards()) {
       if (c.estimating) this.store.patch(c.id, { estimating: false });
@@ -71,18 +79,24 @@ export class Kanban {
 
   // ---- Edits (from the local API and MCP) ----
 
-  create(input: CardInput): Card {
-    if (input.project) this.mustProject(input.project);
-    const c = this.store.create(input);
+  create(input: KanbanCardInput): Card {
+    const { attachments, ...fields } = input;
+    if (fields.project) this.mustProject(fields.project);
+    const files = this.resolve(attachments ?? [], []);
+    const c = this.store.create(fields);
+    if (files.length) this.store.patch(c.id, { attachments: this.apply(c.id, files, []) });
     this.estimator.push(c.id);
     this.poke();
     return c;
   }
 
-  update(id: string, input: CardInput): Card {
+  update(id: string, input: KanbanCardInput): Card {
     if (input.project) this.mustProject(input.project);
-    const { column, ...fields } = input;
+    const { column, attachments, ...fields } = input;
+    const before = this.store.get(id)?.attachments ?? [];
+    const files = attachments === undefined ? null : this.resolve(attachments, before);
     const c = this.store.update(id, fields);
+    if (files) this.store.patch(id, { attachments: this.apply(id, files, before) });
     if (c.estimate === null) this.estimator.push(c.id);
     if (column) return this.move(id, column);
     this.poke();
@@ -111,7 +125,31 @@ export class Kanban {
     return c;
   }
 
-  remove(id: string) { this.store.remove(id); this.poke(); }
+  remove(id: string) {
+    this.store.remove(id);
+    this.attachments.removeCard(id);
+    this.poke();
+  }
+
+  // Checked whole before anything moves: each id is one the card has, or a staged file.
+  private resolve(ids: unknown, current: Attachment[]): { att: Attachment; staged: boolean }[] {
+    if (!Array.isArray(ids)) throw new StoreError("attachments must be a list of attachment ids");
+    if (new Set(ids).size !== ids.length) throw new StoreError("an attachment is listed twice");
+    return ids.map((id) => {
+      const kept = current.find((a) => a.id === id);
+      if (kept) return { att: kept, staged: false };
+      const staged = this.attachments.staged(id);
+      if (!staged) throw new StoreError(`no attachment ${id} (stage it with POST /api/attachments first)`, 404);
+      return { att: staged, staged: true };
+    });
+  }
+
+  // The card's new list: staged files moved in, dropped ones deleted.
+  private apply(cardId: string, files: { att: Attachment; staged: boolean }[], before: Attachment[]): Attachment[] {
+    // Deleted first: a file replaced by one of the same name keeps that name.
+    for (const a of before) if (!files.some((f) => f.att.id === a.id)) this.attachments.removeFile(a);
+    return files.map((f) => (f.staged ? this.attachments.adopt(cardId, f.att) : f.att));
+  }
 
   reestimate(id: string) {
     if (!this.store.get(id)) throw new StoreError(`no card ${id}`, 404);

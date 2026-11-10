@@ -22,7 +22,7 @@ A Rust or iOS build, a monorepo-wide test run or a bundler is "heavy-build" and 
 Project: ${projectName ?? "unknown"}
 Title: ${card.title}
 Task:
-${card.prompt || "(no details)"}`;
+${card.prompt || "(no details)"}${card.attachments?.length ? `\nAttached files: ${card.attachments.map((a) => a.name).join(", ")}` : ""}`;
 }
 
 // The first JSON object in the text that has a token count (the answer may quote others).

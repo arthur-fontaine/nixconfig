@@ -19,6 +19,16 @@ export interface OrchestratorRef {
   space: string | null;
 }
 
+/** A file attached to a card: the daemon's own copy, under its state dir. */
+export interface Attachment {
+  id: string;
+  name: string;
+  size: number;
+  mime: string | null;
+  /** Absolute. */
+  path: string;
+}
+
 export interface Card {
   id: string;
   title: string;
@@ -40,6 +50,7 @@ export interface Card {
   /** Why a To-do card hasn't started, from the last scheduler pass. */
   waiting: string[];
   error: string | null;
+  attachments: Attachment[];
 }
 
 export interface Settings {

@@ -81,10 +81,12 @@ cross-origin without a preflight, which is never answered).
 |---|---|
 | `GET /api/state?since=<version>&wait=<ms>` | everything the UI shows: `{version, cards, settings, projects, orchestrators: {key: status}, freeRamGB, pairing: {pending, clients}, mcp: {enabled, listening, port, error}}`. With `since`, waits (25 s, at most 60) for a newer version: a long poll. |
 | `GET /api/cards` | all cards |
-| `POST /api/cards` | `{title, prompt?, project?, priority? (0-3), column? }` → the card (201) |
+| `POST /api/cards` | `{title, prompt?, project?, priority? (0-3), column?, attachments? }` → the card (201) |
 | `GET /api/cards/:id` | one card |
-| `PATCH /api/cards/:id` | `{title?, prompt?, project?, priority?, column?}` |
-| `DELETE /api/cards/:id` | |
+| `PATCH /api/cards/:id` | `{title?, prompt?, project?, priority?, column?, attachments?}` |
+| `DELETE /api/cards/:id` | the card and its attached files |
+| `POST /api/attachments` | `{path, name?}`: copies that local file (absolute path, 512 MB at most) into the staging area → `{id, name, size, mime, path}` (201) |
+| `DELETE /api/attachments/:id` | throws a staged file away |
 | `POST /api/cards/:id/move` | `{column}`: `backlog`, `todo`, `in_progress` (starts it now), `done`. Not `review`. |
 | `POST /api/cards/:id/review` | `{summary}`: the orchestrator's report, the only way to Review |
 | `POST /api/cards/:id/estimate` | ask Sonnet again (202) |
@@ -100,8 +102,16 @@ Errors are `{error}` with 400 (bad input), 404, 413, 415, 429 (pairing rate limi
 A card: `{id ("k12"), title, prompt, project (key), priority (0 low … 3 urgent),
 estimate (tokens | null), estimating, factors ({ramGB, exclusive, notes} | null),
 column, createdAt, updatedAt, movedAt, startedAt, orchestrator ({terminal, name,
-space} | null), review (summary | null), waiting (reasons), error}`. Times are ms
-since the epoch. A project key is nix-sidebar's repo key: `JSON [null, <git common dir>]`.
+space} | null), review (summary | null), waiting (reasons), error, attachments
+([{id, name, size, mime, path}])}`. Times are ms since the epoch. A project key is nix-sidebar's repo key: `JSON [null, <git common dir>]`.
+
+**Attachments**: files are the daemon's own copies. The card dialog stages each file it
+gets (pasted, dropped, picked) with `POST /api/attachments`, then saves the card with
+`attachments`: the card's whole list of ids, those it keeps and staged ones. Staged files
+move to `<state dir>/attachments/<card id>/<name>` (`name (2).ext` on a clash), files
+left out of the list are deleted, and so is the folder with its card. The message an
+orchestrator gets lists their absolute paths. Staged files a day old, and folders of
+cards that are gone, are swept when the daemon starts.
 
 ## MCP (remote agents)
 

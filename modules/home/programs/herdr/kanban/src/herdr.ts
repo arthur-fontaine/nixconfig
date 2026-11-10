@@ -51,10 +51,20 @@ export function dispatchText(card: Card, cli: string): string {
   return `Kanban card ${card.id} (${PRIORITIES[card.priority]} priority): ${card.title}
 
 ${card.prompt.trim() || "(no details beyond the title)"}
-
+${attachedText(card)}
 This task comes from the Herdr kanban: handle it as a request from the person, with workers in the right worktree as usual. When it is finished and ready for a human review, run once, at the very end:
 ${cli} review ${card.id} "<two sentences: what was done, and what the person should check>"
 That command moves the card to Review. If you are stuck, ask the person (ask_user_question) instead.`;
+}
+
+const sizeText = (n: number) => (n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 ** 2).toFixed(1)} MB`);
+
+// Absolute paths, so the orchestrator (and the workers it hands them to) can open them.
+function attachedText(card: Card): string {
+  const files = card.attachments ?? [];
+  if (!files.length) return "";
+  return `\nThe person attached ${files.length === 1 ? "a file" : `${files.length} files`} (open ${files.length === 1 ? "it" : "them"} to see what they show):\n${files
+    .map((a) => `- ${a.path} (${[a.mime, sizeText(a.size)].filter(Boolean).join(", ")})`).join("\n")}\n`;
 }
 
 export interface Herdr {

@@ -50,6 +50,11 @@ export function localApi(k: Kanban, hooks: LocalApiHooks): Server {
         if (id && action === "review" && method === "POST") return send(res, 200, k.review(id, body.summary));
         if (id && action === "estimate" && method === "POST") { k.reestimate(id); return send(res, 202, { ok: true }); }
       }
+      // A local file copied in for the card dialog; a card adopts it when saved with its id.
+      if (what === "attachments") {
+        if (!id && method === "POST") return send(res, 201, await k.attachments.stage(body.path, body.name));
+        if (id && method === "DELETE") { k.attachments.unstage(id); return send(res, 200, { ok: true }); }
+      }
       if (what === "settings") {
         if (method === "GET") return send(res, 200, k.store.settings());
         if (method === "PATCH") {
