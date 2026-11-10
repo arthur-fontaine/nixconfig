@@ -88,14 +88,14 @@ let
     version = "0.1.0";
     src = lib.fileset.toSource {
       root = ./kanban;
-      fileset = lib.fileset.unions [ ./kanban/package.json ./kanban/pnpm-lock.yaml ./kanban/src ./kanban/test ];
+      fileset = lib.fileset.unions [ ./kanban/package.json ./kanban/pnpm-lock.yaml ./kanban/pnpm-workspace.yaml ./kanban/src ./kanban/test ];
     };
     nativeBuildInputs = [ pkgs.nodejs_24 pkgs.pnpm_10 pkgs.pnpmConfigHook pkgs.makeWrapper ];
     pnpmDeps = pkgs.fetchPnpmDeps {
       inherit (finalAttrs) pname version src;
       pnpm = pkgs.pnpm_10;
       fetcherVersion = 4;
-      hash = "sha256-FXy1hFgPuh4FYan4K3ABnO/dt46PhYwLQ6ONhLBlDGs=";
+      hash = "sha256-XoeN3WKVfSi95agvcVF7ZLzAn0TgVxAyqlAZnojS/hQ=";
     };
     doCheck = true;
     checkPhase = ''

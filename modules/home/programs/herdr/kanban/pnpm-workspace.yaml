@@ -1,0 +1,5 @@
+# The MCP SDK's own ranges let these resolve to releases younger than the 24 h minimum
+# release age; pinned to the newest ones past it.
+overrides:
+  express-rate-limit: 8.7.3
+  jose: 6.2.16
