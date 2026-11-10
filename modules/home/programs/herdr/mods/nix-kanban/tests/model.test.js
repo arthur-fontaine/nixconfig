@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { byColumn, factorChips, glance, kTokens, livePending, neighbor, parseNumber, spacedCode, unrecordedSpaces } from "../model.js";
+import { byColumn, factorChips, firstLine, glance, isFolded, kTokens, livePending, neighbor, parseNumber, spacedCode, unrecordedSpaces, waitLabel } from "../model.js";
 
 const card = (id, column, o = {}) => ({ id, column, priority: 1, createdAt: 0, movedAt: 0, startedAt: null, project: null, orchestrator: null, ...o });
 
@@ -59,4 +59,28 @@ test("orchestrator spaces the daemon started are handed to the sidebar once they
     card("d", "in_progress", { project: "R", startedAt: 3, orchestrator: { space: "gone" } }),
   ];
   assert.deepEqual(unrecordedSpaces(cards, { Q: "s9" }, new Set(["s1", "s2", "s3"])), { P: "s2" });
+});
+
+test("a To-do card says, short, why it waits", () => {
+  const w = (...waiting) => waitLabel({ waiting });
+  assert.equal(w(), "next");
+  assert.equal(w("RAM: 3.2 GB free, needs 6 GB", "token budget: 1.9M used + 200k > 2M per 5h"), "waiting: RAM");
+  assert.equal(w("orchestrator busy with K4"), "orchestrator busy");
+  assert.equal(w("orchestrator is blocked"), "orchestrator busy");
+  assert.equal(w("token budget: 1.9M used + 200k > 2M per 5h"), "waiting: budget");
+  assert.equal(w("2/2 cards in progress"), "waiting: 2/2 running");
+  assert.equal(w("ios-simulator held by K2"), "waiting: ios-simulator");
+  assert.equal(w("no project picked"), "no project");
+});
+
+test("sidebar sections: Backlog and Done folded until unfolded", () => {
+  assert.equal(isFolded(undefined, "done"), true);
+  assert.equal(isFolded({}, "todo"), false);
+  assert.equal(isFolded({ done: false, todo: true }, "done"), false);
+  assert.equal(isFolded({ done: false, todo: true }, "todo"), true);
+});
+
+test("a review summary's first line", () => {
+  assert.equal(firstLine("\n  Bumped core to 2.1.\nAll tests pass."), "Bumped core to 2.1.");
+  assert.equal(firstLine(null), "");
 });

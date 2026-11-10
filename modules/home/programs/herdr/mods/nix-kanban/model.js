@@ -12,6 +12,31 @@ export const COLUMNS = [
 ];
 export const PRIORITIES = ["Low", "Normal", "High", "Urgent"];
 
+// The Kanban sidebar's sections, top to bottom: what moves first, what's finished last.
+export const SIDE_ORDER = ["in_progress", "review", "todo", "backlog", "done"];
+export const FOLDED_BY_DEFAULT = ["backlog", "done"];
+
+/** Whether a sidebar section is folded: the person's choice, else the default. */
+export const isFolded = (folds, column) => folds?.[column] ?? FOLDED_BY_DEFAULT.includes(column);
+
+/** A To-do card's line: the scheduler's first reason, short (all of them go in the tooltip). */
+export function waitLabel(card) {
+  const w = card.waiting?.[0];
+  if (!w) return "next";
+  if (w === "no project picked") return "no project";
+  if (/^RAM:/.test(w)) return "waiting: RAM";
+  if (/^orchestrator /.test(w)) return "orchestrator busy";
+  if (/^token budget/.test(w)) return "waiting: budget";
+  const slots = /^(\d+\/\d+) cards in progress/.exec(w);
+  if (slots) return `waiting: ${slots[1]} running`;
+  const held = /^(.+) held by /.exec(w);
+  if (held) return `waiting: ${held[1]}`;
+  return `waiting: ${w}`;
+}
+
+/** A review summary's first line, for a card that has room for one. */
+export const firstLine = (text) => (text ?? "").split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+
 // Each column in Herdr's own status words, so a card reads like an agent does:
 // In progress is working, Review needs the person (blocked), Done is done.
 export const columnColor = (t, column) =>
