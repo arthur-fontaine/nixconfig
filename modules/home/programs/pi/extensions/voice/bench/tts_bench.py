@@ -39,8 +39,8 @@ MODELS = {
                        {"fr": {"voice": "fr_male", "stream": True, "streaming_interval": 0.5},
                         "en": {"voice": "casual_male", "stream": True, "streaming_interval": 0.5}}),
     "audio8-tts-0.6b": ("mlx", "nativ-community/Audio8-TTS-Realistic-0.6b-4bit", {"fr": {}, "en": {}}),
-    "pocket-tts-fr": ("pocket", "french", {"fr": {"voice": "alba"}, "en": {"voice": "alba"}}),
-    "pocket-tts-fr-24l": ("pocket", "french_24l", {"fr": {"voice": "alba"}, "en": {"voice": "alba"}}),
+    "pocket-tts-fr": ("pocket", "french", {"fr": {"voice": "estelle"}, "en": {"voice": "estelle"}}),
+    "pocket-tts-fr-24l": ("pocket", "french_24l", {"fr": {"voice": "estelle"}, "en": {"voice": "estelle"}}),
 }
 
 

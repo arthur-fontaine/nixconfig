@@ -30,10 +30,13 @@ MODELS = {
     "nemotron-3.5": ("mlx", "mlx-community/nemotron-3.5-asr-streaming-0.6b-8bit", {}),
     "qwen3-asr-0.6b": ("mlx", "mlx-community/Qwen3-ASR-0.6B-8bit", {}),
     "qwen3-asr-0.6b+hotwords": ("mlx", "mlx-community/Qwen3-ASR-0.6B-8bit", {"hotwords": "HOTWORDS"}),
+    # French as the default language, as the daemon would set it for this person (English clips included).
+    "qwen3-asr-0.6b+hotwords+fr": ("mlx", "mlx-community/Qwen3-ASR-0.6B-8bit", {"hotwords": "HOTWORDS", "language": "French"}),
     "whisper-turbo": ("mlx_whisper", "mlx-community/whisper-large-v3-turbo", {}),
     "whisper-turbo+prompt": ("mlx_whisper", "mlx-community/whisper-large-v3-turbo", {"initial_prompt": "PROMPT"}),
     "voxtral-rt-4b": ("mlx", "mlx-community/Voxtral-Mini-4B-Realtime-2602-4bit", {}),
     "audio8-0.1b": ("audio8", "Edge0/Audio8-ASR-0.1B-onnx-runtime", {}),
+    "audio8-0.1b+hotwords": ("audio8", "Edge0/Audio8-ASR-0.1B-onnx-runtime", {"hotwords": "HOTWORDS"}),
     "ark-asr-0.6b": ("ark", "Edge0/ark-asr-0.6b-int8-onnx", {}),
 }
 
@@ -60,6 +63,25 @@ def norm(text: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
+def materialize(repo: str, sub: str) -> Path:
+    """The snapshot as real files (hard links to the hub's blobs, no extra disk), under <root>/<sub>.
+
+    ONNX Runtime refuses external data that resolves outside the model's directory, which the
+    hub's symlinked blobs do; ARK's runtime also expects its files under <root>/model."""
+    import os
+    from huggingface_hub import snapshot_download
+    snap = Path(snapshot_download(repo))
+    root = Path.home() / ".cache/k12-voice/edge0" / repo.split("/")[1]
+    for src in snap.rglob("*"):
+        if src.is_dir():
+            continue
+        dst = root / sub / src.relative_to(snap)
+        if not dst.exists():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            os.link(src.resolve(), dst)
+    return root
+
+
 def load(key: str):
     runner, repo, kw = MODELS[key]
     if kw.get("hotwords") == "HOTWORDS":
@@ -73,7 +95,23 @@ def load(key: str):
         from mlx_audio.stt import load as mlx_load
         model = mlx_load(repo)
         return lambda path, lang: model.generate(path, **kw).text, model
-    raise SystemExit(f"runner {runner} is in onnx_stt.py")
+    if runner in ("audio8", "ark"):
+        # Edge0's own ONNX runtimes, imported from their snapshot directory (CPU).
+        root = materialize(repo, "model" if runner == "ark" else "")
+        if runner == "ark":
+            materialize(repo, "build")  # its runtime reads the decoder's JSON from build/
+        sys.path.insert(0, str(root / ("model" if runner == "ark" else "")))
+        if runner == "audio8":
+            from asr_onnx_runtime import OnnxCacheAsrEngine
+            engine = OnnxCacheAsrEngine(str(root / "model_bundle"), cache_precision="int8", audio_precision="int8")
+            hot = ",".join(HOTWORDS) if kw.get("hotwords") else None
+            return (lambda path, lang: engine.transcribe(Path(path).read_bytes(), language=None, max_new_tokens=128,
+                                                         hotwords=hot)["text"]), None
+        from infer_ark_audio_onnx import ArkAsrOnnxRuntime
+        rt = ArkAsrOnnxRuntime(root)
+        return (lambda path, lang: rt.transcribe(audio_path=path, max_new_tokens=128, max_audio_seconds=30,
+                                                 precision="int8", asr_block_token_id_from=151670)), None
+    raise SystemExit(f"unknown runner {runner}")
 
 
 def streaming(model, audio: np.ndarray, sr: int, chunk_s: float = 0.08):

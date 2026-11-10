@@ -55,6 +55,15 @@ def vad_silences(audio: np.ndarray) -> list[tuple[float, float]]:
     return out
 
 
+def words_so_far(cache: dict, t: float) -> str:
+    """The clip's text up to time t: segments between the [[slnc]] holds, by the label's hold times."""
+    import re
+    lab = cache["label"]
+    segments = [s.strip() for s in re.split(r"\[\[slnc \d+\]\]", lab["text"])]
+    ends = lab["holds"] + [lab["eot"]]
+    return " ".join(s for s, end in zip(segments, ends) if end <= t + 0.05)
+
+
 def detector(name: str):
     """Returns (score(audio_prefix, lang) -> P(end of turn), thresholds)."""
     if name.startswith("silence-"):
@@ -101,8 +110,13 @@ def detector(name: str):
         dev = "mps" if torch.backends.mps.is_available() else "cpu"
         model = VoxTurn.from_pretrained(path, device=dev)
 
+        with_text = name == "voxturn+text"
+
         def score(a, lang):
-            return float(model.predict(a, questions=["eot"], lang="en", sample_rate=SR)["eot"]["yes"])
+            # +text: the words said so far, as the daemon's STT would have them at that moment.
+            text = words_so_far(score.cache, len(a) / SR) if with_text else None
+            return float(model.predict(a, questions=["eot"], lang="en", text=text, sample_rate=SR)["eot"]["yes"])
+        score.cache = {}  # type: ignore[attr-defined]
         return score, [0.5, 0.8, 0.9]
     raise SystemExit(f"unknown detector {name}")
 
@@ -125,7 +139,7 @@ def main() -> None:
         if score is not None and hasattr(score, "cache"):
             score.cache.clear()
             score.cache["full"] = audio
-            score.cache["clip"] = cid
+            score.cache["label"] = lab
         sils = vad_silences(audio)
         eot = lab["eot"]
         queries = []
