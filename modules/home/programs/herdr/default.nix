@@ -74,11 +74,47 @@ let
     # The Games panel: micro-breaks while an agent works; model.js (the rules and the agent
     # strip) joined in, after nix-info's model.js (the session helpers it reuses).
     nix-games = { modules = [ "../nix-info/model.js" "model.js" ]; };
+    # The kanban (the Kanban sidebar, the board as a tab, its dialogs and menu), on the
+    # herdr-kanban daemon below; model.js (its figures) joined in.
+    nix-kanban = { modules = [ "model.js" ]; };
   };
   modFiles = lib.listToAttrs (lib.concatLists (lib.mapAttrsToList (mod: o: [
     { name = "herdr-app/mods/${mod}/main.js"; value.source = if o == { } then ./mods/${mod}/main.js else bundle mod o; }
     { name = "herdr-app/mods/${mod}/mod.json"; value.source = ./mods/${mod}/mod.json; }
   ]) mods));
+
+  # The kanban's daemon and its `herdr-kanban` CLI (kanban/README.md). TypeScript run as it
+  # is by Node 24 (type stripping), so there is no build step: nix only fetches the pnpm
+  # dependencies (the MCP SDK) and runs the unit tests.
+  kanban = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
+    pname = "herdr-kanban";
+    version = "0.1.0";
+    src = lib.fileset.toSource {
+      root = ./kanban;
+      fileset = lib.fileset.unions [ ./kanban/package.json ./kanban/pnpm-lock.yaml ./kanban/pnpm-workspace.yaml ./kanban/src ./kanban/test ];
+    };
+    nativeBuildInputs = [ pkgs.nodejs_24 pkgs.pnpm_10 pkgs.pnpmConfigHook pkgs.makeWrapper ];
+    pnpmDeps = pkgs.fetchPnpmDeps {
+      inherit (finalAttrs) pname version src;
+      pnpm = pkgs.pnpm_10;
+      fetcherVersion = 4;
+      hash = "sha256-XoeN3WKVfSi95agvcVF7ZLzAn0TgVxAyqlAZnojS/hQ=";
+    };
+    doCheck = true;
+    checkPhase = ''
+      runHook preCheck
+      node --test test/*.test.ts
+      runHook postCheck
+    '';
+    installPhase = ''
+      runHook preInstall
+      mkdir -p $out/lib/herdr-kanban $out/bin
+      cp -R package.json src node_modules $out/lib/herdr-kanban/
+      makeWrapper ${pkgs.nodejs_24}/bin/node $out/bin/herdr-kanban --add-flags $out/lib/herdr-kanban/src/cli.ts
+      runHook postInstall
+    '';
+    meta.mainProgram = "herdr-kanban";
+  });
 
   merge = import ../../lib/merge-json.nix { inherit pkgs; };
   json = pkgs.formats.json { };
@@ -102,6 +138,8 @@ let
     "cmd-shift-o" = "nix-status.editor";
     # ⇧ as in "find in the project"; ⌘F stays find-in-file for the editor.
     "cmd-shift-f" = "nix-sidebar.filter";
+    # Switches the sidebar: Repos ⇄ Kanban, two sidebars in one place.
+    "cmd-shift-k" = "nix-status.kanban";
   };
   shared = {
     layout = "nix";
@@ -132,11 +170,11 @@ in
       live = "~/.config/herdr-app/shared.json";
       repo = "modules/home/programs/herdr/default.nix (shared)";
       # Mods' own state: onboarding, colors, sidebar width, list sorting.
-      ignore = [ "^frame\\." "^space\\.colors" "^sidebar\\." "^agents\\." "^nix-spaces\\." "^nix\\." ];
+      ignore = [ "^frame\\." "^space\\.colors" "^sidebar\\." "^agents\\." "^nix-spaces\\." "^nix\\." "^nix-kanban\\." ];
     };
   };
 
-  home.packages = [ herdrCore ];
+  home.packages = [ herdrCore kanban ];
 
   # A running Herdr keeps shared.json in memory and saves it on its next
   # change: quit Herdr before `rebuild` for the shared keys to stick.
@@ -183,6 +221,32 @@ in
       RunAtLoad = true;
       KeepAlive = true;
       StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/herdr-lsp-bridge.log";
+    };
+  };
+
+  # The kanban's daemon: the local API the nix-kanban mod reads (127.0.0.1:7742), the scheduler
+  # that sends To-do cards to the project orchestrators, and MCP on the LAN when enabled from
+  # Herdr (7744). Its PATH reaches hc, herdr-app, pi, git, dns-sd and vm_stat.
+  launchd.agents.herdr-kanban = {
+    enable = true;
+    config = {
+      ProgramArguments = [ "${kanban}/bin/herdr-kanban" "daemon" ];
+      EnvironmentVariables.PATH = lib.concatStringsSep ":" [
+        "${config.home.homeDirectory}/.local/bin"
+        "/etc/profiles/per-user/${config.home.username}/bin"
+        "/run/current-system/sw/bin"
+        "/nix/var/nix/profiles/default/bin"
+        "/opt/homebrew/bin"
+        "/usr/local/bin"
+        "/usr/bin"
+        "/bin"
+        "/usr/sbin"
+        "/sbin"
+      ];
+      RunAtLoad = true;
+      KeepAlive = true;
+      StandardOutPath = "${config.home.homeDirectory}/Library/Logs/herdr-kanban.log";
+      StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/herdr-kanban.log";
     };
   };
 

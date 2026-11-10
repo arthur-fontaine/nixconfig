@@ -1,11 +1,14 @@
 // The sidebar's head and footer (workspace-chrome's two slots), reduced to their controls.
 // Head: the macOS traffic lights' inset, then the sidebar toggle. Footer: Settings (with
-// the update dot) and Add machine as icon buttons. Props: { footer? }.
+// the update dot) and Add machine as icon buttons. Switcher: the header of the sidebar's
+// stack, which shows one of two sidebars, Repos (nix-sidebar) or Kanban (nix-kanban), each
+// with its own header and actions under it. Props: { footer?, switcher? }.
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { theme, run, props, window, shared, setShared, updates, layout } from "herdr";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
+const STACK = "sidebar-body"; // the sidebar's stack in layouts/nix.json
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -37,8 +40,36 @@ export default class Head extends View {
       .child(svg(ICON(icon)).size(14));
   }
 
+  // Two sidebars, not two filters of one list: a segment each, with its mark, the way a
+  // window's sidebar picker reads. The Kanban one carries a needs-you dot while Repos shows
+  // and a card waits for review (nix-kanban keeps the count in shared state).
+  switcher(t) {
+    const kanban = find(layout(), STACK)?.active === "sidebar-kanban";
+    const review = shared("nix-kanban.review") ?? 0;
+    const pick = (child) => run("layout.select", { stack: STACK, child });
+    const dot = (el) => el.child(div().absolute().top(6).right(6).size(6).rounded(3).bg(t.blocked));
+    if (narrow()) {
+      return h_flex().size_full().bg(t.chrome).items_center().justify_center()
+        .child(this.button("switch", kanban ? "folder" : "square-kanban", `${kanban ? "Repos" : "Kanban"} sidebar ⌘⇧K`, () => pick(kanban ? "sidebar-tree" : "sidebar-kanban"), 30)
+          .when(!kanban && review > 0, dot));
+    }
+    const seg = (child, icon, label, on) => h_flex().id(`switch-${child}`).flex_1().h_full().relative().gap(6).items_center().justify_center().rounded(5)
+      .text_size(12.5).cursor_pointer()
+      .when(on, (e) => e.bg(t.background).border_1().border_color(t.border).text_color(t.foreground).font_medium())
+      .when(!on, (e) => e.text_color(t.muted).hover((x) => x.text_color(t.foreground)))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click(() => pick(child))
+      .child(svg(ICON(icon)).size(13).flex_none().text_color(on ? t.foreground : t.dim))
+      .child(label);
+    return h_flex().size_full().bg(t.chrome).px(6).pb(8)
+      .child(h_flex().id("switch").tooltip("Switch sidebars ⌘⇧K").flex_1().h(28).p(2).gap(2).rounded(7).bg(t.raised)
+        .child(seg("sidebar-tree", "folder", "Repos", !kanban))
+        .child(seg("sidebar-kanban", "square-kanban", "Kanban", kanban).when(!kanban && review > 0, dot)));
+  }
+
   render() {
     const t = theme();
+    if (props()?.switcher) return this.switcher(t);
     const collapsed = narrow();
     const mac = window()?.platform === "macos";
     if (props()?.footer) {

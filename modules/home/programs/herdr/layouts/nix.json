@@ -39,15 +39,40 @@
           }
         },
         {
-          "id": "sidebar-tree",
-          "type": "block",
+          "id": "sidebar-body",
+          "type": "stack",
           "size": {
             "weight": 1
           },
           "min": 120,
-          "content": {
-            "mod": "nix-sidebar"
-          }
+          "active": "sidebar-tree",
+          "header": {
+            "content": {
+              "mod": "nix-head",
+              "props": {
+                "switcher": true
+              }
+            },
+            "height": 36,
+            "position": "top",
+            "reveal": "always"
+          },
+          "children": [
+            {
+              "id": "sidebar-tree",
+              "type": "block",
+              "content": {
+                "mod": "nix-sidebar"
+              }
+            },
+            {
+              "id": "sidebar-kanban",
+              "type": "block",
+              "content": {
+                "mod": "nix-kanban"
+              }
+            }
+          ]
         },
         {
           "id": "sidebar-footer",

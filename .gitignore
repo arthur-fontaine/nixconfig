@@ -2,3 +2,4 @@ result
 hosts/local.nix
 hosts/local.nix.bak-*
 __pycache__/
+node_modules/

@@ -9,7 +9,7 @@
 // Left: machine, branch, then the agents that matter (need you, done, working). Right: key hints.
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, agents, panes, focused, theme, run, window, keys, nextCommand, openOverlay, exec, shared, setShared } from "herdr";
+import { spaces, agents, panes, focused, theme, run, window, keys, nextCommand, openOverlay, exec, shared, setShared, layout } from "herdr";
 
 const RANK = { blocked: 2, done: 1 };
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
@@ -20,6 +20,15 @@ function place() {
   const own = (p) => p.terminal && p.cwd;
   const pane = (f?.pane ? ps.find((p) => p.pane === f.pane && own(p)) : null) ?? ps.find((p) => p.tab === f?.tab && own(p));
   return { space, cwd: pane?.cwd || f?.cwd || space?.folder, on: space?.machine ?? null };
+}
+
+function find(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) {
+    const found = find(child, id);
+    if (found) return found;
+  }
+  return null;
 }
 
 export default class Status extends View {
@@ -42,6 +51,12 @@ export default class Status extends View {
       const f = focused();
       if (f?.pane) setShared("nix.jumpBack", f.pane);
       run("agent.focus", { terminal: target.address });
+    } else if (c === "kanban") {
+      // The sidebar shows Repos or Kanban (the stack in layouts/nix.json): the other one,
+      // bringing back a hidden sidebar on Kanban.
+      const kanban = find(layout(), "sidebar-body")?.active === "sidebar-kanban";
+      if (find(layout(), "sidebar")?.hidden) { run("layout.show", { id: "sidebar" }); if (kanban) return; }
+      run("layout.select", { stack: "sidebar-body", child: kanban ? "sidebar-tree" : "sidebar-kanban" });
     } else if (c === "back") {
       const pane = shared("nix.jumpBack");
       if (pane && panes().some((p) => p.pane === pane)) run("pane.focus", { pane });
