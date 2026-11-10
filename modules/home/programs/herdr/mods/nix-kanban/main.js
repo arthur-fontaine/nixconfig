@@ -9,12 +9,14 @@
 //   { move, column }  a card's right-click menu: the column it goes to
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
-import { theme, run, props, shared, setShared, spaces, openOverlay, closeOverlay, notify, pickFolder, layout, nextCommand } from "herdr";
+import { theme, settings, run, props, shared, setShared, spaces, openOverlay, closeOverlay, notify, pickFolder, layout, nextCommand } from "herdr";
 import { API, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces, SIDE_ORDER, isFolded, waitLabel, firstLine } from "./model.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // The sidebar's stack (layouts/nix.json) and this sidebar in it.
 const SWITCH = { stack: "sidebar-body", child: "sidebar-kanban" };
+// A board column's narrowest: a card title on two lines, the header's name whole.
+const COLUMN_MIN = 272;
 const SIDE_EMPTY = { in_progress: "Nothing running.", review: "Nothing to review.", todo: "Cards here start by themselves.", backlog: "Ideas wait here.", done: "Nothing done yet." };
 
 function find(node, id) {
@@ -323,6 +325,7 @@ export default class Kanban extends View {
     const col = byColumn(s.cards);
     const used = this.budgetUsed(s);
     const pending = livePending(s.pairing.pending);
+    const width = this.columnWidth();
     const header = h_flex().h(48).flex_none().px(16).gap(14).items_center().border_b(1).border_color(t.border).bg(t.chrome)
       .child(svg(ICON("square-kanban")).size(15).text_color(t.muted))
       .child(div().text_size(15).font_semibold().child("Kanban"))
@@ -338,8 +341,17 @@ export default class Kanban extends View {
       .child(this.button("new-card", "New card", () => this.openCard(null, "todo"), t, { primary: true }));
     return root.child(header)
       .when(pending.length > 0, (e) => e.child(div().px(16).pt(12).child(this.pairingBanner(pending[0], t, false))))
-      .child(h_flex().flex_1().min_h(0).p(12).gap(10).items_start()
-        .children(COLUMNS.map((c) => this.column(c, col[c.id], s, t))));
+      // Columns share the width down to COLUMN_MIN, then the row scrolls sideways. Its scroll
+      // offset is kept under its id, so a poll's repaint leaves it where it was.
+      .child(h_flex().id("board-columns").flex_1().min_h(0).p(12).gap(10).items_start().overflow_x_scrollbar()
+        // Reported in window pixels, while w() is in pixels before the person's zoom.
+        .on_size_change((size, cx) => {
+          const width = size.width / (Number(settings().zoom) || 1);
+          if (width !== this.boardWidth) { this.boardWidth = width; cx.notify(); }
+        })
+        .children(COLUMNS.map((c) => this.column(c, col[c.id], s, t, width)))
+        // Scrolled to the end, the row's right padding is lost: this keeps Done off the edge.
+        .when(width === COLUMN_MIN, (e) => e.child(div().w(2).h(1).flex_none())));
   }
 
   budgetUsed(s) {
@@ -347,10 +359,16 @@ export default class Kanban extends View {
     return s.cards.filter((c) => c.startedAt != null && c.startedAt >= since).reduce((n, c) => n + (c.estimate ?? s.settings.defaultEstimate), 0);
   }
 
-  column(c, cards, s, t) {
+  // An explicit width: inside a scrolling row, flex_1 columns take their content's width.
+  columnWidth() {
+    const n = COLUMNS.length;
+    return Math.max(COLUMN_MIN, Math.floor(((this.boardWidth ?? 0) - 24 - 10 * (n - 1)) / n));
+  }
+
+  column(c, cards, s, t, width) {
     const target = this.drag && this.drag.from !== c.id && c.id !== "review";
     const lit = target && this.over === c.id;
-    return v_flex().id(`col-${c.id}`).flex_1().min_w(0).h_full().rounded(8).bg(t.chrome).border_1()
+    return v_flex().id(`col-${c.id}`).w(width).flex_none().h_full().rounded(8).bg(t.chrome).border_1()
       .border_color(lit ? columnColor(t, c.id) : t.border)
       .on_hover((h, cx) => {
         if (h && this.over !== c.id) { this.over = c.id; if (this.drag) cx.notify(); }
