@@ -43,6 +43,8 @@ const local = async (method: string, path: string, body?: unknown) => {
 let card: any = null;
 try {
   for (let i = 0; i < 50 && !logs.includes("herdr-kanban on"); i++) await sleep(100);
+  // This check is about dispatch, not about how much RAM the machine has free right now.
+  await local("PATCH", "/settings", { minFreeRamGB: 0 });
   const project = await local("POST", "/projects", { folder: repo });
   assert.equal(project.name, name);
   ok(`project ${project.name} at ${project.root}`);

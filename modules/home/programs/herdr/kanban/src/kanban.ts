@@ -156,7 +156,7 @@ export class Kanban {
     const [spaces, ram, recorded] = await Promise.all([this.herdr.ls(), this.ram(), projectSpaces()]);
     this.freeRam = ram;
     if (spaces) {
-      this.store.setProjects(await discover(spaces.filter((s) => !s.machine).map((s) => s.folder), this.store.projects()));
+      this.store.setProjects(await discover(spaces.filter((s) => !s.machine).map((s) => s.folder), () => this.store.projects()));
       for (const p of this.store.projects()) this.orchestrators.set(p.key, findOrchestrator(spaces, p, recorded[p.key] ?? this.startedSpace(p.key)));
     }
   }

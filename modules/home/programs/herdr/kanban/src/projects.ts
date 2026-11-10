@@ -57,10 +57,12 @@ export async function projectSpaces(): Promise<Record<string, string>> {
   } catch { return {}; }
 }
 
-/** This computer's repos: every local space's folder, plus the project spaces' keys. */
-export async function discover(spaceFolders: string[], known: Project[]): Promise<Project[]> {
+/**
+ * This computer's repos: every local space's folder, the project spaces' keys, and those
+ * already known. `known` is read last: a repo added while git answered isn't lost.
+ */
+export async function discover(spaceFolders: string[], known: () => Project[]): Promise<Project[]> {
   const commons = new Set<string>();
-  for (const p of known) commons.add(JSON.parse(p.key)[1]);
   for (const key of Object.keys(await projectSpaces())) {
     const [machine, common] = JSON.parse(key);
     if (machine === null && typeof common === "string") commons.add(common);
@@ -69,6 +71,7 @@ export async function discover(spaceFolders: string[], known: Project[]): Promis
     const c = await commonDir(f);
     if (c) commons.add(c);
   }
+  for (const p of known()) commons.add(JSON.parse(p.key)[1]);
   // A repo deleted since (a scratch clone, a removed checkout) leaves the list.
   return distinct([...commons].filter((c) => existsSync(c)).sort().map(projectOf));
 }
