@@ -69,8 +69,9 @@ test("a To-do card says, short, why it waits", () => {
   assert.equal(w("orchestrator is blocked"), "orchestrator busy");
   assert.equal(w("token budget: 1.9M used + 200k > 2M per 5h"), "waiting: budget");
   assert.equal(w("2/2 cards in progress"), "waiting: 2/2 running");
+  assert.equal(w("1/0 cards in progress"), "paused");
   assert.equal(w("ios-simulator held by K2"), "waiting: ios-simulator");
-  assert.equal(w("no project picked"), "no project");
+  assert.equal(w("no project picked"), "needs a project");
 });
 
 test("sidebar sections: Backlog and Done folded until unfolded", () => {

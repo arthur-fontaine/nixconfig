@@ -1,19 +1,21 @@
 // The kanban: cards that become tasks for the Pi project orchestrators, through the
 // herdr-kanban daemon (modules/home/programs/herdr/kanban, its local API on 127.0.0.1:7742).
-// One mod, four faces, by props:
-//   (none)            the sidebar block: what needs review, what runs, what's next
+// One mod, five faces, by props:
+//   (none)            the Kanban sidebar (the sidebar's stack shows it or Repos): cards in
+//                     sections, In progress first, folded and dragged between sections
 //   { full: true }    the board, as its own tab: five columns, drag or arrows to move
 //   { edit, column }  the card dialog (edit: a card id, or null for a new card)
 //   { settings: true } MCP on/off, pairing code, paired agents, scheduler limits
+//   { move, column }  a card's right-click menu: the column it goes to
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, run, props, shared, setShared, spaces, openOverlay, closeOverlay, notify, pickFolder, layout, nextCommand } from "herdr";
-import { API, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, glance, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces } from "./model.js";
+import { API, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces, SIDE_ORDER, isFolded, waitLabel, firstLine } from "./model.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
-const BLOCK = "sidebar-kanban"; // its block in the nix layout
-const FOLDED_PX = 36;
-const OPEN_PX = 220;
+// The sidebar's stack (layouts/nix.json) and this sidebar in it.
+const SWITCH = { stack: "sidebar-body", child: "sidebar-kanban" };
+const SIDE_EMPTY = { in_progress: "Nothing running.", review: "Nothing to review.", todo: "Cards here start by themselves.", backlog: "Ideas wait here.", done: "Nothing done yet." };
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -39,7 +41,7 @@ async function api(method, path, body) {
 export default class Kanban extends View {
   init(_props, cx) {
     const p = props() ?? {};
-    this.mode = p.settings ? "settings" : "edit" in p ? "edit" : p.full ? "board" : "side";
+    this.mode = p.settings ? "settings" : "move" in p ? "move" : "edit" in p ? "edit" : p.full ? "board" : "side";
     this.state = null;
     this.offline = false;
     this.version = 0;
@@ -86,6 +88,9 @@ export default class Kanban extends View {
   react(s, cx) {
     if (this.mode === "edit" && !this.loaded) this.fillEditor(s);
     if (this.mode === "settings" && !this.fields) this.fillSettings(s);
+    // For the sidebar switcher's needs-you dot.
+    const review = s.cards.filter((c) => c.column === "review").length;
+    if (this.mode === "side" && (shared("nix-kanban.review") ?? 0) !== review) setShared("nix-kanban.review", review);
     const pending = livePending(s.pairing.pending);
     // A code shown in a toast once, by whichever copy sees it first.
     if (pending[0] && shared("nix-kanban.toasted") !== pending[0].code) {
@@ -93,7 +98,8 @@ export default class Kanban extends View {
       notify({
         title: "Pairing request", level: "info", timeout: 120_000,
         body: `${pending[0].client} wants to use the kanban. Code: ${spacedCode(pending[0].code)}`,
-        action: { name: "nix-kanban.settings" },
+        // To the Kanban sidebar, where the code shows large (and the Repos one may be shown).
+        action: { name: "layout.select", args: SWITCH },
       });
     }
     // Redraw when the code expires.
@@ -180,60 +186,128 @@ export default class Kanban extends View {
       .child(div().text_size(11).text_color(t.dim).child(`Give it this code. Expires in ${left <= 1 ? "under a minute" : `${left} min`}.`));
   }
 
-  // ---- The sidebar block ----
+  // ---- The Kanban sidebar (one child of the sidebar's stack; Repos is the other) ----
 
-  folded() { return Boolean(shared("nix-kanban.folded")); }
-  fold(cx) {
-    const now = !this.folded();
-    setShared("nix-kanban.folded", now);
-    run("layout.resize", { id: BLOCK, px: now ? FOLDED_PX : (shared("nix-kanban.height") ?? OPEN_PX) });
+  folds() { return shared("nix-kanban.folds") ?? {}; }
+  toggleFold(column, cx) {
+    const f = this.folds();
+    setShared("nix-kanban.folds", { ...f, [column]: !isFolded(f, column) });
     cx.notify();
   }
 
-  renderSide(t) {
-    if (narrow()) {
-      return v_flex().size_full().bg(t.chrome).border_t(1).border_color(t.border).items_center().pt(4)
-        .child(this.iconButton("board", "square-kanban", "Kanban", () => this.openBoard(), t, { size: 30, iconSize: 15 }));
-    }
-    const s = this.state;
-    const folded = this.folded();
-    const col = s ? byColumn(s.cards) : null;
-    const pending = s ? livePending(s.pairing.pending) : [];
-    const head = h_flex().id("kanban-head").h(FOLDED_PX).flex_none().px(10).gap(8).items_center().cursor_pointer()
-      .on_click((_e, cx) => this.fold(cx))
-      .child(svg(ICON(folded ? "chevron-right" : "chevron-down")).size(10).text_color(t.dim).flex_none())
-      .child(div().text_size(13).font_medium().text_color(t.foreground).child("Kanban"))
-      .when(Boolean(col), (e) => e.child(h_flex().gap(7).items_center()
-        .when(col.review.length > 0, (e) => e.child(h_flex().gap(4).items_center().tooltip("Waiting for your review").child(this.dot("review", t, 6)).child(div().text_size(11).text_color(t.muted).child(`${col.review.length}`))))
-        .when(col.in_progress.length > 0, (e) => e.child(h_flex().gap(4).items_center().tooltip("In progress").child(this.dot("in_progress", t, 6)).child(div().text_size(11).text_color(t.muted).child(`${col.in_progress.length}`))))
-        .when(col.todo.length > 0, (e) => e.child(h_flex().gap(4).items_center().tooltip("To-do").child(this.dot("todo", t, 6)).child(div().text_size(11).text_color(t.muted).child(`${col.todo.length}`))))))
-      .when(pending.length > 0 && folded, (e) => e.child(div().size(6).rounded(3).bg(t.accent).tooltip("A pairing code is waiting")))
-      .child(div().flex_1())
-      .child(this.iconButton("new", "plus", "New card", () => this.openCard(null, "todo"), t))
-      .child(this.iconButton("open-board", "maximize-2", "Open the board", () => this.openBoard(), t));
-    const root = v_flex().id("root").size_full().min_h(0).bg(t.chrome).border_t(1).border_color(t.border)
-      .on_size_change((size) => { if (!this.folded() && size.height > FOLDED_PX + 20) setShared("nix-kanban.height", Math.round(size.height)); })
-      .child(head);
-    if (folded) return root;
-    if (this.offline) return root.child(this.offlineNote(t));
-    if (!s) return root;
-    const rows = glance(s.cards, 8);
-    return root.child(v_flex().id("kanban-list").flex_1().min_h(0).px(6).pb(6).gap(1).overflow_y_scrollbar()
-      .when(pending.length > 0, (e) => e.child(div().px(4).pb(6).child(this.pairingBanner(pending[0], t, true))))
-      .children(rows.map((c) => this.sideRow(c, s, t)))
-      .when(!rows.length, (e) => e.child(div().px(10).py(4).text_size(12).text_color(t.dim)
-        .child(s.cards.length ? "Nothing in review, running or queued." : "No cards yet. + adds one."))));
+  // What the scheduler has room for, in the header's spare width.
+  capacity(s, col) {
+    const max = s.settings.maxInProgress;
+    if (max === 0) return "Paused: nothing starts";
+    return `${col.in_progress.length} of ${max} running`;
   }
 
-  sideRow(c, s, t) {
-    const meta = c.column === "review" ? "review" : c.column === "in_progress" ? (projectName(s.projects, c.project) ?? "") : c.waiting[0] ? "waiting" : "next";
-    return h_flex().id(`row-${c.id}`).h(28).px(10).gap(8).items_center().rounded(6).cursor_pointer()
-      .hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected))
-      .tooltip(c.column === "todo" && c.waiting.length ? c.waiting.join("\n") : c.column === "review" ? (c.review ?? "") : c.title)
-      .on_click(() => this.openCard(c.id))
-      .child(this.dot(c.column, t))
-      .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(c.column === "todo" ? t.muted : t.foreground).child(c.title))
-      .child(div().flex_none().max_w(90).truncate().text_size(11).text_color(c.column === "review" ? t.blocked : t.dim).child(meta));
+  renderSide(t) {
+    if (narrow()) return this.renderRail(t);
+    const s = this.state;
+    const col = s ? byColumn(s.cards) : null;
+    const pending = s ? livePending(s.pairing.pending) : [];
+    // Its own header, on the Repos filter row's lines (px 6, 28 high, pb 8): what the
+    // scheduler has room for, then the Kanban's actions.
+    const head = h_flex().flex_none().h(36).px(6).pb(8).gap(2).items_center()
+      .child(div().id("capacity").flex_1().min_w(0).pl(6).truncate().text_size(11.5).text_color(t.dim)
+        .when(Boolean(s), (e) => e.tooltip(`${kTokens(this.budgetUsed(s))} of ${kTokens(s.settings.tokenBudget)} tokens used in ${s.settings.budgetWindowHours} h`)
+          .child(this.capacity(s, col))))
+      .child(this.iconButton("new", "plus", "New card", () => this.openCard(null, "todo"), t, { size: 28, iconSize: 14 }))
+      .child(this.iconButton("open-board", "arrow-up-right", "Open the board as a tab", () => this.openBoard(), t, { size: 28, iconSize: 14 }));
+    const root = v_flex().id("root").size_full().min_h(0).bg(t.chrome).text_color(t.foreground)
+      .on_mouse_up("left", (_e, cx) => { if (this.drag) { this.drag = null; this.over = null; cx.notify(); } })
+      .child(head);
+    if (this.offline) return root.child(this.offlineNote(t));
+    if (!s) return root;
+    return root.child(v_flex().id("kanban-list").flex_1().min_h(0).px(6).pb(8).gap(2).overflow_y_scrollbar()
+      // Released outside the list: the drag is dropped where it started.
+      .on_hover((h, cx) => { if (!h && this.drag) { this.drag = null; this.over = null; cx.notify(); } })
+      .when(pending.length > 0, (e) => e.child(div().pb(8).child(this.pairingBanner(pending[0], t, true))))
+      .children(SIDE_ORDER.map((id) => this.section(id, col[id], s, t))));
+  }
+
+  // A section: its header folds it; cards dragged over it can land in it (not in Review,
+  // which only an orchestrator's report reaches).
+  section(id, cards, s, t) {
+    const name = COLUMNS.find((c) => c.id === id).name;
+    const folded = isFolded(this.folds(), id);
+    const lit = Boolean(this.drag) && this.drag.from !== id && id !== "review" && this.over === id;
+    return v_flex().id(`sec-${id}`).flex_none().rounded(8).pb(folded ? 0 : 6)
+      .when(lit, (e) => e.bg(t.hover))
+      .on_hover((h, cx) => { if (h && this.over !== id) { this.over = id; if (this.drag) cx.notify(); } })
+      .on_mouse_up("left", (_e, cx) => this.drop(id, cx))
+      .child(h_flex().id(`fold-${id}`).h(28).px(8).gap(6).items_center().rounded(6).cursor_pointer()
+        .hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected))
+        .on_click((_e, cx) => this.toggleFold(id, cx))
+        .child(svg(ICON(folded ? "chevron-right" : "chevron-down")).size(10).flex_none().text_color(t.dim))
+        .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_medium().text_color(cards.length ? t.foreground : t.muted).child(name))
+        // Review waits on the person: its count in the needs-you color.
+        .child(div().flex_none().text_size(11).text_color(id === "review" && cards.length ? t.blocked : t.dim).child(String(cards.length))))
+      .when(!folded, (e) => e.child(v_flex().px(2).gap(6)
+        .children(cards.map((c) => this.sideCard(c, s, t)))
+        .when(!cards.length, (e) => e.child(div().px(8).text_size(11.5).text_color(t.dim).child(SIDE_EMPTY[id])))));
+  }
+
+  sideCard(c, s, t) {
+    const project = projectName(s.projects, c.project);
+    const status = c.project ? s.orchestrators?.[c.project] : null;
+    const prio = [t.dim, t.muted, t.foreground, t.blocked][c.priority] ?? t.dim;
+    const line = (el) => el.text_size(11.5).truncate();
+    return v_flex().id(`sc-${c.id}`).px(10).py(8).gap(4).rounded(8).bg(t.surface).border_1().border_color(t.border).cursor_pointer()
+      .hover((x) => x.border_color(t.input)).active((x) => x.bg(t.hover))
+      .when(this.drag?.id === c.id && this.over !== c.column, (e) => e.opacity(0.5))
+      .tooltip(c.column === "todo" && c.waiting.length ? c.waiting.join("\n") : c.title)
+      .on_mouse_down("left", () => { this.drag = { id: c.id, from: c.column }; })
+      .on_mouse_down("right", (_e, cx) => this.openMove(c, cx))
+      .on_click((_e, cx) => { if (this.dragged) { this.dragged = false; return; } this.drag = null; this.openCard(c.id); cx.notify(); })
+      // Two lines at most: a fixed line height, and what doesn't fit is cut.
+      .child(div().text_size(12.5).line_height("17px").max_h(34).overflow_hidden().text_color(c.column === "done" ? t.muted : t.foreground).child(c.title))
+      .child(h_flex().h(16).gap(6).items_center().text_size(11).text_color(t.dim)
+        .when(Boolean(project), (e) => e.child(div().min_w(0).truncate().child(project)))
+        .child(h_flex().flex_none().gap(4).items_center()
+          .child(div().size(6).rounded(3).bg(prio))
+          .child(div().text_color(c.priority === 3 ? t.blocked : t.dim).child(PRIORITIES[c.priority])))
+        .child(div().flex_1())
+        .when(c.estimate != null, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.dim).opacity(0.8).tooltip("Estimated tokens").child(`~${kTokens(c.estimate)}`)))
+        .when(c.estimating, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.dim).frames(["·", "··", "···"], 400))))
+      .when(c.column === "todo", (e) => e.child(c.error
+        ? line(div().text_color(t.blocked)).child(c.error)
+        : h_flex().gap(5).items_center().text_color(c.waiting.length ? t.muted : t.foreground)
+          .child(svg(ICON(c.waiting.length ? "clock" : "chevron-right")).size(11).flex_none().text_color(t.dim))
+          .child(line(div().flex_1().min_w(0)).child(waitLabel(c)))))
+      .when(c.column === "in_progress", (e) => e.child(h_flex().id(`orch-${c.id}`).gap(6).items_center().text_color(t.muted)
+        .when(Boolean(c.orchestrator), (e) => e.hover((x) => x.text_color(t.foreground)).tooltip("Show the orchestrator")
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+          .on_click((_e, cx) => { cx.stop_propagation(); run("agent.focus", { terminal: c.orchestrator.terminal }); }))
+        .child(svg(ICON("loader")).size(11).flex_none().text_color(t.working).spin(900))
+        .child(line(div().flex_1().min_w(0)).child(c.orchestrator?.name ?? "starting…"))
+        .when(status === "missing", (e) => e.child(div().flex_none().text_size(11).text_color(t.blocked).child("not running")))))
+      .when(c.column === "review" && Boolean(c.review), (e) => e.child(line(div().pl(7).border_l(2).border_color(t.blocked).text_color(t.foreground)).child(firstLine(c.review))));
+  }
+
+  // The rail: the board's button, then each section's count under its dot.
+  renderRail(t) {
+    const col = this.state ? byColumn(this.state.cards) : null;
+    return v_flex().size_full().bg(t.chrome).pt(4).gap(2).items_center()
+      .child(this.iconButton("board", "arrow-up-right", "Open the board", () => this.openBoard(), t, { size: 30, iconSize: 15 }))
+      .when(Boolean(col), (e) => e.children(SIDE_ORDER.map((id) => v_flex().id(`rail-${id}`).w(30).py(5).gap(3).items_center().rounded(6)
+        .tooltip(`${COLUMNS.find((c) => c.id === id).name}: ${col[id].length}`)
+        .hover((x) => x.bg(t.hover)).cursor_pointer().on_click(() => this.openBoard())
+        .child(this.dot(id, t, 6))
+        .child(div().text_size(11).text_color(id === "review" && col[id].length ? t.blocked : col[id].length ? t.muted : t.dim).child(String(col[id].length))))))
+      .when(this.offline, (e) => e.child(div().size(6).mt(4).rounded(3).bg(t.blocked).tooltip("The kanban daemon isn't answering")));
+  }
+
+  // Right-click: where the card goes, as a menu (nix-kanban's own face, { move }).
+  openMove(c, cx) {
+    const height = 4 * 2 + 28 * (COLUMNS.length) + 9;
+    let at = "pointer";
+    try {
+      const m = cx.mouse_position(), v = cx.viewport_size();
+      at = { x: Math.min(m.x, v.width - 200 - 8), y: Math.max(8, Math.min(m.y, v.height - height - 8)) };
+    } catch {}
+    openOverlay({ mod: "nix-kanban", kind: "popup", width: 200, height, at, props: { move: c.id, column: c.column } });
   }
 
   // ---- The board ----
@@ -509,8 +583,31 @@ export default class Kanban extends View {
         .child(this.button("save-limits", "Save limits", (cx) => this.saveLimits(cx), t, { primary: true })));
   }
 
+  // ---- The move menu, in nix-menu's look ----
+
+  renderMove(t) {
+    const p = props();
+    const go = (column) => {
+      closeOverlay(p.overlay);
+      if (column === p.column) return;
+      api("POST", `/cards/${p.move}/move`, { column }).catch((e) => notify({ title: "Kanban", body: e.message, level: "error" }));
+    };
+    const item = (id, icon, label, onClick, { on = false, off = false } = {}) => h_flex().id(id).h(28).px(8).gap(8).rounded(6).items_center()
+      .text_color(off ? t.dim : t.foreground)
+      .when(!off, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)).on_click(onClick))
+      .child(icon).child(div().flex_1().child(label))
+      .when(on, (e) => e.child(svg(ICON("check")).size(12).flex_none().text_color(t.accent)));
+    return v_flex().id("move").w_full().p(4).bg(t.popover).text_size(12.5)
+      .child(item("open", svg(ICON("square-pen")).size(14).flex_none().text_color(t.muted), "Open card", () => { closeOverlay(p.overlay); this.openCard(p.move); }))
+      .child(div().mx(8).my(4).h(1).bg(t.border))
+      .children(COLUMNS.filter((c) => c.id !== "review" || p.column === "review").map((c) =>
+        item(`to-${c.id}`, div().size(14).flex_none().flex().items_center().justify_center().child(this.dot(c.id, t, 7)),
+          c.id === "in_progress" && p.column !== "in_progress" ? "In progress (start now)" : c.name, () => go(c.id), { on: c.id === p.column })));
+  }
+
   render() {
     const t = theme();
+    if (this.mode === "move") return this.renderMove(t);
     if (this.mode === "board") return this.renderBoard(t);
     if (this.mode === "edit") return this.renderEditor(t);
     if (this.mode === "settings") return this.renderSettings(t);

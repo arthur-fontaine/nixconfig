@@ -23,10 +23,11 @@ export const isFolded = (folds, column) => folds?.[column] ?? FOLDED_BY_DEFAULT.
 export function waitLabel(card) {
   const w = card.waiting?.[0];
   if (!w) return "next";
-  if (w === "no project picked") return "no project";
+  if (w === "no project picked") return "needs a project";
   if (/^RAM:/.test(w)) return "waiting: RAM";
   if (/^orchestrator /.test(w)) return "orchestrator busy";
   if (/^token budget/.test(w)) return "waiting: budget";
+  if (/^\d+\/0 cards in progress/.test(w)) return "paused";
   const slots = /^(\d+\/\d+) cards in progress/.exec(w);
   if (slots) return `waiting: ${slots[1]} running`;
   const held = /^(.+) held by /.exec(w);
