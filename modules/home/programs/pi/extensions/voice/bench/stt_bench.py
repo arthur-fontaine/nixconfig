@@ -27,6 +27,10 @@ import soundfile as sf
 MODELS = {
     # key: (runner, repo, kwargs)
     "parakeet-v3": ("mlx", "mlx-community/parakeet-tdt-0.6b-v3", {}),
+    "parakeet-v3+boost": ("parakeet-boost", "mlx-community/parakeet-tdt-0.6b-v3", {"score": 3.0}),
+    "parakeet-v3+boost5": ("parakeet-boost", "mlx-community/parakeet-tdt-0.6b-v3", {"score": 5.0}),
+    "canary-1b-v2": ("mlx", "Mediform/canary-1b-v2-mlx-q8", {"source_lang": "LANG", "target_lang": "LANG"}),
+    "kyutai-stt-1b": ("kyutai", "kyutai/stt-1b-en_fr-mlx", {}),
     "nemotron-3.5": ("mlx", "mlx-community/nemotron-3.5-asr-streaming-0.6b-8bit", {}),
     "qwen3-asr-0.6b": ("mlx", "mlx-community/Qwen3-ASR-0.6B-8bit", {}),
     "qwen3-asr-0.6b+hotwords": ("mlx", "mlx-community/Qwen3-ASR-0.6B-8bit", {"hotwords": "HOTWORDS"}),
@@ -94,7 +98,21 @@ def load(key: str):
     if runner == "mlx":
         from mlx_audio.stt import load as mlx_load
         model = mlx_load(repo)
-        return lambda path, lang: model.generate(path, **kw).text, model
+
+        def run(path, lang):
+            # "LANG": the clip's language, for models with no auto-detection (Canary).
+            args = {k: (lang if v == "LANG" else v) for k, v in kw.items()}
+            return model.generate(path, **args).text
+        return run, model
+    if runner == "parakeet-boost":
+        from mlx_audio.stt import load as mlx_load
+        from parakeet_boost import PhraseBoost
+        boost = PhraseBoost(mlx_load(repo), HOTWORDS, score=kw["score"])
+        return (lambda path, lang: boost.transcribe(path)), None
+    if runner == "kyutai":
+        from kyutai_stt import KyutaiSTT
+        stt = KyutaiSTT(repo)
+        return (lambda path, lang: stt.transcribe(path)), None
     if runner in ("audio8", "ark"):
         # Edge0's own ONNX runtimes, imported from their snapshot directory (CPU).
         root = materialize(repo, "model" if runner == "ark" else "")

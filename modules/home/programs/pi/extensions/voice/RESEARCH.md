@@ -8,7 +8,7 @@ a recommendation per role. The design that uses these results is in
 
 | Role | Recommended | Runner-up | Why |
 | --- | --- | --- | --- |
-| STT | **NVIDIA Parakeet TDT 0.6B v3** (MLX, bf16) | Whisper large-v3-turbo with a vocabulary prompt | Most accurate model without a prompt (FR 18 %, EN 6 % WER), the fastest (65 ms per utterance, RTF 0.017), auto language detection across 25 European languages, 1.6 GB. Whisper with a prompt halves French errors on code words (FR 9 %) but takes 830 ms per utterance. |
+| STT | **Whisper large-v3-turbo with a vocabulary prompt** (chosen in phase 2, see [Phase 2: the STT gaps](#phase-2-the-stt-gaps)) | Parakeet TDT 0.6B v3 | The only model at FR 9 % WER and 16/19 code words; 830 ms per utterance, started speculatively at the pause. Parakeet is the fastest (65 ms) and most accurate without a prompt (FR 18 %), but its phrase boosting (tried in phase 2) doesn't close the gap. |
 | End of turn | **VoxTurn v1** (Oct 15, 2026) given the transcript so far, with Smart Turn v3.2 as a rescue for short answers | Smart Turn v3.2 alone at threshold 0.9 | 1 false cut-off in 18 hesitations (Smart Turn 6/18, 500 ms silence 11/18), 260 ms median delay after a real end. Best open model on eot-bench in French (13.4 % at a 300 ms budget, Smart Turn 39 %). Must be ported to MLX: through PyTorch it needs fp32 on the GPU, 5.7 GB. Licence CC-BY-NC-4.0: fine for personal use, not for anything sold. |
 | TTS | **Zyphra ZONOS3-Mini** (Nov 9, 2026, MLX) | Kyutai Pocket TTS, French model (CPU) | One model for French and English (43 languages), streams, 115 ms to first audio, round-trip WER FR 6 % / EN 6 %, 1.4 GB, Apache-2.0. Pocket TTS is 27 ms and tiny but has one model per language and reads English words the French way. |
 | Spoken version of the answer | **Claude Haiku 5.5 through Pi's own provider**, streamed | none local yet | The only one that follows the brief: speaks the gist, never code or paths, keeps the closing question. 1.0 s to first token, 1.3 s to the first sentence. Local 1–2B models answer in 0.1–0.5 s but drop the question or read the code. |
@@ -336,3 +336,30 @@ Target for phase 2: Parakeet bf16 1.6 + ZONOS3 1.4 + VoxTurn in MLX (~1–1.6)
 - Kyutai TTS 1.6B, Chatterbox, Orpheus, CSM, F5: older; Pocket TTS and
   ZONOS3 supersede them for this machine.
 - Breeze TTS 2, Fish S2 Pro, Drama 3: 3.5–24 GB.
+
+## Phase 2: the STT gaps
+
+The person asked whether the recent STT models had all been looked at and
+whether Parakeet can boost phrases; the rule: keep a model only if it matches
+Whisper + prompt (FR WER ≤ 9 %, ≥ 16/19 code words) in under 300 ms per
+utterance. Same clips and bench, Nov 10, 2026.
+
+| Model | FR WER | EN WER | Code words | Per utterance | Memory | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Whisper large-v3-turbo + prompt (reference) | **9 %** | **0 %** | **16/19** | 828 ms | 2.5 GB | |
+| Parakeet TDT v3 + phrase boosting, score 3 | 18 % | 0 % | 11/19 | 64 ms | 2.7 GB | a boosting tree in the greedy TDT decoder ([bench/parakeet_boost.py](bench/parakeet_boost.py)) |
+| Parakeet TDT v3 + phrase boosting, score 5 | 22 % | 0 % | 11/19 | 59 ms | 2.7 GB | stronger boost starts inventing ("WoW work trait") |
+| NVIDIA Canary 1B v2 (mlx-audio, 8-bit, [Mediform/canary-1b-v2-mlx-q8](https://huggingface.co/Mediform/canary-1b-v2-mlx-q8)) | 23 % | 6 % | 9/19 | 94 ms | 1.4 GB | needs the language given (it was, per clip): no auto-detection |
+| Kyutai STT 1B en/fr ([kyutai/stt-1b-en_fr-mlx](https://huggingface.co/kyutai/stt-1b-en_fr-mlx), moshi_mlx 0.2.12) | 23 % | 9 % | 9/19 | streaming: 17 ms per 80 ms step, text 0.5 s behind the audio | 2.5 GB | fr5 (voice Jacques) garbled |
+
+- **Parakeet boosting**: greedy boosting can only pick a phrase token when the
+  acoustic model already gives it some weight; "worktree" said the French way
+  comes out "World Trade", whose first piece is not "work". NeMo's GPU-PB
+  boosting tree works the same way inside beam search, which would help a
+  little more but runs only through NeMo's PyTorch stack (CUDA-oriented);
+  not worth its install here given how far greedy boosting is from the bar.
+- **Canary-Qwen 2.5B**: English only, not a candidate.
+- **Result**: nothing matches Whisper + prompt on French and code words, so
+  phase 2 uses **Whisper large-v3-turbo with the vocabulary prompt**. Its
+  830 ms are hidden in part by starting the decode when the pause begins,
+  in parallel with the end-of-turn check.
