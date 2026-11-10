@@ -24,20 +24,24 @@ export function request(command: string, max = 1500): string {
 	return `${text.slice(0, max * 0.7)}\n…\n${text.slice(-max * 0.3)}`;
 }
 
-const MAX_WORDS = 12;
-const MAX_CHARS = 90;
+// Only against a runaway answer: a title is shown whole, the terminal's width alone cuts its
+// row. Kept under compact-tools' 160 characters for a one-line command, which it would cut.
+const MAX_CHARS = 150;
 
-// The answer's first line, cut to a few words: Haiku often goes a word or two past the ask,
-// and an answer dropped is a command left untitled for good.
+// The answer's first line. An answer dropped is a command left untitled for good, so a wordy
+// one is kept as it is.
 export function titleOf(reply: string): string | null {
 	const line = reply.trim().split("\n")[0] ?? "";
 	let text = line.trim().replace(/^["'`]+|["'`.]+$/g, "").trim();
 	if (!text) return null;
-	const words = text.split(/\s+/);
-	if (words.length > MAX_WORDS) text = words.slice(0, MAX_WORDS).join(" ").replace(/[,;:]$/, "") + "…";
-	if (text.length > MAX_CHARS) text = `${text.slice(0, MAX_CHARS - 1).trimEnd()}…`;
+	// Cut at a word, without "…", which would read as a title of the old limit, asked again.
+	if (text.length > MAX_CHARS) text = text.slice(0, MAX_CHARS + 1).replace(/\s+\S*$/, "").replace(/[,;:]$/, "");
 	return text[0]!.toUpperCase() + text.slice(1);
 }
+
+// Titles cached before titles were shown whole were cut to 12 words with "…": such a title is
+// read as missing, so it is asked for again once, when its command shows again.
+const cutByOldLimit = (title: string) => title.endsWith("…");
 
 export const keyOf = (command: string) => createHash("sha256").update(command.trim()).digest("hex").slice(0, 32);
 
@@ -50,7 +54,12 @@ export class TitleCache {
 		for (const [k, v] of Object.entries(entries)) this.#map.set(k, v);
 	}
 	get(command: string): string | undefined {
-		return this.#map.get(keyOf(command));
+		const title = this.#map.get(keyOf(command));
+		return title === undefined || cutByOldLimit(title) ? undefined : title;
+	}
+	stale(command: string): boolean {
+		const title = this.#map.get(keyOf(command));
+		return title !== undefined && cutByOldLimit(title);
 	}
 	set(command: string, title: string): void {
 		const key = keyOf(command);

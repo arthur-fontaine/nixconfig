@@ -11,7 +11,8 @@ import { request, SYSTEM, TitleCache, titleOf, wantsTitle } from "./titles.ts";
 
 const PROVIDER = "claude-code";
 const MODEL = "claude-haiku-5-5";
-const MAX_TOKENS = 40;
+// Far above a title's 150 characters (about 40 tokens), so the reply is never cut short.
+const MAX_TOKENS = 400;
 const TIMEOUT_MS = 20_000;
 // After a failure, no request for this long (the provider down, the quota out).
 const PAUSE_MS = 60_000;
@@ -37,7 +38,13 @@ export default function (pi: ExtensionAPI) {
 		cache = new TitleCache(JSON.parse(readFileSync(file, "utf8")));
 	} catch {}
 	const registry: BashTitles = (shared[KEY] ??= { get: () => undefined, listeners: new Set() });
-	registry.get = (command) => cache.get(command);
+	registry.get = (command) => {
+		const title = cache.get(command);
+		// A title cut by the old limit is asked for again as its row shows: once per command and
+		// process (`asked`), and only for rows drawn again.
+		if (!title && cache.stale(command)) enqueue(command);
+		return title;
+	};
 
 	const queue: string[] = [];
 	const asked = new Set<string>();
@@ -64,14 +71,24 @@ export default function (pi: ExtensionAPI) {
 			)
 			.result();
 		if (reply.stopReason === "error" || reply.stopReason === "aborted") throw new Error(reply.errorMessage || reply.stopReason);
+		if (reply.stopReason === "length") log(`reply cut at ${MAX_TOKENS} tokens`);
 		return titleOf(reply.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join(""));
+	}
+
+	function enqueue(command: string) {
+		if (asked.has(command)) return;
+		if (asked.size > 2000) asked.clear();
+		asked.add(command);
+		queue.push(command);
+		void drain();
 	}
 
 	async function drain() {
 		if (busy) return;
 		busy = true;
 		try {
-			while (queue.length && Date.now() >= pausedUntil) {
+			// Rows of a resumed session can be drawn before the session starts: they wait for it.
+			while (ctx && queue.length && Date.now() >= pausedUntil) {
 				const command = queue.shift()!;
 				if (cache.get(command)) continue;
 				try {
@@ -96,6 +113,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, current) => {
 		ctx = current;
+		void drain();
 	});
 
 	// Asked as the call starts, so the title is there by the time its output is read.
@@ -104,10 +122,7 @@ export default function (pi: ExtensionAPI) {
 		log(`tool_call ${event.toolName}`);
 		if (event.toolName !== "bash") return;
 		const command = (event.input as { command?: unknown }).command;
-		if (typeof command !== "string" || !wantsTitle(command) || cache.get(command) || asked.has(command)) return;
-		if (asked.size > 2000) asked.clear();
-		asked.add(command);
-		queue.push(command);
-		void drain();
+		if (typeof command !== "string" || !wantsTitle(command) || cache.get(command)) return;
+		enqueue(command);
 	});
 }

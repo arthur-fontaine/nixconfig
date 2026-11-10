@@ -14,7 +14,12 @@ test("an answer becomes a short one-line title", () => {
 	assert.equal(titleOf("Lists the largest session files."), "Lists the largest session files");
 	assert.equal(titleOf("\"runs the unit tests\""), "Runs the unit tests");
 	assert.equal(titleOf("Shows the current time, logged-in user, uptime, and a test echo"), "Shows the current time, logged-in user, uptime, and a test echo");
-	assert.equal(titleOf("one two three four five six seven eight nine ten eleven twelve thirteen"), "One two three four five six seven eight nine ten eleven twelve…");
+	const long = "Commits the Apple bootstrap script fix, retrying app checks while the app store keeps the download pending";
+	assert.equal(titleOf(long), long);
+	assert.equal(titleOf("one two three four five six seven eight nine ten eleven twelve thirteen"), "One two three four five six seven eight nine ten eleven twelve thirteen");
+	// A runaway answer is still capped, far above what a title needs.
+	const runaway = titleOf("word ".repeat(100))!;
+	assert.ok(runaway.length <= 150 && runaway.length > 120 && !runaway.endsWith("…") && !runaway.endsWith(" "));
 	assert.equal(titleOf("Lists files.\nThen sorts them."), "Lists files");
 	assert.equal(titleOf(""), null);
 });
@@ -34,4 +39,15 @@ test("the cache keeps the latest titles", () => {
 	assert.equal(cache.get("three"), "Three");
 	const again = new TitleCache(cache.toJSON());
 	assert.equal(again.get("two"), "Two");
+});
+
+test("a title cut by the old word limit is asked for again", () => {
+	const cache = new TitleCache({});
+	cache.set("make all", "Commits the Apple bootstrap script fix, retrying app checks while the app…");
+	assert.equal(cache.get("make all"), undefined);
+	assert.equal(cache.stale("make all"), true);
+	cache.set("make all", "Commits the Apple bootstrap script fix");
+	assert.equal(cache.get("make all"), "Commits the Apple bootstrap script fix");
+	assert.equal(cache.stale("make all"), false);
+	assert.equal(cache.stale("unknown"), false);
 });
