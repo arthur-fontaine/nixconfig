@@ -50,6 +50,17 @@
           }
         },
         {
+          "id": "sidebar-kanban",
+          "type": "block",
+          "size": {
+            "px": 220
+          },
+          "min": 36,
+          "content": {
+            "mod": "nix-kanban"
+          }
+        },
+        {
           "id": "sidebar-footer",
           "type": "block",
           "size": {

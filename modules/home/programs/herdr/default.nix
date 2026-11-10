@@ -71,6 +71,9 @@ let
     nix-editor = { modules = [ "grid.js" "nvim.js" ]; };
     # The Info panel: the selected Pi session and the Claude usage; model.js (the figures) joined in.
     nix-info = { shared = [ "editor.js" ]; modules = [ "model.js" ]; };
+    # The kanban (a block under the sidebar's tree, the board as a tab, its dialogs), on the
+    # herdr-kanban daemon below; model.js (its figures) joined in.
+    nix-kanban = { modules = [ "model.js" ]; };
   };
   modFiles = lib.listToAttrs (lib.concatLists (lib.mapAttrsToList (mod: o: [
     { name = "herdr-app/mods/${mod}/main.js"; value.source = if o == { } then ./mods/${mod}/main.js else bundle mod o; }
@@ -162,7 +165,7 @@ in
       live = "~/.config/herdr-app/shared.json";
       repo = "modules/home/programs/herdr/default.nix (shared)";
       # Mods' own state: onboarding, colors, sidebar width, list sorting.
-      ignore = [ "^frame\\." "^space\\.colors" "^sidebar\\." "^agents\\." "^nix-spaces\\." "^nix\\." ];
+      ignore = [ "^frame\\." "^space\\.colors" "^sidebar\\." "^agents\\." "^nix-spaces\\." "^nix\\." "^nix-kanban\\." ];
     };
   };
 
