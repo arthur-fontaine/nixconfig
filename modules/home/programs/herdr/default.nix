@@ -77,6 +77,39 @@ let
     { name = "herdr-app/mods/${mod}/mod.json"; value.source = ./mods/${mod}/mod.json; }
   ]) mods));
 
+  # The kanban's daemon and its `herdr-kanban` CLI (kanban/README.md). TypeScript run as it
+  # is by Node 24 (type stripping), so there is no build step: nix only fetches the pnpm
+  # dependencies (the MCP SDK) and runs the unit tests.
+  kanban = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
+    pname = "herdr-kanban";
+    version = "0.1.0";
+    src = lib.fileset.toSource {
+      root = ./kanban;
+      fileset = lib.fileset.unions [ ./kanban/package.json ./kanban/pnpm-lock.yaml ./kanban/src ./kanban/test ];
+    };
+    nativeBuildInputs = [ pkgs.nodejs_24 pkgs.pnpm_10 pkgs.pnpmConfigHook pkgs.makeWrapper ];
+    pnpmDeps = pkgs.fetchPnpmDeps {
+      inherit (finalAttrs) pname version src;
+      pnpm = pkgs.pnpm_10;
+      fetcherVersion = 4;
+      hash = "sha256-FXy1hFgPuh4FYan4K3ABnO/dt46PhYwLQ6ONhLBlDGs=";
+    };
+    doCheck = true;
+    checkPhase = ''
+      runHook preCheck
+      node --test test/*.test.ts
+      runHook postCheck
+    '';
+    installPhase = ''
+      runHook preInstall
+      mkdir -p $out/lib/herdr-kanban $out/bin
+      cp -R package.json src node_modules $out/lib/herdr-kanban/
+      makeWrapper ${pkgs.nodejs_24}/bin/node $out/bin/herdr-kanban --add-flags $out/lib/herdr-kanban/src/cli.ts
+      runHook postInstall
+    '';
+    meta.mainProgram = "herdr-kanban";
+  });
+
   merge = import ../../lib/merge-json.nix { inherit pkgs; };
   json = pkgs.formats.json { };
   home = "${config.xdg.configHome}/herdr-app";
@@ -133,7 +166,7 @@ in
     };
   };
 
-  home.packages = [ herdrCore ];
+  home.packages = [ herdrCore kanban ];
 
   # A running Herdr keeps shared.json in memory and saves it on its next
   # change: quit Herdr before `rebuild` for the shared keys to stick.
@@ -180,6 +213,32 @@ in
       RunAtLoad = true;
       KeepAlive = true;
       StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/herdr-lsp-bridge.log";
+    };
+  };
+
+  # The kanban's daemon: the local API the nix-kanban mod reads (127.0.0.1:7742), the scheduler
+  # that sends To-do cards to the project orchestrators, and MCP on the LAN when enabled from
+  # Herdr (7743). Its PATH reaches hc, herdr-app, pi, git, dns-sd and vm_stat.
+  launchd.agents.herdr-kanban = {
+    enable = true;
+    config = {
+      ProgramArguments = [ "${kanban}/bin/herdr-kanban" "daemon" ];
+      EnvironmentVariables.PATH = lib.concatStringsSep ":" [
+        "${config.home.homeDirectory}/.local/bin"
+        "/etc/profiles/per-user/${config.home.username}/bin"
+        "/run/current-system/sw/bin"
+        "/nix/var/nix/profiles/default/bin"
+        "/opt/homebrew/bin"
+        "/usr/local/bin"
+        "/usr/bin"
+        "/bin"
+        "/usr/sbin"
+        "/sbin"
+      ];
+      RunAtLoad = true;
+      KeepAlive = true;
+      StandardOutPath = "${config.home.homeDirectory}/Library/Logs/herdr-kanban.log";
+      StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/herdr-kanban.log";
     };
   };
 
