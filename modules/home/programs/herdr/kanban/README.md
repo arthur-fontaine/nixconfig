@@ -9,6 +9,10 @@ In Herdr, the left sidebar is one of two sidebars, switched at its top (or ⌘�
 Review, To-do, Backlog, Done; click a card to edit it, right-click to move it, drag
 it to another section). ↗ opens the whole board as a tab.
 
+A card can carry files of any kind: in its dialog, paste a screenshot (⌘V in the prompt),
+drop files from Finder, or use Attach files. Images show as thumbnails, other files as
+chips; × removes one. The orchestrator gets their paths with the card.
+
 Backlog → **To-do** → **In progress** → **Review** → Done
 
 - **To-do** cards start by themselves, most urgent (then oldest) first, as soon as
