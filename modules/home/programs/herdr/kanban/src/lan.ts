@@ -2,6 +2,18 @@
 // a Bonjour announcement (`dns-sd -R`, kept alive) so agents on the network find it.
 import { spawn, type ChildProcess } from "node:child_process";
 import type { Server } from "node:http";
+import { connect } from "node:net";
+
+// macOS lets a wildcard listener share a port with another program's loopback one, so
+// listen() wouldn't fail: local clients would reach the other program. Ask first.
+function taken(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const s = connect(port, "127.0.0.1");
+    s.setTimeout(1000, () => { s.destroy(); resolve(false); });
+    s.on("connect", () => { s.destroy(); resolve(true); });
+    s.on("error", () => resolve(false));
+  });
+}
 
 export class Lan {
   private server: Server;
@@ -26,6 +38,7 @@ export class Lan {
     this.want = enabled;
     if (enabled && !this.listening) {
       try {
+        if (await taken(this.port)) throw new Error(`another program already listens on port ${this.port}`);
         await new Promise<void>((resolve, reject) => {
           this.server.once("error", reject);
           this.server.listen(this.port, "0.0.0.0", () => { this.server.off("error", reject); resolve(); });

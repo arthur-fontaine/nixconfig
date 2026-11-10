@@ -26,8 +26,8 @@ clients' token hashes), written atomically (temp file + rename).
 | Variable | Default | |
 |---|---|---|
 | `HERDR_KANBAN_STATE_DIR` | `~/.local/share/herdr-kanban` | |
-| `HERDR_KANBAN_PORT` | `7742` | local API, 127.0.0.1 only (lsp-bridge has 7741) |
-| `HERDR_KANBAN_MCP_PORT` | `7743` | MCP, all interfaces, only while enabled |
+| `HERDR_KANBAN_PORT` | `7742` | local API, 127.0.0.1 only (lsp-bridge has 7741 and 7743) |
+| `HERDR_KANBAN_MCP_PORT` | `7744` | MCP, all interfaces, only while enabled |
 | `HERDR_KANBAN_NAME` | `Herdr Kanban` | the Bonjour instance name |
 | `HERDR_KANBAN_CLI` | `herdr-kanban` | how the orchestrator's prompt says to call `review` |
 | `HERDR_KANBAN_ESTIMATOR` | `pi --print --model sonnet …` | argv, space-separated or a JSON array; the prompt is appended |
@@ -101,11 +101,11 @@ since the epoch. A project key is nix-sidebar's repo key: `JSON [null, <git comm
 ## MCP (remote agents)
 
 Off by default; switched on from the kanban's settings in Herdr. Then the daemon
-listens on `0.0.0.0:7743` and announces `_herdr-kanban._tcp` with Bonjour
-(`dns-sd -R "Herdr Kanban" _herdr-kanban._tcp local 7743 path=/mcp`). Find it with
+listens on `0.0.0.0:7744` and announces `_herdr-kanban._tcp` with Bonjour
+(`dns-sd -R "Herdr Kanban" _herdr-kanban._tcp local 7744 path=/mcp`). Find it with
 `dns-sd -B _herdr-kanban._tcp`, then `dns-sd -L "Herdr Kanban" _herdr-kanban._tcp`.
 
-Endpoint: `POST http://<mac>:7743/mcp`, Streamable HTTP, stateless, JSON responses.
+Endpoint: `POST http://<mac>:7744/mcp`, Streamable HTTP, stateless, JSON responses.
 
 Pairing, like a Chromecast:
 1. `pair_start {client_name}` (no token needed). Herdr shows a 6-digit code (in the

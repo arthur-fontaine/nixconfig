@@ -6,7 +6,7 @@ import { mcpHttp } from "./mcp.ts";
 import { Lan } from "./lan.ts";
 
 export const DEFAULT_PORT = 7742; // nix-editor's lsp-bridge has 7741
-export const DEFAULT_MCP_PORT = 7743;
+export const DEFAULT_MCP_PORT = 7744; // the lsp-bridge also has 7743 (its HTTP side)
 
 export async function main(env = process.env) {
   const dir = env.HERDR_KANBAN_STATE_DIR ?? `${homedir()}/.local/share/herdr-kanban`;

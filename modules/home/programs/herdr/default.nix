@@ -221,7 +221,7 @@ in
 
   # The kanban's daemon: the local API the nix-kanban mod reads (127.0.0.1:7742), the scheduler
   # that sends To-do cards to the project orchestrators, and MCP on the LAN when enabled from
-  # Herdr (7743). Its PATH reaches hc, herdr-app, pi, git, dns-sd and vm_stat.
+  # Herdr (7744). Its PATH reaches hc, herdr-app, pi, git, dns-sd and vm_stat.
   launchd.agents.herdr-kanban = {
     enable = true;
     config = {
