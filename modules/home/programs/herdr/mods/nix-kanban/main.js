@@ -448,7 +448,9 @@ export default class Kanban extends View {
   initEditor(p) {
     this.cardId = p.edit ?? null;
     this.title = InputState.new({ placeholder: "What should be done" });
-    this.prompt = TextareaState.new({ placeholder: "Details for the orchestrator: context, where to look, what done means", rows: 9 });
+    // Sized by rows only: the textarea scrolls as if it shows `rows` lines, so a fixed h() under
+    // that clips the last lines out of reach.
+    this.prompt = TextareaState.new({ placeholder: "Details for the orchestrator: context, where to look, what done means", rows: 7 });
     this.prompt.set_soft_wrap(true);
     this.project = null;
     this.priority = 1;
@@ -491,7 +493,7 @@ export default class Kanban extends View {
         .child(div().flex_1().text_size(15).font_semibold().child(c ? `${c.id} · ${COLUMNS.find((x) => x.id === c.column).name}` : "New card"))
         .when(Boolean(c), (e) => e.child(div().text_size(11).text_color(t.dim).child(`created ${ago(c.createdAt)} ago`))))
       .child(field("Title", frame(Input.new(this.title).h(32).items_center().text_size(13))))
-      .child(field("Prompt", frame(Textarea.new(this.prompt).h(170).py(8).text_size(12.5))))
+      .child(field("Prompt", frame(Textarea.new(this.prompt).py(8).text_size(12.5))))
       .child(field("Project", v_flex().id("projects").h(118).rounded(6).border_1().border_color(t.border).bg(t.background).p(4).overflow_y_scrollbar()
         .children(projects.map((p) => h_flex().id(`p-${p.key}`).h(26).px(8).gap(8).items_center().rounded(5).cursor_pointer()
           .when(this.project === p.key, (e) => e.bg(t.selected))
