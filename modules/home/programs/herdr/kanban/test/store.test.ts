@@ -8,7 +8,11 @@ import { Store, StoreError } from "../src/store.ts";
 function withDir(fn: (dir: string) => void | Promise<void>) {
   return async () => {
     const dir = mkdtempSync(join(tmpdir(), "kanban-store-"));
-    try { await fn(dir); } finally { rmSync(dir, { recursive: true, force: true }); }
+    try { await fn(dir); } finally {
+      // Let the stores' background writes land before the folder goes.
+      await new Promise((r) => setTimeout(r, 50));
+      rmSync(dir, { recursive: true, force: true });
+    }
   };
 }
 
