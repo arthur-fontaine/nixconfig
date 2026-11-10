@@ -39,7 +39,7 @@ export function distinct(projects: Project[]): Project[] {
   return projects.map((p, i) => ({ ...p, name: name(i) }));
 }
 
-async function commonDir(folder: string): Promise<string | null> {
+export async function commonDir(folder: string): Promise<string | null> {
   const r = await run("git", ["-C", folder, "rev-parse", "--path-format=absolute", "--git-common-dir"], { timeout: 5000 });
   return r.code === 0 ? r.stdout.trim().replace(/\/+$/, "") : null;
 }

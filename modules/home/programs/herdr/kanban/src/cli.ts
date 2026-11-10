@@ -9,6 +9,7 @@ const USAGE = `herdr-kanban: the Herdr kanban, from a shell
   herdr-kanban add <title> [--prompt <text>] [--project <name|key>] [--priority 0-3] [--todo]
   herdr-kanban move <id> <column>
   herdr-kanban projects
+  herdr-kanban add-project <folder>      a repo no Herdr space is in yet
   herdr-kanban daemon                    run the daemon (launchd does this)
 
   --url <url>   the daemon (default: $HERDR_KANBAN_URL, else http://127.0.0.1:7742)`;
@@ -76,6 +77,12 @@ export async function cli(argv: string[]) {
     case "projects": {
       const ps = await call(base, "GET", "/api/projects");
       console.log(json ? JSON.stringify(ps, null, 2) : ps.map((p: any) => `${p.name}\t${p.root}`).join("\n"));
+      return;
+    }
+    case "add-project": {
+      const { resolve } = await import("node:path");
+      const p = await call(base, "POST", "/api/projects", { folder: resolve(rest[0] ?? ".") });
+      console.log(`${p.name}\t${p.root}`);
       return;
     }
     case "daemon": { const { main } = await import("./daemon.ts"); await main(); return; }

@@ -5,7 +5,7 @@ import { Pairing } from "./pairing.ts";
 import { FACTORS, plan, type Factor } from "./scheduler.ts";
 import { Estimator, askSonnet, estimatePrompt, parseEstimate, type Ask } from "./estimator.ts";
 import { dispatchText, findOrchestrator, herdr as realHerdr, type Found, type Herdr } from "./herdr.ts";
-import { discover, projectSpaces } from "./projects.ts";
+import { commonDir, discover, distinct, projectOf, projectSpaces } from "./projects.ts";
 import { freeRamGB } from "./system.ts";
 import type { Card, Column, OrchestratorStatus, Project } from "./types.ts";
 
@@ -120,6 +120,16 @@ export class Kanban {
   }
 
   projects(): Project[] { return this.store.projects(); }
+
+  /** A repo no Herdr space is in yet, by any folder inside it. */
+  async addProject(folder: string): Promise<Project> {
+    if (typeof folder !== "string" || !folder.startsWith("/")) throw new StoreError("folder must be an absolute path");
+    const common = await commonDir(folder);
+    if (!common) throw new StoreError(`${folder} isn't in a git repo`);
+    const key = projectOf(common).key;
+    if (!this.store.projects().some((p) => p.key === key)) this.store.setProjects(distinct([...this.store.projects(), projectOf(common)]));
+    return this.store.projects().find((p) => p.key === key)!;
+  }
 
   private mustProject(key: string) {
     if (!this.store.projects().some((p) => p.key === key)) throw new StoreError(`unknown project ${key} (see list_projects)`);

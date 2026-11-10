@@ -59,7 +59,8 @@ export function localApi(k: Kanban, hooks: LocalApiHooks): Server {
           return send(res, 200, s);
         }
       }
-      if (what === "projects" && method === "GET") return send(res, 200, k.projects());
+      if (what === "projects" && !id && method === "GET") return send(res, 200, k.projects());
+      if (what === "projects" && !id && method === "POST") return send(res, 201, await k.addProject(body.folder));
       if (what === "projects" && id === "refresh" && method === "POST") { await k.refresh(); return send(res, 200, k.projects()); }
       if (what === "pairing" && method === "GET") return send(res, 200, { pending: k.pairing.pending(), clients: k.pairing.list() });
       if (what === "clients" && id && method === "DELETE") {
