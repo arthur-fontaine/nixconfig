@@ -12,8 +12,8 @@ export const COLUMNS = [
 ];
 export const PRIORITIES = ["Low", "Normal", "High", "Urgent"];
 
-// The Kanban sidebar's sections, top to bottom: what moves first, what's finished last.
-export const SIDE_ORDER = ["in_progress", "review", "todo", "backlog", "done"];
+// The Kanban sidebar's sections, top to bottom: the board's columns, in the order work goes.
+export const SIDE_ORDER = COLUMNS.map((c) => c.id);
 export const FOLDED_BY_DEFAULT = ["backlog", "done"];
 
 /** Whether a sidebar section is folded: the person's choice, else the default. */

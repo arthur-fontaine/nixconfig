@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { byColumn, factorChips, firstLine, glance, isFolded, kTokens, livePending, neighbor, parseNumber, spacedCode, unrecordedSpaces, waitLabel } from "../model.js";
+import { SIDE_ORDER, byColumn, factorChips, firstLine, glance, isFolded, kTokens, livePending, neighbor, parseNumber, spacedCode, unrecordedSpaces, waitLabel } from "../model.js";
 
 const card = (id, column, o = {}) => ({ id, column, priority: 1, createdAt: 0, movedAt: 0, startedAt: null, project: null, orchestrator: null, ...o });
 
@@ -74,7 +74,12 @@ test("a To-do card says, short, why it waits", () => {
   assert.equal(w("no project picked"), "needs a project");
 });
 
+test("sidebar sections in workflow order", () => {
+  assert.deepEqual(SIDE_ORDER, ["backlog", "todo", "in_progress", "review", "done"]);
+});
+
 test("sidebar sections: Backlog and Done folded until unfolded", () => {
+  assert.equal(isFolded(undefined, "backlog"), true);
   assert.equal(isFolded(undefined, "done"), true);
   assert.equal(isFolded({}, "todo"), false);
   assert.equal(isFolded({ done: false, todo: true }, "done"), false);

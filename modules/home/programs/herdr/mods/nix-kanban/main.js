@@ -2,7 +2,7 @@
 // herdr-kanban daemon (modules/home/programs/herdr/kanban, its local API on 127.0.0.1:7742).
 // One mod, five faces, by props:
 //   (none)            the Kanban sidebar (the sidebar's stack shows it or Repos): cards in
-//                     sections, In progress first, folded and dragged between sections
+//                     sections in workflow order, folded and dragged between sections
 //   { full: true }    the board, as its own tab: five columns, drag or arrows to move
 //   { edit, column }  the card dialog (edit: a card id, or null for a new card)
 //   { settings: true } MCP on/off, pairing code, paired agents, scheduler limits
