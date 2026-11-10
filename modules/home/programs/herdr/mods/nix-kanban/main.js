@@ -331,7 +331,7 @@ export default class Kanban extends View {
         .child(`${kTokens(used)} of ${kTokens(s.settings.tokenBudget)} tokens in ${s.settings.budgetWindowHours} h`))
       .when(s.freeRamGB != null, (e) => e.child(div().text_size(11.5).text_color(s.freeRamGB < s.settings.minFreeRamGB ? t.blocked : t.dim)
         .child(`${Math.round(s.freeRamGB)} GB free`)))
-      .child(div().text_size(11.5).text_color(t.dim).child(`${col.in_progress.length} of ${s.settings.maxInProgress} running`))
+      .child(div().text_size(11.5).text_color(t.dim).child(this.capacity(s, col)))
       .child(this.iconButton("mcp", "radio", s.mcp?.listening ? `Remote agents: on, port ${s.mcp.port}` : "Remote agents: off", () => this.openSettings(), t,
         { size: 28, iconSize: 14, color: s.mcp?.listening ? t.accent : t.dim }))
       .child(this.iconButton("settings", "settings", "Kanban settings", () => this.openSettings(), t, { size: 28, iconSize: 14 }))
@@ -352,14 +352,19 @@ export default class Kanban extends View {
     const lit = target && this.over === c.id;
     return v_flex().id(`col-${c.id}`).flex_1().min_w(0).h_full().rounded(8).bg(t.chrome).border_1()
       .border_color(lit ? columnColor(t, c.id) : t.border)
-      .on_hover((h, cx) => { if (h && this.over !== c.id) { this.over = c.id; if (this.drag) cx.notify(); } })
+      .on_hover((h, cx) => {
+        if (h && this.over !== c.id) { this.over = c.id; if (this.drag) cx.notify(); }
+        const was = this.head; this.head = h ? c.id : this.head === c.id ? null : this.head; if (was !== this.head) cx.notify();
+      })
       .on_mouse_up("left", (_e, cx) => this.drop(c.id, cx))
       .child(h_flex().h(36).flex_none().px(12).gap(8).items_center()
         .child(this.columnIcon(c.id, t))
-        .child(div().text_size(13).font_medium().child(c.name))
-        .child(div().text_size(11).text_color(t.dim).child(`${cards.length}`))
-        .child(div().flex_1())
-        .when(c.id === "backlog" || c.id === "todo", (e) => e.child(this.iconButton(`add-${c.id}`, "plus", `New card in ${c.name}`, () => this.openCard(null, c.id), t))))
+        // Narrow columns cut the name, never the icon, the count or the +.
+        .child(h_flex().flex_1().min_w(0).gap(8).items_center()
+          .child(div().flex_shrink_1().min_w(0).truncate().text_size(13).font_medium().child(c.name))
+          .child(div().flex_none().text_size(11).text_color(t.dim).child(`${cards.length}`)))
+        // Under the pointer only, as the Repos sidebar's +: narrow columns keep their name.
+        .when((c.id === "backlog" || c.id === "todo") && this.head === c.id, (e) => e.child(this.iconButton(`add-${c.id}`, "plus", `New card in ${c.name}`, () => this.openCard(null, c.id), t))))
       .child(v_flex().id(`cards-${c.id}`).flex_1().min_h(0).px(8).pb(8).gap(6).overflow_y_scrollbar()
         .children(cards.map((card) => this.card(card, s, t)))
         .when(!cards.length, (e) => e.child(div().px(4).py(6).text_size(11.5).text_color(t.dim).child(
