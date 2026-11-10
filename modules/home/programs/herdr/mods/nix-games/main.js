@@ -4,7 +4,7 @@
 // The rules live in model.js; this view only draws them and feeds keys and time.
 // On top, the agent strip keeps the active tab's Pi in view; when it finishes or waits for
 // input, the game holds still with a quiet line, and ⏎ goes to it.
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { exec, focused, layout, panes, run, spaces, terminals, theme, window } from "herdr";
 import { BRICK, GAMES, RUN, SNAKE, gamesAgentAlert, gamesAgentPane, gamesAgentStrip, gamesAgentTail, gamesAnimated, gamesBeatPos, gamesPausable, gamesPopScale, gamesKey, gamesNew, gamesPick, gamesPopLeft, gamesPopPress, gamesTick } from "./model.js";
@@ -269,7 +269,7 @@ export default class Games extends View {
 
   // ---- the view -------------------------------------------------------------------------
 
-  // One or two lines: π, the session name, its state, elapsed; then the call running (or the
+  // One or two lines: Pi's mark, the session name, its state, elapsed; then the call running (or the
   // last one). Calm when it stops: the tone changes, nothing flashes.
   strip(t) {
     const now = Date.now();
@@ -278,8 +278,9 @@ export default class Games extends View {
     if (!a) return row.child(div().text_size(12).text_color(t.dim).child("No Pi agent in this tab"));
     const tone = t[a.tone] ?? t.muted;
     const stopped = Boolean(this.alert);
-    const pi = div().size(16).flex_none().rounded(4).bg(stopped ? alpha(tone, "33") : t.raised).flex().items_center().justify_center()
-      .font_family(MONO).font_bold().text_size(10).text_color(stopped ? tone : t.foreground).child("π");
+    // Pi's own mark (the pane's program icon, Herdr's icons/pi.svg without one), in the stop tone.
+    const prog = this.agent.pane?.program?.icon ? this.agent.pane.program : { icon: "icons/pi.svg", tint: true };
+    const pi = prog.tint ? svg(prog.icon).size(14).flex_none().text_color(stopped ? tone : t.foreground) : image(prog.icon).w(14).h(14).flex_none();
     const mark = a.state === "working"
       ? svg(ICON("loader")).size(12).flex_none().text_color(tone).spin(900)
       : div().size(7).flex_none().rounded(4).bg(a.state === "idle" ? t.border : tone);
