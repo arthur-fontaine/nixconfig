@@ -1,0 +1,45 @@
+{
+ "model": "voxtral-tts-4b",
+ "repo": "mlx-community/Voxtral-4B-TTS-2603-mlx-4bit",
+ "load_s": 2.358898666978348,
+ "ttfa_ms_median": 277.89818748715334,
+ "ttfa_ms_max": 320.0743750203401,
+ "rtf": 0.3495260574245488,
+ "streams": true,
+ "rss_peak_mb_above_base": 2853.76512,
+ "mlx_peak_mb": 3367.52234,
+ "rows": [
+  {
+   "n": 1,
+   "lang": "fr",
+   "ttfa_s": 0.26313533302163705,
+   "total_s": 0.8718863750109449,
+   "audio_s": 2.32,
+   "chunks": 5
+  },
+  {
+   "n": 2,
+   "lang": "fr",
+   "ttfa_s": 0.2642384589998983,
+   "total_s": 3.051222084031906,
+   "audio_s": 9.04,
+   "chunks": 19
+  },
+  {
+   "n": 3,
+   "lang": "fr",
+   "ttfa_s": 0.2915579159744084,
+   "total_s": 2.6516777079668827,
+   "audio_s": 7.68,
+   "chunks": 17
+  },
+  {
+   "n": 4,
+   "lang": "en",
+   "ttfa_s": 0.3200743750203401,
+   "total_s": 1.7579150419915095,
+   "audio_s": 4.8,
+   "chunks": 11
+  }
+ ]
+}

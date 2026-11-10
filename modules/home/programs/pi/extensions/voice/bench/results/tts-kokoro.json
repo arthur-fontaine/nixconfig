@@ -1,0 +1,45 @@
+{
+ "model": "kokoro",
+ "repo": "mlx-community/Kokoro-82M-bf16",
+ "load_s": 0.31694662501104176,
+ "ttfa_ms_median": 219.66777148190886,
+ "ttfa_ms_max": 3961.743415973615,
+ "rtf": 0.19461938311311605,
+ "streams": false,
+ "rss_peak_mb_above_base": 795.4432,
+ "mlx_peak_mb": 2291.292195,
+ "rows": [
+  {
+   "n": 1,
+   "lang": "fr",
+   "ttfa_s": 0.09462879097554833,
+   "total_s": 0.09462879097554833,
+   "audio_s": 2.95,
+   "chunks": 1
+  },
+  {
+   "n": 2,
+   "lang": "fr",
+   "ttfa_s": 0.2130383339826949,
+   "total_s": 0.2130383339826949,
+   "audio_s": 6.925,
+   "chunks": 1
+  },
+  {
+   "n": 3,
+   "lang": "fr",
+   "ttfa_s": 0.22629720898112282,
+   "total_s": 0.22629720898112282,
+   "audio_s": 7.35,
+   "chunks": 1
+  },
+  {
+   "n": 4,
+   "lang": "en",
+   "ttfa_s": 3.961743415973615,
+   "total_s": 3.961743415973615,
+   "audio_s": 5.875,
+   "chunks": 1
+  }
+ ]
+}

@@ -1,0 +1,82 @@
+{
+ "haiku-5.5": {
+  "ttft_ms_median": 1028.6750830127858,
+  "first_sentence_ms_median": 1282.3966669966467,
+  "total_ms_median": 2106.689332984388,
+  "runs": [
+   {
+    "ttft_s": 1.0490792089840397,
+    "first_sentence_s": 1.2823966669966467,
+    "total_s": 2.2305451249703765,
+    "process_s": 2.766161374980584,
+    "text": "J'ai trouvé la cause du footer : il lit l'ancienne clé de configuration, que le commit 9af1b0f a renommée. J'ai corrigé le fichier de layout pour lire la nouvelle clé, avec repli sur l'ancienne, et ajouté un test pour chaque cas. Les quatorze tests passent, mais il faudra un rebuild pour voir le changement dans Pi. Tu veux que je fasse le commit ?"
+   },
+   {
+    "ttft_s": 1.013348207983654,
+    "first_sentence_s": 1.2608431659755297,
+    "total_s": 2.106689332984388,
+    "process_s": 2.6213579580071382,
+    "text": "J'ai trouvé la cause : le footer lisait l'ancienne clé de configuration, qui a changé avec le dernier commit. J'ai modifié le fichier qui lit les segments, en gardant l'ancienne clé en repli, et ajouté deux tests. Les quatorze tests passent, mais il faudra lancer un rebuild pour voir le footer dans Pi. Tu veux que je fasse le commit ?"
+   },
+   {
+    "ttft_s": 1.0286750830127858,
+    "first_sentence_s": 1.2951365830376744,
+    "total_s": 1.885142375016585,
+    "process_s": 2.3997782500227913,
+    "text": "La cause du footer est trouvée : il lisait l'ancienne clé de réglage, que le commit 9af1b0f a renommée. J'ai corrigé le fichier de layout pour lire la nouvelle clé, avec repli sur l'ancienne, et ajouté un test pour chaque cas. Les quatorze tests passent, mais il faudra lancer un rebuild pour voir le footer dans Pi. Tu veux que je fasse le commit ?"
+   }
+  ]
+ },
+ "lfm2.5-1.2b-q8 (local)": {
+  "ttft_ms_median": 9.01604100363329,
+  "first_sentence_ms_median": 93.81683304673061,
+  "total_ms_median": 395.9802919998765,
+  "runs": [
+   {
+    "ttft_s": 0.00901604100363329,
+    "first_sentence_s": 0.09381683304673061,
+    "total_s": 0.3358230830053799,
+    "text": "J'ai modifié le fichier du footer et vérifié les tests.  \nLa clé a changé, j'ai ajusté le code pour correspondre.  \nLes tests sont passés, c'est bon.  \nTu veux que je fasse le commit ?",
+    "server_rss_mb": 1376.71875
+   },
+   {
+    "ttft_s": 0.00856874999590218,
+    "first_sentence_s": 0.09243495797272772,
+    "total_s": 0.40515333297662437,
+    "text": "J'ai modifié le fichier du footer et vérifié les tests.  \nJ'ai ajusté la clé utilisée pour éviter les erreurs.  \nLes tests sont passés, mais j'ai noté qu'un rebuild est nécessaire.  \nTu as la question sur le commit, je peux t'aider à le faire."
+   },
+   {
+    "ttft_s": 0.010400583036243916,
+    "first_sentence_s": 0.10053837503073737,
+    "total_s": 0.3959802919998765,
+    "text": "J'ai modifié le fichier du footer et vérifié les tests.  \nJ'ai ajusté la clé en `footerSegments` après la mise à jour.  \nLes tests ont réussi, mais j'ai hésité sur le rebuild.  \nTu veux que je le fasse ?"
+   }
+  ]
+ },
+ "lfm3-1.7b-q4km (local)": {
+  "ttft_ms_median": 182.72191705182195,
+  "first_sentence_ms_median": 475.36708298139274,
+  "total_ms_median": 1132.2175840032287,
+  "runs": [
+   {
+    "ttft_s": 0.18228195799747482,
+    "first_sentence_s": 0.47536708298139274,
+    "total_s": 1.123424999997951,
+    "text": "J'ai trouvé la cause : le footer lit `settings.footer.segments`, mais depuis le commit `9af1b0f` la clé s'appelle `footerSegments`. J'ai mis à jour `modules/home/programs/pi/extensions/footer/layout.ts` pour lire la nouvelle clé tout en gardant un retour sur l'ancienne, et j'ai ajouté des tests dans `footer/tests/layout.test.ts`. Les 14 tests passent (`node --test`). Il faut un `rebuild` pour voir le footer dans Pi. Tu veux que je fasse le commit ?",
+    "server_rss_mb": 1294.140625
+   },
+   {
+    "ttft_s": 0.1827961250091903,
+    "first_sentence_s": 0.47508508403552696,
+    "total_s": 1.1352029170375317,
+    "text": "J'ai trouvé la cause : le footer lit `settings.footer.segments`, mais depuis le commit `9af1b0f` la clé s'appelle `footerSegments`. J'ai mis à jour `modules/home/programs/pi/extensions/footer/layout.ts` pour lire la nouvelle clé avec un fallback sur l'ancienne, et j'ai ajouté un test dans `footer/tests/layout.test.ts` pour les deux cas. Les 14 tests passent (`node --test`). Il faut un rebuild pour voir le footer dans Pi ; veux‑tu que je fasse le commit ?"
+   },
+   {
+    "ttft_s": 0.18272191705182195,
+    "first_sentence_s": 0.4768895420129411,
+    "total_s": 1.1322175840032287,
+    "text": "J'ai trouvé la cause : le footer lit `settings.footer.segments`, mais après le commit `9af1b0f` la clé s'appelle `footerSegments`. J'ai mis à jour `modules/home/programs/pi/extensions/footer/layout.ts` pour lire la nouvelle clé avec un fallback vers l'ancienne, et j'ai ajouté un test dans `footer/tests/layout.test.ts` pour les deux cas. Les 14 tests passent (`node --test`). Il faut un rebuild pour voir le footer dans Pi, tu veux que je fasse le commit ?"
+   }
+  ]
+ }
+}

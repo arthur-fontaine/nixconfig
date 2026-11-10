@@ -1,0 +1,89 @@
+{
+ "model": "qwen3-asr-0.6b",
+ "repo": "mlx-community/Qwen3-ASR-0.6B-8bit",
+ "load_s": 20.608432042005006,
+ "wer": {
+  "fr": 0.38461538461538464,
+  "en": 0.08571428571428572
+ },
+ "terms": "7/19",
+ "decode_ms_median": 139.68764548189938,
+ "rtf": 0.034733768352264334,
+ "rss_peak_mb_above_base": 2152.2677759999997,
+ "mlx_peak_mb": 1767.294796,
+ "stream": null,
+ "rows": [
+  {
+   "id": "fr1",
+   "out": "Tu peux lancer npm install dans le one hook tray puis faire un x build",
+   "wer": 0.38461538461538464,
+   "decode_s": 0.13880974997300655,
+   "dur_s": 4.8730625,
+   "terms": 3,
+   "hits": 0
+  },
+  {
+   "id": "fr2",
+   "out": "Regarde le fichier default point x et ajoute l'extension vues dans la liste.",
+   "wer": 0.15384615384615385,
+   "decode_s": 0.14676475001033396,
+   "dur_s": 4.6990625,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "fr3",
+   "out": "Le fauteuil ne s'affiche plus depuis le dernier commis. Tu peux vérifier les tests.",
+   "wer": 0.14285714285714285,
+   "decode_s": 0.15778870898066089,
+   "dur_s": 4.7458125,
+   "terms": 2,
+   "hits": 0
+  },
+  {
+   "id": "fr4",
+   "out": "Crée une branche, fais un rebas sur main et pouce sur jhub.",
+   "wer": 0.25,
+   "decode_s": 0.14056554099079221,
+   "dur_s": 3.60775,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "fr5",
+   "out": "Я буду дреклить дом у Нолан Кажал, а веду сокерник.",
+   "wer": 1.0,
+   "decode_s": 0.17181791696930304,
+   "dur_s": 3.849,
+   "terms": 3,
+   "hits": 0
+  },
+  {
+   "id": "en1",
+   "out": "Can you run Pnpm test in the work tree and then do a next build?",
+   "wer": 0.07142857142857142,
+   "decode_s": 0.13033224997343495,
+   "dur_s": 3.6220625,
+   "terms": 3,
+   "hits": 2
+  },
+  {
+   "id": "en2",
+   "out": "Rewind the last message and depend what I just said.",
+   "wer": 0.1,
+   "decode_s": 0.11184320802567527,
+   "dur_s": 2.9214375,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "en3",
+   "out": "The TypeScript extension should talk to the demon over a WebSocket.",
+   "wer": 0.09090909090909091,
+   "decode_s": 0.115540458005853,
+   "dur_s": 3.738875,
+   "terms": 3,
+   "hits": 2
+  }
+ ]
+}

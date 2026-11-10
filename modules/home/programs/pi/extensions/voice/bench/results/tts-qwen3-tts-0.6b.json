@@ -1,0 +1,45 @@
+{
+ "model": "qwen3-tts-0.6b",
+ "repo": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
+ "load_s": 23.154400625033304,
+ "ttfa_ms_median": 131.48639551945962,
+ "ttfa_ms_max": 134.2803330044262,
+ "rtf": 0.2398608537296028,
+ "streams": true,
+ "rss_peak_mb_above_base": 2659.909632,
+ "mlx_peak_mb": 2680.921763,
+ "rows": [
+  {
+   "n": 1,
+   "lang": "fr",
+   "ttfa_s": 0.1298514580121264,
+   "total_s": 0.6852580410195515,
+   "audio_s": 2.8,
+   "chunks": 6
+  },
+  {
+   "n": 2,
+   "lang": "fr",
+   "ttfa_s": 0.1283245420199819,
+   "total_s": 2.341184874996543,
+   "audio_s": 9.84,
+   "chunks": 21
+  },
+  {
+   "n": 3,
+   "lang": "fr",
+   "ttfa_s": 0.13312133302679285,
+   "total_s": 1.7257010419853032,
+   "audio_s": 7.2,
+   "chunks": 15
+  },
+  {
+   "n": 4,
+   "lang": "en",
+   "ttfa_s": 0.1342803330044262,
+   "total_s": 1.8104490000405349,
+   "audio_s": 7.52,
+   "chunks": 16
+  }
+ ]
+}

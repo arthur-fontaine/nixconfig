@@ -1,0 +1,95 @@
+{
+ "model": "voxtral-rt-4b",
+ "repo": "mlx-community/Voxtral-Mini-4B-Realtime-2602-4bit",
+ "load_s": 47.120978874969296,
+ "wer": {
+  "fr": 0.2,
+  "en": 0.0
+ },
+ "terms": "12/19",
+ "decode_ms_median": 2355.1768334873486,
+ "rtf": 0.5602928696614944,
+ "rss_peak_mb_above_base": 3514.073088,
+ "mlx_peak_mb": 5274.330528,
+ "stream": {
+  "chunk_ms": 80,
+  "step_ms_median": 244.25866699311882,
+  "step_ms_p95": 898.895583988633,
+  "flush_ms_median": 9836.314291518647,
+  "first_text_after_onset_s_median": 1.03475
+ },
+ "rows": [
+  {
+   "id": "fr1",
+   "out": "Tu peux lancer PNPM Install dans le Worktree, puis faire un XBuild.",
+   "wer": 0.15384615384615385,
+   "decode_s": 2.463240708981175,
+   "dur_s": 4.8730625,
+   "terms": 3,
+   "hits": 2
+  },
+  {
+   "id": "fr2",
+   "out": "Regarde le fichier default.nix et ajoute l'extension voice dans la liste.",
+   "wer": 0.0,
+   "decode_s": 2.495531791006215,
+   "dur_s": 4.6990625,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "fr3",
+   "out": "Le fauteuil ne s'affiche plus depuis le dernier commis, tu peux vérifier les tests?",
+   "wer": 0.14285714285714285,
+   "decode_s": 2.546532665961422,
+   "dur_s": 4.7458125,
+   "terms": 2,
+   "hits": 0
+  },
+  {
+   "id": "fr4",
+   "out": "Créer une branche, fait un rebas sur main et pousse sur J-Hub.",
+   "wer": 0.4166666666666667,
+   "decode_s": 2.5649557090364397,
+   "dur_s": 3.60775,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "fr5",
+   "out": "Je voudrais que le d'abord tourne dans l'autre cas, avec un socket Unix.",
+   "wer": 0.3076923076923077,
+   "decode_s": 2.1603717080433853,
+   "dur_s": 3.849,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "en1",
+   "out": "Can you run PNPM test in the work tree and then do a Nix build?",
+   "wer": 0.0,
+   "decode_s": 1.8603082920308225,
+   "dur_s": 3.6220625,
+   "terms": 3,
+   "hits": 3
+  },
+  {
+   "id": "en2",
+   "out": "Rewind the last message and append what I just said.",
+   "wer": 0.0,
+   "decode_s": 1.6232897079898976,
+   "dur_s": 2.9214375,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "en3",
+   "out": "The TypeScript extension should talk to the daemon over a WebSocket.",
+   "wer": 0.0,
+   "decode_s": 2.2471129579935223,
+   "dur_s": 3.738875,
+   "terms": 3,
+   "hits": 3
+  }
+ ]
+}

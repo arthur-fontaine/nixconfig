@@ -1,0 +1,261 @@
+{
+ "detector": "silence-800",
+ "policy": {
+  "vad_stop_s": 0.2,
+  "recheck_s": 0.25,
+  "timeout_s": 3.0
+ },
+ "call_ms_median": null,
+ "rss_peak_mb_above_base": 229.474304,
+ "by_threshold": {
+  "0.8": {
+   "false_cutoff_pauses": "8/18",
+   "clips_cut": "7/12",
+   "end_latency_ms_median": 852.0000000000001,
+   "end_latency_ms_max": 896.0000000000003,
+   "timeouts_at_end": 0
+  }
+ },
+ "clips": {
+  "t_fr_euh": {
+   "eot": 4.76,
+   "silences": [
+    {
+     "start": 0.608,
+     "end": 0.768,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 1.056,
+     "end": 2.208,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 4.8,
+     "end": 6.9549375,
+     "is_end": true,
+     "points": []
+    }
+   ]
+  },
+  "t_fr_mid": {
+   "eot": 3.74,
+   "silences": [
+    {
+     "start": 0.896,
+     "end": 1.76,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 3.7760000000000002,
+     "end": 5.9566875,
+     "is_end": true,
+     "points": []
+    }
+   ]
+  },
+  "t_fr_two": {
+   "eot": 5.78,
+   "silences": [
+    {
+     "start": 1.696,
+     "end": 3.168,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 3.456,
+     "end": 4.192,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 5.824,
+     "end": 7.9773125,
+     "is_end": true,
+     "points": []
+    }
+   ]
+  },
+  "t_fr_et": {
+   "eot": 3.56,
+   "silences": [
+    {
+     "start": 1.504,
+     "end": 2.144,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 3.616,
+     "end": 5.758875,
+     "is_end": true,
+     "points": []
+    }
+   ]
+  },
+  "t_fr_pour": {
+   "eot": 3.68,
+   "silences": [
+    {
+     "start": 1.344,
+     "end": 2.432,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 3.744,
+     "end": 5.8865,
+     "is_end": true,
+     "points": []
+    }
+   ]
+  },
+  "t_fr_short": {
+   "eot": 1.56,
+   "silences": [
+    {
+     "start": 0.672,
+     "end": 0.832,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 1.6320000000000001,
+     "end": 3.7620625,
+     "is_end": true,
+     "points": []
+    }
+   ]
+  },
+  "t_fr_cmd": {
+   "eot": 0.76,
+   "silences": [
+    {
+     "start": 0.8,
+     "end": 2.9585625,
+     "is_end": true,
+     "points": []
+    }
+   ]
+  },
+  "t_fr_non": {
+   "eot": 0.28,
+   "silences": [
+    {
+     "start": 0.31999999999999995,
+     "end": 2.4735625,
+     "is_end": true,
+     "points": []
+    }
+   ]
+  },
+  "t_fr_list": {
+   "eot": 6.32,
+   "silences": [
+    {
+     "start": 0.5760000000000001,
+     "end": 0.608,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 0.768,
+     "end": 0.8,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 0.8320000000000001,
+     "end": 0.896,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 1.568,
+     "end": 2.816,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 3.072,
+     "end": 3.104,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 3.424,
+     "end": 4.224,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 4.864,
+     "end": 5.696,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 5.888,
+     "end": 5.92,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 6.368,
+     "end": 8.716375,
+     "is_end": true,
+     "points": []
+    }
+   ]
+  },
+  "t_en_could": {
+   "eot": 4.26,
+   "silences": [
+    {
+     "start": 1.536,
+     "end": 2.496,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 4.352,
+     "end": 6.495875,
+     "is_end": true,
+     "points": []
+    }
+   ]
+  },
+  "t_en_um": {
+   "eot": 2.42,
+   "silences": [
+    {
+     "start": 0.352,
+     "end": 1.248,
+     "is_end": false,
+     "points": []
+    },
+    {
+     "start": 2.496,
+     "end": 4.631625,
+     "is_end": true,
+     "points": []
+    }
+   ]
+  },
+  "t_en_cmd": {
+   "eot": 1.44,
+   "silences": [
+    {
+     "start": 1.536,
+     "end": 3.725375,
+     "is_end": true,
+     "points": []
+    }
+   ]
+  }
+ }
+}

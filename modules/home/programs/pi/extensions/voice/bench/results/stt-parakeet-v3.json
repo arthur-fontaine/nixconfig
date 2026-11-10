@@ -1,0 +1,89 @@
+{
+ "model": "parakeet-v3",
+ "repo": "mlx-community/parakeet-tdt-0.6b-v3",
+ "load_s": 35.19668937497772,
+ "wer": {
+  "fr": 0.18461538461538463,
+  "en": 0.05714285714285714
+ },
+ "terms": "8/19",
+ "decode_ms_median": 65.37681247573346,
+ "rtf": 0.016573491692641808,
+ "rss_peak_mb_above_base": 3566.71488,
+ "mlx_peak_mb": 2737.62437,
+ "stream": null,
+ "rows": [
+  {
+   "id": "fr1",
+   "out": "Tu peux lancer pnpm install dans le World Trade, puis faire un X build.",
+   "wer": 0.23076923076923078,
+   "decode_s": 0.11172387504484504,
+   "dur_s": 4.8730625,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "fr2",
+   "out": "Regarde le fichier default.nix et ajoute l'extension Voice dans la liste.",
+   "wer": 0.0,
+   "decode_s": 0.06627825001487508,
+   "dur_s": 4.6990625,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "fr3",
+   "out": "Le fauteuil ne s'affiche plus depuis le dernier commis, tu peux vérifier les tests.",
+   "wer": 0.14285714285714285,
+   "decode_s": 0.06795045803301036,
+   "dur_s": 4.7458125,
+   "terms": 2,
+   "hits": 0
+  },
+  {
+   "id": "fr4",
+   "out": "Crée une branche, fais un rebat sur main et pousse sur J-Hub.",
+   "wer": 0.25,
+   "decode_s": 0.06520133395679295,
+   "dur_s": 3.60775,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "fr5",
+   "out": "Je voudrais que le démon tourne en long cajant, avec un socket unique.",
+   "wer": 0.3076923076923077,
+   "decode_s": 0.059966333967167884,
+   "dur_s": 3.849,
+   "terms": 3,
+   "hits": 0
+  },
+  {
+   "id": "en1",
+   "out": "Can you run PNPM test in the work tree and then do a NYX build?",
+   "wer": 0.07142857142857142,
+   "decode_s": 0.04633087501861155,
+   "dur_s": 3.6220625,
+   "terms": 3,
+   "hits": 2
+  },
+  {
+   "id": "en2",
+   "out": "Rewind the last message and append what I just said.",
+   "wer": 0.0,
+   "decode_s": 0.06555229099467397,
+   "dur_s": 2.9214375,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "en3",
+   "out": "The TypeScript extension should talk to the demon over a web socket.",
+   "wer": 0.09090909090909091,
+   "decode_s": 0.04829404200427234,
+   "dur_s": 3.738875,
+   "terms": 3,
+   "hits": 2
+  }
+ ]
+}
