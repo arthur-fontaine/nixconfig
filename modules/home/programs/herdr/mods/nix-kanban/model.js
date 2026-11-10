@@ -21,10 +21,8 @@ export const FOLDED_BY_DEFAULT = ["backlog", "done"];
 /** Whether a sidebar section is folded: the person's choice, else the default. */
 export const isFolded = (folds, column) => folds?.[column] ?? FOLDED_BY_DEFAULT.includes(column);
 
-/** A To-do card's line: the scheduler's first reason, short (all of them go in the tooltip). */
-export function waitLabel(card) {
-  const w = card.waiting?.[0];
-  if (!w) return "next";
+/** A scheduler reason, in the words the sidebar and the board both show. */
+export function shortReason(w) {
   if (w === "no project picked") return "needs a project";
   if (/^RAM:/.test(w)) return "waiting: RAM";
   if (/^orchestrator /.test(w)) return "orchestrator busy";
@@ -36,6 +34,12 @@ export function waitLabel(card) {
   if (held) return `waiting: ${held[1]}`;
   return `waiting: ${w}`;
 }
+
+/** A To-do card's line: the scheduler's first reason, short (all of them go in the tooltip). */
+export const waitLabel = (card) => (card.waiting?.[0] ? shortReason(card.waiting[0]) : "next");
+
+/** Every reason a To-do card waits, short and once each, for the board's card. */
+export const waitLabels = (card) => [...new Set((card.waiting ?? []).map(shortReason))];
 
 /** A review summary's first line, for a card that has room for one. */
 export const firstLine = (text) => (text ?? "").split("\n").map((l) => l.trim()).find(Boolean) ?? "";

@@ -10,7 +10,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, settings, run, props, shared, setShared, spaces, openOverlay, closeOverlay, notify, pickFolder, layout, nextCommand } from "herdr";
-import { API, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces, SIDE_ORDER, isFolded, waitLabel, firstLine } from "./model.js";
+import { API, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces, SIDE_ORDER, isFolded, waitLabel, waitLabels, firstLine } from "./model.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // The sidebar's stack (layouts/nix.json) and this sidebar in it.
@@ -424,7 +424,8 @@ export default class Kanban extends View {
           .when(i === 0 && Boolean(c.factors?.notes), (e) => e.tooltip(c.factors.notes)).child(x)))
         .when(c.estimating, (e) => e.child(div().h(18).px(6).flex().items_center().text_size(10.5).text_color(t.dim).frames(["sizing up", "sizing up.", "sizing up..", "sizing up..."], 400)))))
       .when(c.column === "todo" && c.waiting.length > 0, (e) => e.child(v_flex().gap(2)
-        .children(c.waiting.map((w) => h_flex().gap(5).items_start().text_size(11.5).text_color(t.muted)
+        .tooltip(c.waiting.join("\n"))
+        .children(waitLabels(c).map((w) => h_flex().gap(5).items_start().text_size(11.5).text_color(t.muted)
           .child(svg(ICON("clock")).size(11).mt(2).flex_none().text_color(t.dim)).child(div().flex_1().min_w(0).child(w))))))
       .when(Boolean(c.error) && c.column === "todo", (e) => e.child(div().text_size(11.5).text_color(t.blocked).child(c.error)))
       .when(c.column === "in_progress" && Boolean(c.orchestrator), (e) => e.child(h_flex().id(`orch-${c.id}`).gap(6).items_center().text_size(11.5).text_color(t.muted)

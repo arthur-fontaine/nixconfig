@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { COLUMNS, SIDE_ORDER, byColumn, columnColor, factorChips, firstLine, glance, isFolded, kTokens, livePending, neighbor, parseNumber, spacedCode, unrecordedSpaces, waitLabel } from "../model.js";
+import { COLUMNS, SIDE_ORDER, byColumn, columnColor, factorChips, firstLine, glance, isFolded, kTokens, livePending, neighbor, parseNumber, spacedCode, unrecordedSpaces, waitLabel, waitLabels } from "../model.js";
 
 const card = (id, column, o = {}) => ({ id, column, priority: 1, createdAt: 0, movedAt: 0, startedAt: null, project: null, orchestrator: null, ...o });
 
@@ -72,6 +72,12 @@ test("a To-do card says, short, why it waits", () => {
   assert.equal(w("1/0 cards in progress"), "paused");
   assert.equal(w("ios-simulator held by K2"), "waiting: ios-simulator");
   assert.equal(w("no project picked"), "needs a project");
+});
+
+test("the board says the same, every reason once", () => {
+  assert.deepEqual(waitLabels({ waiting: ["no project picked", "2/0 cards in progress", "orchestrator busy with K4", "orchestrator is blocked"] }),
+    ["needs a project", "paused", "orchestrator busy"]);
+  assert.deepEqual(waitLabels({ waiting: [] }), []);
 });
 
 test("sidebar sections in workflow order", () => {
