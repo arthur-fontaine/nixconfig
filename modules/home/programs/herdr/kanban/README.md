@@ -74,6 +74,15 @@ Dragging a card to In progress by hand starts it at once, whatever the factors s
 sonnet`, no session, no tools) answers `{tokens, ramGB, exclusive, notes}` for the
 card, one card at a time in the background; the answer is cached on the card.
 
+**Edited by hand**: the card dialog (or `PATCH`, `update_card`, `herdr-kanban set`)
+changes a card's `estimate`, `factors.ramGB` (0-512) and `factors.exclusive` (lowercase
+slugs, deduplicated; any name works, the ones above are those Sonnet picks from). What
+differs from the card's values is listed in `factors.manual` (`estimate`, `ramGB`,
+`exclusive`): a background estimate keeps those as set and fills in the rest. "Estimate
+again" (`POST /api/cards/:id/estimate`) drops them for Sonnet's answer, and a new prompt
+drops them with the rest of the estimate. The scheduler uses edited values at its next pass,
+which the edit triggers.
+
 ## Local API
 
 `http://127.0.0.1:7742/api`, JSON. No auth (loopback only), but a `Host` other than
@@ -87,7 +96,7 @@ cross-origin without a preflight, which is never answered).
 | `GET /api/cards` | all cards |
 | `POST /api/cards` | `{title, prompt?, project?, priority? (0-3), column?, attachments? }` → the card (201) |
 | `GET /api/cards/:id` | one card |
-| `PATCH /api/cards/:id` | `{title?, prompt?, project?, priority?, column?, attachments?}` |
+| `PATCH /api/cards/:id` | `{title?, prompt?, project?, priority?, column?, attachments?, estimate? (tokens, 1 to 100M), factors?: {ramGB?, exclusive?}}`; `estimate` and `factors` are marked as edited (above) |
 | `DELETE /api/cards/:id` | the card and its attached files |
 | `POST /api/attachments` | `{path, name?}`: copies that local file (absolute path, 512 MB at most) into the staging area → `{id, name, size, mime, path}` (201) |
 | `DELETE /api/attachments/:id` | throws a staged file away |
@@ -104,7 +113,7 @@ cross-origin without a preflight, which is never answered).
 Errors are `{error}` with 400 (bad input), 404, 413, 415, 429 (pairing rate limit) or 500.
 
 A card: `{id ("k12"), title, prompt, project (key), priority (0 low … 3 urgent),
-estimate (tokens | null), estimating, factors ({ramGB, exclusive, notes} | null),
+estimate (tokens | null), estimating, factors ({ramGB, exclusive, notes, manual?} | null),
 column, createdAt, updatedAt, movedAt, startedAt, orchestrator ({terminal, name,
 space} | null), review (summary | null), waiting (reasons), error, attachments
 ([{id, name, size, mime, path}])}`. Times are ms since the epoch. A project key is nix-sidebar's repo key: `JSON [null, <git common dir>]`.
@@ -137,7 +146,7 @@ Pairing, like a Chromecast:
 
 Tools: `pair_start`, `pair_confirm`, `list_projects`, `list_cards {column?, project?}`,
 `get_card {id}`, `create_card {title, prompt?, project?, priority?, column?: backlog|todo}`,
-`update_card {id, …}`, `move_card {id, column}` (not to Review).
+`update_card {id, title?, prompt?, project?, priority?, estimate?, factors?: {ramGB?, exclusive?}}`, `move_card {id, column}` (not to Review).
 
 ## CLI
 
@@ -147,6 +156,7 @@ herdr-kanban ls [column] [--json]
 herdr-kanban show <id>
 herdr-kanban add <title> [--prompt <text>] [--project <name|key>] [--priority 0-3] [--todo]
 herdr-kanban move <id> <column>
+herdr-kanban set <id> [--tokens 250k] [--ram <GB>] [--exclusive ios-simulator,heavy-build | --exclusive none]
 herdr-kanban projects
 herdr-kanban add-project <folder>
 herdr-kanban daemon

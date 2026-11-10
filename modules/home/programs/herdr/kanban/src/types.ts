@@ -11,7 +11,12 @@ export interface Factors {
   /** Resources only one card may hold at a time: "ios-simulator", "heavy-build", ... */
   exclusive: string[];
   notes: string;
+  /** What the person set by hand (the card's estimate included): a background estimate keeps it. */
+  manual?: ManualField[];
 }
+
+export const MANUAL_FIELDS = ["estimate", "ramGB", "exclusive"] as const;
+export type ManualField = (typeof MANUAL_FIELDS)[number];
 
 export interface OrchestratorRef {
   terminal: string;

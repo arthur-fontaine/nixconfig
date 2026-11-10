@@ -3,7 +3,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync } from "node:fs";
 import { writeFile, rename } from "node:fs/promises";
 import { join } from "node:path";
-import { COLUMNS, DEFAULT_SETTINGS, type Card, type Column, type Factors, type PairedClient, type Priority, type Project, type Settings } from "./types.ts";
+import { COLUMNS, DEFAULT_SETTINGS, type Card, type Column, type Factors, type ManualField, type PairedClient, type Priority, type Project, type Settings } from "./types.ts";
 
 export class StoreError extends Error {
   status: number;
@@ -24,9 +24,19 @@ export interface CardInput {
   project?: string | null;
   priority?: number;
   column?: Column;
+  /** Set by hand on a card that exists: marked as the person's, kept by background estimates. */
+  estimate?: number;
+  factors?: { ramGB?: number; exclusive?: string[] };
 }
 
 const MAX_TEXT = 100_000;
+export const MAX_ESTIMATE = 100_000_000;
+export const MAX_RAM_GB = 512;
+/** An exclusive resource's name: "ios-simulator", "my-gpu". */
+export const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const MAX_SLUG = 40;
+
+const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
 
 export class Store {
   readonly dir: string;
@@ -123,9 +133,11 @@ export class Store {
 
   update(id: string, input: CardInput): Card {
     const c = this.must(id);
-    const { column, ...fields } = this.validate(input, false);
+    const { column, estimate, factors, ...fields } = this.validate(input, false);
+    // A new prompt is sized again from scratch, edited values included; edits sent with it still apply.
     if (fields.prompt !== undefined && fields.prompt !== c.prompt) { c.estimate = null; c.factors = null; }
     Object.assign(c, fields, { updatedAt: this.now() });
+    this.edit(c, estimate, factors);
     if (column && column !== c.column) this.move(id, column);
     else this.changed_();
     return c;
@@ -171,8 +183,30 @@ export class Store {
     return c;
   }
 
+  // Only what differs is marked as the person's: saving the dialog unchanged marks nothing.
+  private edit(c: Card, estimate: number | undefined, factors: CardInput["factors"]) {
+    if (estimate === undefined && !factors) return;
+    const f: Factors = c.factors ? { ...c.factors } : { ramGB: 0, exclusive: [], notes: "" };
+    const manual = new Set(f.manual ?? []);
+    // Not sized yet: there is nothing to compare with, whatever is sent is the person's.
+    const fresh = !c.factors;
+    if (estimate !== undefined && estimate !== c.estimate) { c.estimate = estimate; manual.add("estimate"); }
+    if (factors?.ramGB !== undefined && (fresh || factors.ramGB !== f.ramGB)) { f.ramGB = factors.ramGB; manual.add("ramGB"); }
+    if (factors?.exclusive !== undefined && (fresh || !sameSet(factors.exclusive, f.exclusive))) { f.exclusive = factors.exclusive; manual.add("exclusive"); }
+    if (manual.size) c.factors = { ...f, manual: [...manual] };
+  }
+
+  /** Sonnet's answer: what the person edited stays as they set it. */
   setEstimate(id: string, tokens: number, factors: Factors) {
-    return this.patch(id, { estimate: Math.round(tokens), factors, estimating: false });
+    const c = this.must(id);
+    const manual = new Set<ManualField>(c.factors?.manual ?? []);
+    if (!manual.size) return this.patch(id, { estimate: Math.round(tokens), factors, estimating: false });
+    const keep = <K extends ManualField>(k: K, theirs: any, mine: any) => (manual.has(k) ? mine : theirs);
+    return this.patch(id, {
+      estimate: keep("estimate", Math.round(tokens), c.estimate),
+      factors: { ...factors, ramGB: keep("ramGB", factors.ramGB, c.factors!.ramGB), exclusive: keep("exclusive", factors.exclusive, c.factors!.exclusive), manual: [...manual] },
+      estimating: false,
+    });
   }
 
   settings(): Settings { return this.state.settings; }
@@ -202,7 +236,7 @@ export class Store {
 
   private validate(input: CardInput, creating: boolean) {
     const out: CardInput & { priority?: Priority } = {};
-    const known = ["title", "prompt", "project", "priority", "column"];
+    const known = ["title", "prompt", "project", "priority", "column", ...(creating ? [] : ["estimate", "factors"])];
     for (const k of Object.keys(input)) if (!known.includes(k)) throw new StoreError(`unknown field ${k}`);
     if (input.title !== undefined || creating) {
       if (typeof input.title !== "string" || !input.title.trim()) throw new StoreError("a card needs a title");
@@ -224,6 +258,30 @@ export class Store {
       if (!COLUMNS.includes(input.column)) throw new StoreError(`no column ${input.column}`);
       if (input.column === "review") throw new StoreError("only `herdr-kanban review` moves a card to Review");
       out.column = input.column;
+    }
+    if (input.estimate !== undefined) {
+      if (!Number.isInteger(input.estimate) || input.estimate < 1 || input.estimate > MAX_ESTIMATE) throw new StoreError(`estimate is a whole number of tokens, 1 to ${MAX_ESTIMATE}`);
+      out.estimate = input.estimate;
+    }
+    if (input.factors !== undefined) out.factors = this.validateFactors(input.factors);
+    return out;
+  }
+
+  private validateFactors(f: unknown): NonNullable<CardInput["factors"]> {
+    if (!f || typeof f !== "object" || Array.isArray(f)) throw new StoreError("factors is an object: { ramGB?, exclusive? }");
+    const out: NonNullable<CardInput["factors"]> = {};
+    for (const k of Object.keys(f)) if (k !== "ramGB" && k !== "exclusive") throw new StoreError(`factors.${k} can't be set (only ramGB and exclusive)`);
+    const { ramGB, exclusive } = f as Record<string, unknown>;
+    if (ramGB !== undefined) {
+      if (typeof ramGB !== "number" || !Number.isFinite(ramGB) || ramGB < 0 || ramGB > MAX_RAM_GB) throw new StoreError(`factors.ramGB is 0 to ${MAX_RAM_GB} GB`);
+      out.ramGB = ramGB;
+    }
+    if (exclusive !== undefined) {
+      if (!Array.isArray(exclusive)) throw new StoreError("factors.exclusive is a list of resource names");
+      for (const x of exclusive) {
+        if (typeof x !== "string" || x.length > MAX_SLUG || !SLUG.test(x)) throw new StoreError(`factors.exclusive: ${JSON.stringify(x)} isn't a resource name (lowercase letters, digits and dashes, ${MAX_SLUG} at most)`);
+      }
+      out.exclusive = [...new Set(exclusive as string[])];
     }
     return out;
   }
