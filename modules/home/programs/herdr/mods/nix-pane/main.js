@@ -51,10 +51,8 @@ export default class Pane extends View {
     const p = this.me();
     if (!p) return div();
     const name = ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
-    // Pi as the π tile the tabs and sidebar draw.
-    const pic = p.app === "pi"
-      ? div().size(14).flex_none().rounded(3).bg(t.raised).flex().items_center().justify_center().font_family("JetBrains Mono").font_bold().text_size(10).text_color(p.focused ? t.foreground : t.muted).child("π")
-      : icon(p.program, 14, t.dim);
+    // The program's icon; Pi's keeps the tile's focused/muted colors.
+    const pic = icon(p.program, 14, p.app === "pi" ? (p.focused ? t.foreground : t.muted) : t.dim);
     const st = p.status;
     const pane = p.pane;
     return h_flex()

@@ -4,7 +4,7 @@
 // extension), else from its title. The figures live in model.js; this view only draws them.
 // Four key figures, each opening its detail in place, then the tool calls (spec-3b, "A");
 // a selected call opens below the list with its arguments, result and timing.
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify } from "herdr";
 import { readFile } from "fs/promises";
@@ -216,9 +216,10 @@ export default class Info extends View {
     return svg(ICON("loader")).size(size).flex_none().text_color(t.working).spin(900);
   }
 
-  piTile(t) {
-    return div().size(14).flex_none().rounded(3).bg(t.raised).flex().items_center().justify_center()
-      .font_family(MONO).font_bold().text_size(10).text_color(t.foreground).child("π");
+  // Pi's program mark as Herdr draws it (the shipped mark when the pane's program isn't at hand).
+  piMark(t) {
+    const p = this.pane?.program?.icon ? this.pane.program : { icon: "icons/pi.svg", tint: true };
+    return p.tint ? svg(p.icon).size(14).flex_none().text_color(t.foreground) : image(p.icon).w(14).h(14).flex_none();
   }
 
   bar(t, ratio, color) {
@@ -427,7 +428,7 @@ export default class Info extends View {
     }
     const meta = s && f.started ? [[s.model ?? "model"], " · thinking ", [s.thinking ?? "—"], " · ", [`${s.messages} msgs`], " · ", [infoAge(now - s.started)]] : ["…"];
     rows.push(v_flex().px(16).py(10).gap(4).border_b(1).border_color(t.border)
-      .child(h_flex().gap(8).items_center().child(this.piTile(t))
+      .child(h_flex().gap(8).items_center().child(this.piMark(t))
         .child(div().flex_1().min_w(0).truncate().text_size(14).font_medium().text_color(t.foreground).child(s?.name ?? infoParseTitle(this.pane.title)?.name ?? "Pi"))
         .when(Boolean(f.working), (e) => e.child(this.spinner(t, 14))))
       .child(this.mixed(t, meta)));

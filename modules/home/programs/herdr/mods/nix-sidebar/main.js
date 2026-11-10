@@ -9,6 +9,8 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, terminals, machines, run, openOverlay, exec, theme, window, layout, watchFolder, setAgentOrder, pickFolder, home, shared, setShared, focused, nextCommand } from "herdr";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
+// Pi's mark as Herdr's program table has it, for rows with no program at hand (workers).
+const PI = { icon: "icons/pi.svg", tint: true };
 // Repo state can only change on its own this rarely while nothing happens here.
 const FALLBACK = 60000;
 
@@ -381,14 +383,17 @@ export default class Sidebar extends View {
     return null;
   }
 
-  // A program's mark: Pi as a small π tile, other agents their glyph, terminals the prompt icon.
+  // A program's mark: agents their glyph as Herdr draws it, terminals the prompt icon.
   picture(lead, t, size, strong = false) {
     const p = lead?.program;
-    if (lead?.app === "pi" || p?.key === "pi")
-      return div().size(14).flex_none().rounded(3).bg(t.raised).flex().items_center().justify_center()
-        .font_family("JetBrains Mono").font_bold().text_size(10).text_color(strong ? t.foreground : t.muted).child("π");
+    if (lead?.app === "pi" || p?.key === "pi") return this.mark(p?.icon ? p : PI, t, size, strong);
     if (lead?.mod) return svg(ICON("git-compare")).size(13).flex_none().text_color(t.dim);
     if (!p?.icon || p.shell) return svg(ICON("terminal")).size(13).flex_none().text_color(t.dim);
+    return this.mark(p, t, size, strong);
+  }
+
+  // The glyph: tinted in the row's color for a one-color mark, else the picture.
+  mark(p, t, size, strong) {
     return p.tint ? svg(p.icon).size(size).flex_none().text_color(strong ? t.foreground : t.muted) : image(p.icon).w(size).h(size).flex_none();
   }
 
