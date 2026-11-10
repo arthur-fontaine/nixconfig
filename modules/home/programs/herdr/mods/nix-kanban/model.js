@@ -152,3 +152,52 @@ export function pastedName(d = new Date()) {
   const p = (n) => String(n).padStart(2, "0");
   return `Pasted image ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} at ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}.png`;
 }
+
+// ---- A card's estimate, edited in its dialog ----
+
+/** The names Sonnet picks exclusive resources from: the daemon's estimator.ts KNOWN_EXCLUSIVE. */
+export const KNOWN_EXCLUSIVE = ["ios-simulator", "android-emulator", "heavy-build", "browser", "docker"];
+// The daemon's bounds (kanban/src/store.ts).
+const MAX_ESTIMATE = 100_000_000;
+const MAX_RAM_GB = 512;
+
+/** Whether the person set some of the card's estimate by hand. */
+export const isEdited = (card) => (card.factors?.manual?.length ?? 0) > 0;
+
+/** The dialog's fields for a card's estimate, as text and a list. */
+export function estimateDraft(card) {
+  return {
+    tokens: card.estimate != null ? kTokens(card.estimate) : "",
+    ram: card.factors ? String(Math.round(card.factors.ramGB * 10) / 10) : "",
+    exclusive: [...(card.factors?.exclusive ?? [])],
+  };
+}
+
+/**
+ * What Save sends for the estimate: only the fields that differ from what the dialog
+ * showed (the tokens field shows "412k", not the exact count), or the first error.
+ */
+export function estimateEdits(draft, initial) {
+  const body = {};
+  const factors = {};
+  if (draft.tokens.trim() !== initial.tokens) {
+    const n = parseNumber(draft.tokens, { min: 1, integer: true });
+    if (n === null || n > MAX_ESTIMATE) return { error: "Tokens: a whole number, as 250k, 1.5M or 250000 (100M at most)." };
+    body.estimate = n;
+  }
+  if (draft.ram.trim() !== initial.ram) {
+    const n = parseNumber(draft.ram);
+    if (n === null || n > MAX_RAM_GB) return { error: `RAM: a number of GB, 0 to ${MAX_RAM_GB}.` };
+    factors.ramGB = Math.round(n * 10) / 10;
+  }
+  const a = draft.exclusive, b = initial.exclusive;
+  if (a.length !== b.length || a.some((x) => !b.includes(x))) factors.exclusive = [...a];
+  if (Object.keys(factors).length) body.factors = factors;
+  return { body };
+}
+
+/** A resource typed in the dialog, as the daemon takes it ("My GPU" → "my-gpu"), or null. */
+export function resourceName(text) {
+  const s = String(text).trim().toLowerCase().replace(/[\s_]+/g, "-").replace(/-+/g, "-");
+  return s.length <= 40 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s) ? s : null;
+}

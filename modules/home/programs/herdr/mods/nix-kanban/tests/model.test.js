@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { API, COLUMNS, SIDE_ORDER, apiBase, byColumn, fileSize, isImage, pastedName, pickedPaths, columnColor, factorChips, firstLine, glance, isFolded, kTokens, livePending, neighbor, parseNumber, spacedCode, unrecordedSpaces, waitLabel, waitLabels } from "../model.js";
+import { KNOWN_EXCLUSIVE, estimateDraft, estimateEdits, isEdited, resourceName, API, COLUMNS, SIDE_ORDER, apiBase, byColumn, fileSize, isImage, pastedName, pickedPaths, columnColor, factorChips, firstLine, glance, isFolded, kTokens, livePending, neighbor, parseNumber, spacedCode, unrecordedSpaces, waitLabel, waitLabels } from "../model.js";
 
 const card = (id, column, o = {}) => ({ id, column, priority: 1, createdAt: 0, movedAt: 0, startedAt: null, project: null, orchestrator: null, ...o });
 
@@ -128,4 +128,46 @@ test("files picked in the dialog, and a pasted image's name", () => {
   assert.deepEqual(pickedPaths("/a/b c.png\n/d/e.mp4\n\n"), ["/a/b c.png", "/d/e.mp4"]);
   assert.deepEqual(pickedPaths(""), []);
   assert.equal(pastedName(new Date(2026, 10, 10, 9, 5, 3)), "Pasted image 2026-11-10 at 09.05.03.png");
+});
+
+test("the dialog's estimate fields start from the card", () => {
+  const c = { estimate: 412_345, factors: { ramGB: 6, exclusive: ["ios-simulator", "heavy-build"], notes: "n" } };
+  assert.deepEqual(estimateDraft(c), { tokens: "412k", ram: "6", exclusive: ["ios-simulator", "heavy-build"] });
+  assert.deepEqual(estimateDraft({ estimate: null, factors: null }), { tokens: "", ram: "", exclusive: [] });
+});
+
+test("Save sends only the estimate fields the person changed", () => {
+  const c = { estimate: 412_345, factors: { ramGB: 6, exclusive: ["ios-simulator", "heavy-build"], notes: "n" } };
+  const initial = estimateDraft(c);
+  // Untouched, even though "412k" isn't the exact count: nothing.
+  assert.deepEqual(estimateEdits(initial, initial), { body: {} });
+  assert.deepEqual(estimateEdits({ ...initial, exclusive: ["heavy-build", "ios-simulator"] }, initial), { body: {} });
+  assert.deepEqual(estimateEdits({ ...initial, tokens: "250k", exclusive: ["heavy-build"] }, initial),
+    { body: { estimate: 250_000, factors: { exclusive: ["heavy-build"] } } });
+  assert.deepEqual(estimateEdits({ ...initial, tokens: " 1.5M ", ram: "0" }, initial), { body: { estimate: 1_500_000, factors: { ramGB: 0 } } });
+  assert.deepEqual(estimateEdits({ ...initial, tokens: "120000", ram: "2.25" }, initial), { body: { estimate: 120_000, factors: { ramGB: 2.3 } } });
+});
+
+test("bad estimate fields are named, not sent", () => {
+  const initial = estimateDraft({ estimate: 1000, factors: { ramGB: 0, exclusive: [], notes: "" } });
+  for (const tokens of ["", "lots", "0", "-3", "200M"]) assert.match(estimateEdits({ ...initial, tokens }, initial).error, /Tokens/, tokens);
+  for (const ram of ["", "x", "-1", "600"]) assert.match(estimateEdits({ ...initial, ram }, initial).error, /RAM/, ram);
+  // A card not sized yet may stay so.
+  const none = estimateDraft({ estimate: null, factors: null });
+  assert.deepEqual(estimateEdits(none, none), { body: {} });
+  assert.deepEqual(estimateEdits({ ...none, ram: "3" }, none), { body: { factors: { ramGB: 3 } } });
+});
+
+test("a typed resource becomes a slug, or nothing", () => {
+  assert.equal(resourceName(" My GPU "), "my-gpu");
+  assert.equal(resourceName("ios_simulator"), "ios-simulator");
+  assert.equal(resourceName("!!"), null);
+  assert.equal(resourceName("x".repeat(41)), null);
+  assert.ok(KNOWN_EXCLUSIVE.includes("ios-simulator"));
+});
+
+test("edited cards are told apart", () => {
+  assert.equal(isEdited({ factors: { manual: ["exclusive"] } }), true);
+  assert.equal(isEdited({ factors: { manual: [] } }), false);
+  assert.equal(isEdited({ factors: null }), false);
 });

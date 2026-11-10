@@ -10,7 +10,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, settings, run, props, shared, setShared, spaces, openOverlay, closeOverlay, notify, pickFolder, layout, nextCommand, exec, appHome } from "herdr";
-import { apiBase, fileSize, isImage, pickedPaths, pastedName, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces, SIDE_ORDER, isFolded, waitLabel, waitLabels, firstLine } from "./model.js";
+import { KNOWN_EXCLUSIVE, estimateDraft, estimateEdits, isEdited, resourceName, apiBase, fileSize, isImage, pickedPaths, pastedName, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces, SIDE_ORDER, isFolded, waitLabel, waitLabels, firstLine } from "./model.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // An image attachment's thumbnail height in the card dialog.
@@ -125,6 +125,7 @@ export default class Kanban extends View {
 
   react(s, cx) {
     if (this.mode === "edit" && !this.loaded) this.fillEditor(s, cx);
+    else if (this.mode === "edit") this.followEstimate(s);
     if (this.mode === "settings" && !this.fields) this.fillSettings(s);
     // For the sidebar switcher's needs-you dot.
     const review = s.cards.filter((c) => c.column === "review").length;
@@ -458,6 +459,8 @@ export default class Kanban extends View {
       .when(chips.length > 0 || c.estimating, (e) => e.child(h_flex().flex_wrap().gap(4)
         .children(chips.map((x, i) => div().id(`chip-${c.id}-${i}`).h(18).px(6).rounded(4).bg(t.raised).flex().items_center().text_size(10.5).text_color(t.muted)
           .when(i === 0 && Boolean(c.factors?.notes), (e) => e.tooltip(c.factors.notes)).child(x)))
+        .when(isEdited(c), (e) => e.child(div().id(`edited-${c.id}`).h(18).flex().items_center().text_color(t.dim).tooltip("Estimate set by hand")
+          .child(svg(ICON("pen")).size(10))))
         .when(c.estimating, (e) => e.child(div().h(18).px(6).flex().items_center().text_size(10.5).text_color(t.dim).frames(["sizing up", "sizing up.", "sizing up..", "sizing up..."], 400)))))
       .when(c.column === "todo" && c.waiting.length > 0, (e) => e.child(v_flex().gap(2)
         .tooltip(c.waiting.join("\n"))
@@ -500,6 +503,15 @@ export default class Kanban extends View {
     this.project = null;
     this.priority = 1;
     this.column = p.column === "backlog" ? "backlog" : "todo";
+    // The estimate's fields: what they showed when filled (`sized`), to send only what changed.
+    this.tokens = InputState.new({ placeholder: "not sized" });
+    this.ram = InputState.new({ placeholder: "0" });
+    this.exclusive = [];
+    this.sized = null;
+    this.sizedFrom = null;
+    this.adding = false;
+    this.other = InputState.new({ placeholder: "another…" });
+    this.other.on("submit", (_e, cx) => this.addOther(cx));
     this.loaded = this.cardId === null;
   }
 
@@ -513,10 +525,95 @@ export default class Kanban extends View {
     this.priority = c.priority;
     this.column = c.column;
     this.files = (c.attachments ?? []).map((a) => ({ ...a }));
+    this.fillEstimate(c);
     cx.spawn(async (cx) => {
       for (const f of this.files) await this.preview(f);
       cx.notify();
     });
+  }
+
+  // ---- The estimate ----
+
+  fillEstimate(c) {
+    this.sized = estimateDraft(c);
+    this.sizedFrom = JSON.stringify([c.estimate, c.factors]);
+    this.tokens.set_value(this.sized.tokens);
+    this.ram.set_value(this.sized.ram);
+    this.exclusive = [...this.sized.exclusive];
+  }
+
+  draftNow() { return { tokens: this.tokens.value(), ram: this.ram.value(), exclusive: this.exclusive }; }
+
+  // A new estimate (Estimate again, Sonnet answering) shows in fields the person hasn't touched.
+  followEstimate(s) {
+    const c = s.cards.find((x) => x.id === this.cardId);
+    if (!c || !this.sized || JSON.stringify([c.estimate, c.factors]) === this.sizedFrom) return;
+    const e = estimateEdits(this.draftNow(), this.sized);
+    if (!e.error && !Object.keys(e.body).length) this.fillEstimate(c);
+  }
+
+  addResource(name, cx) {
+    if (!this.exclusive.includes(name)) this.exclusive = [...this.exclusive, name];
+    this.adding = false;
+    this.error = null;
+    cx.notify();
+  }
+
+  addOther(cx) {
+    const text = this.other.value().trim();
+    if (!text) return;
+    const name = resourceName(text);
+    if (!name) { this.error = "A resource is a short name: letters, digits and dashes."; cx.notify(); return; }
+    this.other.set_value("");
+    this.addResource(name, cx);
+  }
+
+  estimateSection(c, t) {
+    const small = (state, w) => Input.new(state).w(w).h(28).px(8).items_center().rounded(6).border_1().border_color(t.input).bg(t.background).text_size(12.5);
+    const unit = (text) => div().text_size(11.5).text_color(t.dim).child(text);
+    const resource = (x) => h_flex().id(`ex-${x}`).h(24).pl(8).pr(3).gap(4).flex_none().items_center().rounded(5).bg(t.raised).text_size(11.5)
+      .child(x)
+      .child(div().id(`ex-rm-${x}`).size(18).rounded(9).flex().items_center().justify_center().text_color(t.muted).cursor_pointer().tooltip(`Remove ${x}`)
+        .hover((h) => h.bg(t.hover).text_color(t.foreground))
+        .on_click((_e, cx) => { cx.stop_propagation(); this.exclusive = this.exclusive.filter((y) => y !== x); cx.notify(); })
+        .child(svg(ICON("x")).size(10)));
+    const suggest = (x) => div().id(`ex-add-${x}`).h(24).px(8).flex_none().flex().items_center().rounded(5).border_1().border_color(t.border)
+      .text_size(11.5).text_color(t.muted).cursor_pointer().hover((h) => h.bg(t.hover).text_color(t.foreground))
+      .on_click((_e, cx) => this.addResource(x, cx)).child(x);
+    const missing = KNOWN_EXCLUSIVE.filter((x) => !this.exclusive.includes(x));
+    const edited = isEdited(c);
+    return v_flex().gap(8)
+      .child(h_flex().gap(8).items_center()
+        .child(div().text_size(12).font_medium().text_color(t.muted).child("Estimate"))
+        .when(edited, (e) => e.child(h_flex().id("edited").h(18).px(6).gap(4).items_center().rounded(4).border_1().border_color(t.border)
+          .text_size(10.5).text_color(t.muted).tooltip(`Set by hand: ${c.factors.manual.map((m) => ({ estimate: "tokens", ramGB: "RAM", exclusive: "resources" })[m] ?? m).join(", ")}. Kept when Sonnet estimates in the background; Estimate again replaces it.`)
+          .child(svg(ICON("pen")).size(9)).child("edited")))
+        .when(c.estimating, (e) => e.child(div().text_size(11).text_color(t.dim).child("Sonnet is sizing it up…")))
+        .child(div().flex_1())
+        .child(div().id("reestimate").text_size(11).text_color(t.accent).cursor_pointer().hover((x) => x.opacity(0.8))
+          .tooltip(edited ? "Ask Sonnet again: its answer replaces the values set by hand" : "Ask Sonnet again")
+          .on_click((_e, cx) => this.act(cx, "POST", `/cards/${c.id}/estimate`, {})).child("Estimate again")))
+      .child(h_flex().gap(8).items_center()
+        .child(small(this.tokens, 96)).child(unit("tokens"))
+        .child(div().w(10))
+        .child(small(this.ram, 60)).child(unit("GB of RAM"))
+        .child(div().flex_1())
+        .child(div().text_size(11).text_color(t.dim).child("250k, 1.5M or 250000")))
+      .child(h_flex().id("exclusive").gap(6).items_center().flex_wrap()
+        .child(div().text_size(11.5).text_color(t.dim).tooltip("Only one running card may hold each").child("Holds"))
+        .children(this.exclusive.map(resource))
+        .when(!this.exclusive.length, (e) => e.child(div().text_size(11.5).text_color(t.dim).child("no exclusive resource")))
+        .when(!this.adding, (e) => e.child(h_flex().id("ex-add").h(24).px(7).gap(4).flex_none().items_center().rounded(5).text_size(11.5).text_color(t.muted)
+          .cursor_pointer().hover((h) => h.bg(t.hover).text_color(t.foreground))
+          .on_click((_e, cx) => { this.adding = true; cx.notify(); })
+          .child(svg(ICON("plus")).size(11)).child("Add"))))
+      .when(this.adding, (e) => e.child(h_flex().id("ex-menu").gap(6).items_center().flex_wrap().p(6).rounded(6).border_1().border_color(t.border).bg(t.background)
+        .children(missing.map(suggest))
+        .child(Input.new(this.other).w(120).h(24).px(8).items_center().rounded(5).border_1().border_color(t.input).text_size(11.5))
+        .child(this.button("ex-other", "Add", (cx) => this.addOther(cx), t))
+        .child(this.iconButton("ex-close", "x", "Close", (cx) => { this.adding = false; cx.notify(); }, t))))
+      // Its own full-width line: a text in a wrapping row keeps its one-line width and is cut.
+      .when(Boolean(c.factors?.notes), (e) => e.child(div().w_full().text_size(11).text_color(t.dim).child(c.factors.notes)));
   }
 
   // ---- Attachments ----
@@ -636,6 +733,11 @@ export default class Kanban extends View {
     const body = { title: this.title.value().trim(), prompt: this.prompt.value(), project: this.project, priority: this.priority,
       attachments: this.files.map((f) => f.id) };
     if (!body.title) { this.error = "A card needs a title."; cx.notify(); return; }
+    if (this.cardId && this.sized) {
+      const e = estimateEdits(this.draftNow(), this.sized);
+      if (e.error) { this.error = e.error; cx.notify(); return; }
+      Object.assign(body, e.body);
+    }
     // Saved, the card owns its staged files: closing mustn't throw them away.
     const done = () => { this.staged.clear(); this.closeDialog(); };
     if (this.cardId) this.act(cx, "PATCH", `/cards/${this.cardId}`, body, done);
@@ -650,7 +752,6 @@ export default class Kanban extends View {
       .child(child);
     const frame = (el) => el.px(10).rounded(6).border_1().border_color(t.input).bg(t.background).text_color(t.foreground);
     const projects = s?.projects ?? [];
-    const chips = c ? factorChips(c) : [];
     return v_flex().id("editor").size_full().p(18).gap(14).bg(t.popover).text_size(13).text_color(t.foreground)
       // Files from Finder, anywhere on the dialog.
       .on_drop((e, cx) => { if (e.paths?.length) cx.spawn(async (cx) => this.attach(cx, e.paths.map((path) => ({ path })))); })
@@ -682,14 +783,7 @@ export default class Kanban extends View {
       .child(h_flex().gap(18).items_end()
         .child(field("Priority", this.segmented("prio", PRIORITIES.map((n, i) => [i, n]), this.priority, (v) => { this.priority = v; }, t)))
         .when(!c, (e) => e.child(field("Start", this.segmented("col", [["todo", "As soon as possible"], ["backlog", "Keep as an idea"]], this.column, (v) => { this.column = v; }, t)))))
-      .when(Boolean(c), (e) => e.child(v_flex().gap(6).child(h_flex().gap(6).items_center().flex_wrap()
-        .children(chips.map((x) => div().h(20).px(7).rounded(4).bg(t.raised).flex().items_center().text_size(11).text_color(t.muted).child(x)))
-        .when(c.estimating, (e) => e.child(div().text_size(11).text_color(t.dim).child("Sonnet is sizing it up…")))
-        .when(!c.estimating && c.estimate == null, (e) => e.child(div().text_size(11).text_color(t.dim).child("Not estimated yet.")))
-        .child(div().id("reestimate").text_size(11).text_color(t.accent).cursor_pointer().hover((x) => x.opacity(0.8))
-          .on_click((_e, cx) => this.act(cx, "POST", `/cards/${c.id}/estimate`, {})).child("Estimate again")))
-        // Its own full-width line: a text in the wrapping chip row keeps its one-line width and is cut.
-        .when(Boolean(c.factors?.notes), (e) => e.child(div().w_full().text_size(11).text_color(t.dim).child(c.factors.notes)))))
+      .when(Boolean(c), (e) => e.child(this.estimateSection(c, t)))
       .when(Boolean(c?.review), (e) => e.child(div().pl(8).border_l(2).border_color(columnColor(t, "review")).text_size(12).child(c.review)))
       .when(Boolean(this.error), (e) => e.child(div().text_size(12).text_color(t.blocked).child(this.error))))
       .child(h_flex().gap(8).items_center()
