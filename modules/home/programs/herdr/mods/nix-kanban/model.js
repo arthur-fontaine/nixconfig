@@ -126,3 +126,29 @@ export function unrecordedSpaces(cards, recorded, liveSpaceIds) {
   }
   return out;
 }
+
+/** The daemon's API: the launchd one, or a test daemon's port (a `port` prop). */
+export function apiBase(port) {
+  const n = Number(port);
+  return Number.isInteger(n) && n > 0 && n < 65536 ? `http://127.0.0.1:${n}/api` : API;
+}
+
+/** "900 B", "117 KB", "3.2 MB": an attachment's size. */
+export function fileSize(n) {
+  if (n < 1024) return `${n} B`;
+  const [v, unit] = n < 1024 ** 2 ? [n / 1024, "KB"] : n < 1024 ** 3 ? [n / 1024 ** 2, "MB"] : [n / 1024 ** 3, "GB"];
+  return `${v < 10 ? Math.round(v * 10) / 10 : Math.round(v)} ${unit}`;
+}
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|heic|bmp|tiff?|svg)$/i;
+/** Whether an attachment shows as a thumbnail (others as a chip). */
+export const isImage = (a) => /^image\//.test(a.mime ?? "") || IMAGE_EXT.test(a.name ?? "");
+
+/** The file picker's answer: one POSIX path a line. */
+export const pickedPaths = (stdout) => String(stdout).split("\n").filter(Boolean);
+
+/** As macOS names screenshots: "Pasted image 2026-11-10 at 09.05.03.png". */
+export function pastedName(d = new Date()) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `Pasted image ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} at ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}.png`;
+}
