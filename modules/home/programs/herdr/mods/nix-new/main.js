@@ -5,12 +5,14 @@
 // Typing on level 1 also searches the sessions of every worktree of the project.
 // Props: { repo?, name?, folder?, machine?, space?, level?, path?, branch?, worktrees? } (level 2 opens on `space`, or `path`;
 // worktrees: the sidebar's prefetched checkouts, so the list shows at once).
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { run, props, closeOverlay, theme, spaces, panes, exec, home, knownAgents, keys, window, shared } from "herdr";
 import { repoOf, createWorktree, defaultBranch, remoteOnly, slug } from "../_lib/repo.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
+// Pi's mark as Herdr's program table has it, for when the agent list hasn't answered yet.
+const PI = { icon: "icons/pi.svg", tint: true };
 const HEIGHT = 404;
 // Not the person's own chats: orchestrators ("Orchestrator" before they were named after their
 // worktree, "<worktree>-orchestrator" since), and pi-subagents' workers ("general-purpose#534df88b").
@@ -360,9 +362,10 @@ export default class New extends View {
     if (k === "backspace" && this.here && !this.query && this.emptyAt !== null && Date.now() - this.emptyAt > 80) { cx.stop_propagation(); return this.up(cx); }
   }
 
-  tile(t, strong) {
-    return div().size(14).flex_none().rounded(3).bg(t.raised).flex().items_center().justify_center()
-      .font_family("JetBrains Mono").font_bold().text_size(10).text_color(strong ? t.foreground : t.muted).child("π");
+  // A row's mark: the agent's program icon as Herdr draws it (Pi's shipped mark without one).
+  tile(t, strong, program = this.agent) {
+    const p = program?.icon ? program : PI;
+    return p.tint ? svg(p.icon).size(14).flex_none().text_color(strong ? t.foreground : t.muted) : image(p.icon).w(14).h(14).flex_none();
   }
 
   status(t, status) {
@@ -406,7 +409,7 @@ export default class New extends View {
     if (r.kind === "session") {
       const open = this.openTab(r);
       return el.h(30).text_size(12.5).tooltip(r.label)
-        .child(this.tile(t, Boolean(open)))
+        .child(this.tile(t, Boolean(open), this.agent?.key === "pi" ? this.agent : null))
         .child(h_flex().flex_1().min_w(0).items_baseline()
           .child(div().min_w(0).truncate().text_color(r.named ? t.foreground : t.muted).child(r.label))
           .when(!this.here, (e) => e.child(div().flex_none().ml(6).text_size(11).text_color(t.dim).child(r.branch))))

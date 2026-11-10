@@ -9,11 +9,13 @@ function piSession(title) {
 }
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
+// Pi's mark as Herdr's program table has it, for when the pane's program isn't at hand.
+const PI = { icon: "icons/pi.svg", tint: true };
 
-// Pi's program glyph: a π in a small raised tile, as the sidebar draws it.
-function piTile(t, on) {
-  return div().size(14).flex_none().rounded(3).bg(t.raised).flex().items_center().justify_center()
-    .font_family("JetBrains Mono").font_bold().text_size(10).text_color(on ? t.foreground : t.muted).child("π");
+// Pi's program mark, as Herdr draws it for any agent: its icon, tinted for a one-color glyph.
+function piMark(t, program, on) {
+  const p = program?.icon ? program : PI;
+  return p.tint ? svg(p.icon).size(14).flex_none().text_color(on ? t.foreground : t.muted) : image(p.icon).size(14).flex_none();
 }
 
 function find(node, id) {
@@ -99,7 +101,7 @@ export default class Tabs extends View {
           else run("tab.select", { id: c.id });
         })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "nix-menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: space.id } } }); })
-        .when(lead?.app === "pi", el => el.child(piTile(t, c.active)))
+        .when(lead?.app === "pi", el => el.child(piMark(t, lead?.program, c.active)))
         .when(lead?.app !== "pi" && Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).flex_none().text_color(t.dim) : image(program.icon).size(14).flex_none()))
         .child(div().max_w(170).truncate().child(c.zoomed ? `${name} Z` : name))
         .when(c.status === "working", el => el.child(svg(ICON("loader")).size(12).flex_none().text_color(t.working).spin(900)))
