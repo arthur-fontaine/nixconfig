@@ -3,12 +3,14 @@
 
 export const API = "http://127.0.0.1:7742/api";
 
+// icon: one of nix-head's icons, the same wherever the column shows. As Linear and GitHub
+// Projects: a circle that fills as the work goes, dashed while it's only an idea.
 export const COLUMNS = [
-  { id: "backlog", name: "Backlog" },
-  { id: "todo", name: "To-do" },
-  { id: "in_progress", name: "In progress" },
-  { id: "review", name: "Review" },
-  { id: "done", name: "Done" },
+  { id: "backlog", name: "Backlog", icon: "circle-dashed" },
+  { id: "todo", name: "To-do", icon: "circle" },
+  { id: "in_progress", name: "In progress", icon: "circle-half" },
+  { id: "review", name: "Review", icon: "circle-three-quarters" },
+  { id: "done", name: "Done", icon: "circle-check-filled" },
 ];
 export const PRIORITIES = ["Low", "Normal", "High", "Urgent"];
 
@@ -38,10 +40,10 @@ export function waitLabel(card) {
 /** A review summary's first line, for a card that has room for one. */
 export const firstLine = (text) => (text ?? "").split("\n").map((l) => l.trim()).find(Boolean) ?? "";
 
-// Each column in Herdr's own status words, so a card reads like an agent does:
-// In progress is working, Review needs the person (blocked), Done is done.
+// Each column's tint, as Linear's: the waiting ones grey, In progress amber, Review green,
+// Done the accent. The theme's ansi yellow and green, not its working (grey) and done.
 export const columnColor = (t, column) =>
-  ({ backlog: t.dim, todo: t.muted, in_progress: t.working, review: t.blocked, done: t.done })[column] ?? t.dim;
+  ({ backlog: t.dim, todo: t.muted, in_progress: t.ansi3, review: t.ansi2, done: t.accent })[column] ?? t.dim;
 
 export function kTokens(n) {
   if (n == null) return null;

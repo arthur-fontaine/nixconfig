@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { SIDE_ORDER, byColumn, factorChips, firstLine, glance, isFolded, kTokens, livePending, neighbor, parseNumber, spacedCode, unrecordedSpaces, waitLabel } from "../model.js";
+import { COLUMNS, SIDE_ORDER, byColumn, columnColor, factorChips, firstLine, glance, isFolded, kTokens, livePending, neighbor, parseNumber, spacedCode, unrecordedSpaces, waitLabel } from "../model.js";
 
 const card = (id, column, o = {}) => ({ id, column, priority: 1, createdAt: 0, movedAt: 0, startedAt: null, project: null, orchestrator: null, ...o });
 
@@ -89,4 +89,9 @@ test("sidebar sections: Backlog and Done folded until unfolded", () => {
 test("a review summary's first line", () => {
   assert.equal(firstLine("\n  Bumped core to 2.1.\nAll tests pass."), "Bumped core to 2.1.");
   assert.equal(firstLine(null), "");
+});
+
+test("column colors from the theme: grey while waiting, then amber, green, accent", () => {
+  const t = { dim: "dim", muted: "muted", ansi3: "amber", ansi2: "green", accent: "accent" };
+  assert.deepEqual(COLUMNS.map((c) => columnColor(t, c.id)), ["dim", "muted", "amber", "green", "accent"]);
 });

@@ -46,6 +46,7 @@ export default class Kanban extends View {
     this.offline = false;
     this.version = 0;
     this.hovered = null;
+    this.head = null;
     this.drag = null;
     this.over = null;
     this.error = null;
@@ -155,10 +156,8 @@ export default class Kanban extends View {
         .bg(i <= p ? (p === 3 ? t.blocked : t.muted) : t.border)));
   }
 
-  // In progress turns like the sidebar's working ring; the rest are dots.
-  dot(column, t, size = 7) {
-    if (column === "in_progress") return svg(ICON("loader")).size(size + 4).flex_none().text_color(columnColor(t, column)).spin(900);
-    return div().size(size).flex_none().rounded(size / 2).bg(columnColor(t, column));
+  columnIcon(column, t, size = 14) {
+    return svg(ICON(COLUMNS.find((c) => c.id === column).icon)).size(size).flex_none().text_color(columnColor(t, column));
   }
 
   segmented(id, options, value, onPick, t) {
@@ -237,10 +236,13 @@ export default class Kanban extends View {
       .when(lit, (e) => e.bg(t.hover))
       .on_hover((h, cx) => { if (h && this.over !== id) { this.over = id; if (this.drag) cx.notify(); } })
       .on_mouse_up("left", (_e, cx) => this.drop(id, cx))
-      .child(h_flex().id(`fold-${id}`).h(28).px(8).gap(6).items_center().rounded(6).cursor_pointer()
-        .hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected))
+      .child(h_flex().id(`fold-${id}`).h(28).px(8).gap(8).items_center().rounded(6).cursor_pointer()
+        .hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)).tooltip(folded ? "Unfold" : "Fold")
+        .on_hover((h, cx) => { const was = this.head; this.head = h ? id : this.head === id ? null : this.head; if (was !== this.head) cx.notify(); })
         .on_click((_e, cx) => this.toggleFold(id, cx))
-        .child(svg(ICON(folded ? "chevron-right" : "chevron-down")).size(10).flex_none().text_color(t.dim))
+        // The column's icon, the fold chevron under the pointer (as Repos' folder rows).
+        .child(div().size(14).flex_none().flex().items_center().justify_center()
+          .child(this.head === id ? svg(ICON(folded ? "chevron-right" : "chevron-down")).size(12).text_color(t.muted) : this.columnIcon(id, t)))
         .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_medium().text_color(cards.length ? t.foreground : t.muted).child(name))
         // Review waits on the person: its count in the needs-you color.
         .child(div().flex_none().text_size(11).text_color(id === "review" && cards.length ? t.blocked : t.dim).child(String(cards.length))))
@@ -283,10 +285,10 @@ export default class Kanban extends View {
         .child(svg(ICON("loader")).size(11).flex_none().text_color(t.working).spin(900))
         .child(line(div().flex_1().min_w(0)).child(c.orchestrator?.name ?? "starting…"))
         .when(status === "missing", (e) => e.child(div().flex_none().text_size(11).text_color(t.blocked).child("not running")))))
-      .when(c.column === "review" && Boolean(c.review), (e) => e.child(line(div().pl(7).border_l(2).border_color(t.blocked).text_color(t.foreground)).child(firstLine(c.review))));
+      .when(c.column === "review" && Boolean(c.review), (e) => e.child(line(div().pl(7).border_l(2).border_color(columnColor(t, "review")).text_color(t.foreground)).child(firstLine(c.review))));
   }
 
-  // The rail: the board's button, then each section's count under its dot.
+  // The rail: the board's button, then each section's count under its icon.
   renderRail(t) {
     const col = this.state ? byColumn(this.state.cards) : null;
     return v_flex().size_full().bg(t.chrome).pt(4).gap(2).items_center()
@@ -294,7 +296,7 @@ export default class Kanban extends View {
       .when(Boolean(col), (e) => e.children(SIDE_ORDER.map((id) => v_flex().id(`rail-${id}`).w(30).py(5).gap(3).items_center().rounded(6)
         .tooltip(`${COLUMNS.find((c) => c.id === id).name}: ${col[id].length}`)
         .hover((x) => x.bg(t.hover)).cursor_pointer().on_click(() => this.openBoard())
-        .child(this.dot(id, t, 6))
+        .child(this.columnIcon(id, t, 14))
         .child(div().text_size(11).text_color(id === "review" && col[id].length ? t.blocked : col[id].length ? t.muted : t.dim).child(String(col[id].length))))))
       .when(this.offline, (e) => e.child(div().size(6).mt(4).rounded(3).bg(t.blocked).tooltip("The kanban daemon isn't answering")));
   }
@@ -353,7 +355,7 @@ export default class Kanban extends View {
       .on_hover((h, cx) => { if (h && this.over !== c.id) { this.over = c.id; if (this.drag) cx.notify(); } })
       .on_mouse_up("left", (_e, cx) => this.drop(c.id, cx))
       .child(h_flex().h(36).flex_none().px(12).gap(8).items_center()
-        .child(this.dot(c.id, t))
+        .child(this.columnIcon(c.id, t))
         .child(div().text_size(13).font_medium().child(c.name))
         .child(div().text_size(11).text_color(t.dim).child(`${cards.length}`))
         .child(div().flex_1())
@@ -410,7 +412,7 @@ export default class Kanban extends View {
         .child(div().flex_1().min_w(0).truncate().child(`${c.orchestrator.terminal} · ${c.orchestrator.name}`))
         .when(Boolean(status), (e) => e.child(div().flex_none().text_color(t[status] ?? t.dim).child(status === "missing" ? "not running" : status)))))
       .when(c.column === "review" && Boolean(c.review), (e) => e.child(v_flex().gap(8)
-        .child(div().pl(8).border_l(2).border_color(t.blocked).text_size(12).text_color(t.foreground).child(c.review))
+        .child(div().pl(8).border_l(2).border_color(columnColor(t, "review")).text_size(12).text_color(t.foreground).child(c.review))
         .child(h_flex().flex_wrap().gap(6)
           .child(this.button(`done-${c.id}`, "Mark done", (cx) => this.act(cx, "POST", `/cards/${c.id}/move`, { column: "done" }), t))
           .child(this.button(`redo-${c.id}`, "Send back", (cx) => this.act(cx, "POST", `/cards/${c.id}/move`, { column: "todo" }), t)))))
@@ -492,7 +494,7 @@ export default class Kanban extends View {
         .when(Boolean(c.factors?.notes), (e) => e.child(div().text_size(11).text_color(t.dim).child(c.factors.notes)))
         .child(div().id("reestimate").text_size(11).text_color(t.accent).cursor_pointer().hover((x) => x.opacity(0.8))
           .on_click((_e, cx) => this.act(cx, "POST", `/cards/${c.id}/estimate`, {})).child("Estimate again"))))
-      .when(Boolean(c?.review), (e) => e.child(div().pl(8).border_l(2).border_color(t.blocked).text_size(12).child(c.review)))
+      .when(Boolean(c?.review), (e) => e.child(div().pl(8).border_l(2).border_color(columnColor(t, "review")).text_size(12).child(c.review)))
       .when(Boolean(this.error), (e) => e.child(div().text_size(12).text_color(t.blocked).child(this.error)))
       .child(div().flex_1())
       .child(h_flex().gap(8).items_center()
@@ -601,7 +603,7 @@ export default class Kanban extends View {
       .child(item("open", svg(ICON("square-pen")).size(14).flex_none().text_color(t.muted), "Open card", () => { closeOverlay(p.overlay); this.openCard(p.move); }))
       .child(div().mx(8).my(4).h(1).bg(t.border))
       .children(COLUMNS.filter((c) => c.id !== "review" || p.column === "review").map((c) =>
-        item(`to-${c.id}`, div().size(14).flex_none().flex().items_center().justify_center().child(this.dot(c.id, t, 7)),
+        item(`to-${c.id}`, this.columnIcon(c.id, t),
           c.id === "in_progress" && p.column !== "in_progress" ? "In progress (start now)" : c.name, () => go(c.id), { on: c.id === p.column })));
   }
 
