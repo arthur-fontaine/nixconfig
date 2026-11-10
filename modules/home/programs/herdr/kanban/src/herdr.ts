@@ -93,8 +93,23 @@ export const herdr: Herdr = {
   },
 
   async send(terminal, status, text) {
-    const args = ["send", "--json", ...(status === "idle" ? ["--if", "idle"] : []), terminal, text];
-    const r = await run("hc", args, { timeout: 60_000 });
-    if (r.code !== 0) throw new Error(`hc send ${terminal}: ${(json(r.stdout)?.error?.message ?? r.stderr ?? r.stdout).toString().slice(0, 300)}`);
+    let r = await run("hc", sendArgs(terminal, status, text), { timeout: 60_000 });
+    if (finishedTurn(r)) r = await run("hc", sendArgs(terminal, "done", text), { timeout: 60_000 });
+    if (r.code !== 0) throw new Error(`hc send ${terminal}: ${hcError(r)?.message ?? (r.stderr || r.stdout).slice(0, 300)}`);
   },
+};
+
+// `--if idle` keeps a card out of a chat that started working since the scheduler looked.
+// hc's `--if` knows idle and working only, and Herdr may call idle a chat hc calls done (its
+// turn ended, nothing typed since): free all the same, so that one is sent without the guard.
+export const sendArgs = (terminal: string, status: OrchestratorStatus, text: string) =>
+  ["send", "--json", ...(status === "idle" ? ["--if", "idle"] : []), terminal, text];
+
+const hcError = (r: { stdout: string; stderr: string }): { kind?: string; message?: string } | undefined =>
+  json(r.stderr)?.error ?? json(r.stdout)?.error;
+
+/** hc refused `--if idle` because the chat is done, not because it is working. */
+export const finishedTurn = (r: { code: number; stdout: string; stderr: string }) => {
+  const e = hcError(r);
+  return r.code === 10 && e?.kind === "status_mismatch" && / is done,/.test(e.message ?? "");
 };

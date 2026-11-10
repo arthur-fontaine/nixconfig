@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { parseVmStat } from "../src/system.ts";
 import { parseEstimate } from "../src/estimator.ts";
 import { distinct, projectOf, repoName, repoPath } from "../src/projects.ts";
-import { dispatchText, findOrchestrator, orchestratorArgv, orchestratorName, type LsSpace } from "../src/herdr.ts";
+import { dispatchText, finishedTurn, sendArgs, findOrchestrator, orchestratorArgv, orchestratorName, type LsSpace } from "../src/herdr.ts";
 import type { Card } from "../src/types.ts";
 
 test("free RAM from vm_stat counts free, inactive, speculative and purgeable pages", () => {
@@ -71,4 +71,14 @@ test("the dispatched prompt carries the card id and the review command", () => {
   assert.match(text, /k7/);
   assert.match(text, /The button does nothing\./);
   assert.match(text, /herdr-kanban review k7 "/);
+});
+
+test("a card goes to an idle chat with --if idle, and to a done one without", () => {
+  assert.deepEqual(sendArgs("t1", "idle", "hi"), ["send", "--json", "--if", "idle", "t1", "hi"]);
+  assert.deepEqual(sendArgs("t1", "done", "hi"), ["send", "--json", "t1", "hi"]);
+  const refused = (message: string) => ({ code: 10, stdout: "", stderr: JSON.stringify({ error: { hint: "nothing was typed", kind: "status_mismatch", message } }) });
+  assert.equal(finishedTurn(refused("t106 is done, not idle")), true);
+  assert.equal(finishedTurn(refused("t106 is working, not idle")), false);
+  assert.equal(finishedTurn({ code: 9, stdout: "", stderr: JSON.stringify({ error: { kind: "blocked", message: "t106 is blocked" } }) }), false);
+  assert.equal(finishedTurn({ code: 0, stdout: "{}", stderr: "" }), false);
 });
