@@ -607,11 +607,12 @@ export default class Kanban extends View {
           .cursor_pointer().hover((h) => h.bg(t.hover).text_color(t.foreground))
           .on_click((_e, cx) => { this.adding = true; cx.notify(); })
           .child(svg(ICON("plus")).size(11)).child("Add"))))
-      .when(this.adding, (e) => e.child(h_flex().id("ex-menu").gap(6).items_center().flex_wrap().p(6).rounded(6).border_1().border_color(t.border).bg(t.background)
-        .children(missing.map(suggest))
-        .child(Input.new(this.other).w(120).h(24).px(8).items_center().rounded(5).border_1().border_color(t.input).text_size(11.5))
-        .child(this.button("ex-other", "Add", (cx) => this.addOther(cx), t))
-        .child(this.iconButton("ex-close", "x", "Close", (cx) => { this.adding = false; cx.notify(); }, t))))
+      .when(this.adding, (e) => e.child(v_flex().id("ex-menu").gap(6).p(6).rounded(6).border_1().border_color(t.border).bg(t.background)
+        .when(missing.length > 0, (e) => e.child(h_flex().gap(6).items_center().flex_wrap().children(missing.map(suggest))))
+        .child(h_flex().gap(6).items_center()
+          .child(Input.new(this.other).flex_1().h(28).px(8).items_center().rounded(5).border_1().border_color(t.input).text_size(11.5))
+          .child(this.button("ex-other", "Add", (cx) => this.addOther(cx), t))
+          .child(this.iconButton("ex-close", "x", "Close", (cx) => { this.adding = false; cx.notify(); }, t)))))
       // Its own full-width line: a text in a wrapping row keeps its one-line width and is cut.
       .when(Boolean(c.factors?.notes), (e) => e.child(div().w_full().text_size(11).text_color(t.dim).child(c.factors.notes)));
   }
