@@ -8,7 +8,7 @@ import { HISTORY_KEEP, type Sample, sampleOf } from "./history.ts";
 
 // What a token weighs against the limits, in Opus input tokens. API prices as the shape
 // (output 5×, cache writes 2× at the 1-hour price, Sonnet 0.6×, Haiku 0.2×), except cache
-// reads: priced 0.1×, they fit the past utilization best at 0.05× (see README).
+// reads: priced 0.1×, they fit the past utilization best at 0.05× (see README.md).
 const KIND = { input: 1, output: 5, cacheRead: 0.05, cacheWrite: 2 };
 const FAMILY: [string, number][] = [
 	["haiku", 0.2],
