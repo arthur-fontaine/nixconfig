@@ -1,4 +1,12 @@
-# Pi voice: design (phase 1, for approval)
+# Pi voice: design (phase 1, approved; built in phase 2)
+
+> **Phase 2 changes, from the person's answers.** STT is Whisper large-v3-turbo with the
+> vocabulary prompt (nothing else matched it on French and code words, RESEARCH.md), TTS is
+> Voxtral 4B. The rewind rule (Q3) is narrower than proposed below: a total rewind only when the
+> new speech starts **before Pi starts speaking** and no tool changed files; while Pi speaks, or
+> after a file change, the words are a steer; after the answer is spoken, a new message
+> (`addition.ts`, `whatToDoWithAddition`). The mute key is Ctrl+Alt+M. The rest is as designed;
+> README.md describes what was built.
 
 Calls with Pi: the person talks, Pi hears when he has finished and sends the
 message itself; Pi answers in writing exactly as today and, in parallel, out

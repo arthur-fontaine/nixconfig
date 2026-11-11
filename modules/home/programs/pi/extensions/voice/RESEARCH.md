@@ -363,3 +363,28 @@ utterance. Same clips and bench, Nov 10, 2026.
   phase 2 uses **Whisper large-v3-turbo with the vocabulary prompt**. Its
   830 ms are hidden in part by starting the decode when the pause begins,
   in parallel with the end-of-turn check.
+
+## Phase 2: the call stack as built
+
+The person chose Whisper large-v3-turbo + prompt (STT) and Voxtral 4B TTS (the
+voice he found nicest). VoxTurn runs in MLX (`daemon/pi_voice/voxturn_mlx.py`),
+its language model in 8 bits, matching VoxTurn's PyTorch code within 0.043 on
+P(end of turn) (`daemon/tests/test_voxturn_parity.py`). Measured in one process,
+as the daemon loads them (`daemon/tests/stack_memory.py`, `footprint`), M4 Pro:
+
+| Step | Physical footprint | Per call |
+| --- | --- | --- |
+| Silero VAD (ONNX) | 59 MB | <1 ms per 32 ms frame |
+| + VoxTurn (MLX, LM 8-bit) + Smart Turn (ONNX) | 2.5 GB | 119 ms per end-of-turn check |
+| + Whisper large-v3-turbo | 5.0 GB | 931 ms per utterance |
+| + Voxtral 4B TTS (4-bit) | 6.1 GB | 362 ms to first audio, 2.7 s for a 12 s sentence |
+| after a turn, warm | 6.2 GB (MLX peak 6.0 GB) | |
+
+About 6 GB while a call is on, nothing 10 minutes after it ends (the daemon
+unloads the models). With the person's usual load the Mac kept 58 % of its
+memory free during the measurement. VoxTurn's language model in bf16 instead
+of 8 bits costs 0.5 GB more for the same decisions.
+
+End to end (`tests/e2e/run.py`, fake audio, real Pi on Haiku): a message is
+sent 1.2–1.4 s after the end of speech (VoxTurn's end of turn, then Whisper's
+0.9 s; the decode starts at the pause, so part of it overlaps).
