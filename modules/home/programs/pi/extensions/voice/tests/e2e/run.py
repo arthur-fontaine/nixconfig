@@ -42,6 +42,7 @@ HERE = Path(__file__).resolve().parent
 VOICE = HERE.parent.parent
 EXTENSION = VOICE / "index.ts"
 CAPTURE = HERE / "capture.ts"
+TREE = HERE / "tree.ts"
 MODEL = "claude-code/claude-haiku-5-5"
 VOICE_NAME = "Thomas"
 
@@ -52,6 +53,7 @@ CLIPS = {
     "plutot": "Non, plutôt par le mot non.",
     "compte": "Compte lentement de un à dix, en toutes lettres, avec une phrase par nombre.",
     "cinq": "Arrête-toi à cinq.",
+    "histoire": "Raconte l'histoire du Petit Chaperon rouge en quinze paragraphes courts, sans titre.",
 }
 
 results: list[tuple[str, bool, str]] = []
@@ -153,7 +155,7 @@ class Pi:
         # --no-mcp: the MCP servers' descriptions change between runs, which would hide what matters here.
         args = ["pi", "--mode", "rpc", "--no-session", "--no-mcp", "--model", MODEL, "--thinking", "off"]
         if self.with_voice:
-            args += ["-e", str(EXTENSION)]
+            args += ["-e", str(EXTENSION), "-e", str(TREE)]
         args += ["-e", str(CAPTURE)]
         env = {**os.environ, "VOICE_CAPTURE": str(self.capture_dir), "PI_VOICE_SOCKET": str(self.socket),
                "PI_VOICE_NO_SPAWN": "1"}
@@ -341,7 +343,67 @@ async def case_steer(helper: Helper, pi: Pi, clips, capture, control):
     check(case, len(users) == 2 and "lettres" in users[0] and re.search(r"\bcinq\b|\b5\b", users[1]), f"no rewind: both messages on the branch {users}")
 
 
-CASES = {"auto_send": case_auto_send, "hesitation": case_hesitation, "rewind": case_rewind, "steer": case_steer}
+async def case_abort(helper: Helper, pi: Pi, clips, capture, control):
+    """Esc while Pi speaks and is still writing: the run is aborted, its voice stops at once."""
+    case = "abort"
+    t0 = time.time()
+    await helper.play(clips["histoire"])
+    got = await pi.events.wait(lambda r: r.get("type") == "message_start" and r["message"].get("role") == "user", 15, t0)
+    if not check(case, got, "message sent"):
+        return
+    speaking = await helper.events.wait(lambda r: r.get("event") == "tts_start", 60, got[0])
+    if not check(case, speaking, "Pi started speaking"):
+        return
+    await asyncio.sleep(0.5)
+    still_running = not await pi.events.wait(lambda r: r.get("type") == "agent_settled", 0.01, got[0])
+    check(case, still_running, "Pi is still writing its answer while it speaks")
+    t_abort = time.time()
+    await pi.command({"type": "abort"})
+    stopped = await helper.events.wait(lambda r: r.get("event") == "tts_stop", 5, t_abort)
+    check(case, stopped and stopped[0] - t_abort <= 1.0,
+          f"its voice stopped {1000 * (stopped[0] - t_abort):.0f} ms after the abort" if stopped else "its voice stopped")
+    again = await helper.events.wait(lambda r: r.get("event") == "tts_start", 4, t_abort + 0.01)
+    check(case, not again, "nothing more of that answer is said")
+    branch, _ = await branch_entries(pi)
+    rows = [e for e in branch if e.get("type") == "custom" and e.get("customType") == "voice-spoken"]
+    check(case, rows and rows[-1]["data"]["interrupted"], "its row says it was interrupted")
+    # What he says next is a new message, not an addition that would rewind the cancelled one.
+    t_next = time.time()
+    await helper.play(clips["bonjour"])
+    nxt = await pi.events.wait(lambda r: r.get("type") == "message_start" and r["message"].get("role") == "user", 15, t_next)
+    if check(case, nxt, "the next thing he says is sent"):
+        await pi.idle(after=nxt[0])
+        branch, _ = await branch_entries(pi)
+        users = [norm(text_of(e["message"])) for e in branch if e.get("type") == "message" and e["message"].get("role") == "user"]
+        check(case, len(users) == 2 and "bonjour" in users[1] and "bonjour" not in users[0],
+              f"as a new message after the cancelled one, no rewind: {users}")
+
+
+async def case_tree(helper: Helper, pi: Pi, clips, capture, control):
+    """A rewind while Pi speaks (its run over): a cancelled picker leaves the voice, an applied one stops it."""
+    case = "rewind_cmd"
+    t0 = time.time()
+    await helper.play(clips["compte"])
+    got = await pi.events.wait(lambda r: r.get("type") == "message_start" and r["message"].get("role") == "user", 15, t0)
+    if not check(case, got, "message sent"):
+        return
+    speaking = await helper.events.wait(lambda r: r.get("event") == "tts_start", 60, got[0])
+    if not check(case, speaking, "Pi started speaking"):
+        return
+    await pi.idle(after=got[0])
+    t_cancel = time.time()
+    await pi.command({"type": "prompt", "message": "/test-rewind-cancel"})
+    early = await helper.events.wait(lambda r: r.get("event") in ("tts_stop", "tts_end"), 1.5, t_cancel)
+    check(case, not early, "a rewind picker opened and cancelled leaves Pi speaking")
+    t_apply = time.time()
+    await pi.command({"type": "prompt", "message": "/test-rewind-apply"})
+    stopped = await helper.events.wait(lambda r: r.get("event") == "tts_stop", 5, t_apply)
+    check(case, stopped and stopped[0] - t_apply <= 1.0,
+          f"an applied rewind stops its voice ({1000 * (stopped[0] - t_apply):.0f} ms)" if stopped else "an applied rewind stops its voice")
+
+
+CASES = {"auto_send": case_auto_send, "hesitation": case_hesitation, "rewind": case_rewind, "steer": case_steer, "abort": case_abort,
+         "rewind_cmd": case_tree}
 
 
 async def main(argv: list[str]):

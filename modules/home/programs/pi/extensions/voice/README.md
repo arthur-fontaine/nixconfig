@@ -10,6 +10,9 @@ the answer, `⦁ Spoke 12s · « … »  (click to expand)`; a click or Ctrl+O o
 - **Interrupting**: speak while Pi is speaking (or after it changed files): its voice stops and
   your words go to the running turn (a steer), or as the next message when Pi is done.
 - After the answer was spoken to the end, what you say is a new message.
+- **Cancelling**: Esc while Pi speaks stops its voice at once (and aborts the run as usual); a
+  `/rewind` (or `/tree`, `/restore`) stops it once applied, not while the picker is open. What
+  you say next is a new message.
 - `/call mute` / `/call unmute` (or **Ctrl+Alt+M**), `/call end` (or `/call` again). The call
   ends by itself after 10 minutes without speech. Another chat's `/call` offers to take the call.
 

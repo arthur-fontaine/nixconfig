@@ -224,3 +224,23 @@ def test_the_fused_end_of_turn_rule():
     assert not ended(0.3, 0.5)
     assert ended(0.15, 0.95), "Smart Turn rescues a short answer VoxTurn hesitates on"
     assert not ended(0.05, 0.99)
+
+
+def test_stopping_the_answer_cuts_the_voice_and_drops_what_is_queued():
+    """Esc or a rewind in Pi: the extension sends answer "stopped"."""
+    h = Harness()
+    h.audio(1.0, True)
+    h.models.eot.p = 0.9
+    h.wait(0.5)
+    h.call.speak("a1", "Un.", final=False)
+    assert h.call.state == "pi_speaking"
+    h.call.stop_answer()
+    assert {"cmd": "stop"} in h.controls()
+    assert [e for e in h.events if e["type"] == "spoken"][-1]["interrupted"] is True
+    assert h.call.state == "listening", "back to listening, not waiting for an answer"
+    before = len([f for f in h.to_helper if f[:1] == framing.SPEAKER])
+    h.call.speak("a1", "Deux. Trois.", final=True)  # the rest of the cancelled answer, arriving late
+    assert len([f for f in h.to_helper if f[:1] == framing.SPEAKER]) == before
+    h.audio(1.0, True)
+    h.wait(0.5)
+    assert h.turns()[-1]["phase"] == "after_answer", "what he says next is a new message"

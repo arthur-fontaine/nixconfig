@@ -5,7 +5,9 @@ Client -> daemon, one JSON object per line ("v": 1 implied):
   {"type": "call.start", "take": bool}   start the call, or take it from another chat
   {"type": "call.end"}
   {"type": "speak", "id": answer id, "text": sentence, "final": bool}
-  {"type": "answer", "state": "aborted" | "silent"}   Pi's run was aborted, or ended with nothing to say
+  {"type": "answer", "state": "aborted" | "stopped" | "continue" | "silent", "id"?}
+      aborted: the voice's own rewind (a resend follows); stopped: the person cancelled the turn
+      (Esc, /rewind): stop speaking now; continue: play what was held; silent: nothing to say
   {"type": "mute", "on": bool}
   {"type": "vocab", "words": [...]}
 Daemon -> clients:
@@ -155,6 +157,8 @@ class Daemon:
             state = msg.get("state")
             if state == "aborted":
                 self.call.cancel_answer()
+            elif state == "stopped":
+                self.call.stop_answer(msg.get("id"))
             elif state == "continue":
                 self.call.continue_answer()
             else:

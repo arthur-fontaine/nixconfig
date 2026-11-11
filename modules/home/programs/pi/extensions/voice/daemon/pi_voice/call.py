@@ -439,6 +439,17 @@ class Call:
         self.answer = "pending"
         self._emit_state()
 
+    def stop_answer(self, answer_id: str | None = None) -> None:
+        """The person cancelled Pi's turn (Esc, a rewind): its voice stops now, what's queued goes,
+        and later sentences of that answer are ignored. Back to listening for a new message."""
+        if answer_id:
+            self.dropped.add(answer_id)
+        if self.answer == "speaking" or self.saying or self.say_queue or self.unplayed:
+            self._stop_speech(interrupted=True)
+        self.held = []
+        self.answer = "none"
+        self._emit_state()
+
     def continue_answer(self) -> None:
         """The extension keeps Pi's answer (a steer, not a rewind): play what was held back."""
         self._release_held()
