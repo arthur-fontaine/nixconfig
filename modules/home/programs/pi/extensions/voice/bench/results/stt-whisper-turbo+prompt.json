@@ -1,0 +1,89 @@
+{
+ "model": "whisper-turbo+prompt",
+ "repo": "mlx-community/whisper-large-v3-turbo",
+ "load_s": 0.5585254170000553,
+ "wer": {
+  "fr": 0.09230769230769231,
+  "en": 0.0
+ },
+ "terms": "16/19",
+ "decode_ms_median": 828.2199584937189,
+ "rtf": 0.20725928565552185,
+ "rss_peak_mb_above_base": 1814.577152,
+ "mlx_peak_mb": 2482.131314,
+ "stream": null,
+ "rows": [
+  {
+   "id": "fr1",
+   "out": " Tu peux lancer pnpm install dans le worktree, puis faire un xbuild.",
+   "wer": 0.15384615384615385,
+   "decode_s": 0.8467834580224007,
+   "dur_s": 4.8730625,
+   "terms": 3,
+   "hits": 2
+  },
+  {
+   "id": "fr2",
+   "out": " Regarde le fichier default.nix et ajoute l'extension Voice dans la liste.",
+   "wer": 0.0,
+   "decode_s": 0.840830291970633,
+   "dur_s": 4.6990625,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "fr3",
+   "out": " Le footer ne s'affiche plus depuis le dernier commis, tu peux vérifier les tests ?",
+   "wer": 0.07142857142857142,
+   "decode_s": 0.8315660830121487,
+   "dur_s": 4.7458125,
+   "terms": 2,
+   "hits": 1
+  },
+  {
+   "id": "fr4",
+   "out": " Crée une branche, fais un rebase sur main et pouce sur GitHub.",
+   "wer": 0.08333333333333333,
+   "decode_s": 0.8265635410207324,
+   "dur_s": 3.60775,
+   "terms": 3,
+   "hits": 3
+  },
+  {
+   "id": "fr5",
+   "out": " Je voudrais que le daemon tourne en long cageant avec un socket unix.",
+   "wer": 0.15384615384615385,
+   "decode_s": 0.8278219169587828,
+   "dur_s": 3.849,
+   "terms": 3,
+   "hits": 2
+  },
+  {
+   "id": "en1",
+   "out": " Can you run pnpm test in the worktree and then do a nix build?",
+   "wer": 0.0,
+   "decode_s": 0.8286180000286549,
+   "dur_s": 3.6220625,
+   "terms": 3,
+   "hits": 3
+  },
+  {
+   "id": "en2",
+   "out": " Rewind the last message and append what I just said.",
+   "wer": 0.0,
+   "decode_s": 0.8150549999554642,
+   "dur_s": 2.9214375,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "en3",
+   "out": " The TypeScript extension should talk to the daemon over a WebSocket.",
+   "wer": 0.0,
+   "decode_s": 0.826885582995601,
+   "dur_s": 3.738875,
+   "terms": 3,
+   "hits": 3
+  }
+ ]
+}

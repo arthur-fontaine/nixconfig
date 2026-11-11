@@ -1,0 +1,45 @@
+{
+ "model": "audio8-tts-0.6b",
+ "repo": "nativ-community/Audio8-TTS-Realistic-0.6b-4bit",
+ "load_s": 22.926803459005896,
+ "ttfa_ms_median": 3535.6551665172447,
+ "ttfa_ms_max": 5099.0028330124915,
+ "rtf": 0.43136461309206736,
+ "streams": false,
+ "rss_peak_mb_above_base": 2666.889216,
+ "mlx_peak_mb": 7304.148024,
+ "rows": [
+  {
+   "n": 1,
+   "lang": "fr",
+   "ttfa_s": 1.3316144169657491,
+   "total_s": 1.3316144169657491,
+   "audio_s": 2.647074829931973,
+   "chunks": 1
+  },
+  {
+   "n": 2,
+   "lang": "fr",
+   "ttfa_s": 5.0990028330124915,
+   "total_s": 5.0990028330124915,
+   "audio_s": 11.470657596371883,
+   "chunks": 1
+  },
+  {
+   "n": 3,
+   "lang": "fr",
+   "ttfa_s": 3.8477343330159783,
+   "total_s": 3.8477343330159783,
+   "audio_s": 9.752380952380953,
+   "chunks": 1
+  },
+  {
+   "n": 4,
+   "lang": "en",
+   "ttfa_s": 3.223576000018511,
+   "total_s": 3.223576000018511,
+   "audio_s": 7.430385487528345,
+   "chunks": 1
+  }
+ ]
+}

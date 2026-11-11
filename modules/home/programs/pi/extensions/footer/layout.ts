@@ -32,7 +32,7 @@ export interface FooterState {
 
 // Extensions' statuses, in the order line 2 shows them; the footer's own items
 // (context, cost) slot in between. Unknown keys follow, sorted.
-const BEFORE_CONTEXT = ["auto-mode", "remote-control"];
+const BEFORE_CONTEXT = ["voice", "auto-mode", "remote-control"];
 const AFTER_CONTEXT = ["cache-timer", "cache-warmer", "background-tools"];
 const KNOWN = new Set([...BEFORE_CONTEXT, ...AFTER_CONTEXT]);
 

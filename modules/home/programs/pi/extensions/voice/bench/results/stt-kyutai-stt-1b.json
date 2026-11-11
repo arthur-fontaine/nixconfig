@@ -1,0 +1,89 @@
+{
+ "model": "kyutai-stt-1b",
+ "repo": "kyutai/stt-1b-en_fr-mlx",
+ "load_s": 0.9742691669962369,
+ "wer": {
+  "fr": 0.23076923076923078,
+  "en": 0.08571428571428572
+ },
+ "terms": "9/19",
+ "decode_ms_median": 1241.7111670074519,
+ "rtf": 0.32062135808525744,
+ "rss_peak_mb_above_base": 2288.582656,
+ "mlx_peak_mb": 2499.869934,
+ "stream": null,
+ "rows": [
+  {
+   "id": "fr1",
+   "out": "Tu peux lancer PNPM install dans le work tree, puis faire un NICS build,",
+   "wer": 0.07692307692307693,
+   "decode_s": 1.4964618329540826,
+   "dur_s": 4.8730625,
+   "terms": 3,
+   "hits": 2
+  },
+  {
+   "id": "fr2",
+   "out": "regarde le fichier default.nix et ajoute l'extension voice dans la liste.",
+   "wer": 0.0,
+   "decode_s": 1.4239761659991927,
+   "dur_s": 4.6990625,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "fr3",
+   "out": "Le faute ne s'affiche plus depuis le dernier commis, tu peux vérifier les tests,",
+   "wer": 0.14285714285714285,
+   "decode_s": 1.4280725829885341,
+   "dur_s": 4.7458125,
+   "terms": 2,
+   "hits": 0
+  },
+  {
+   "id": "fr4",
+   "out": "créer une branche, fais un rebasse sur main et pousse sur JHub.",
+   "wer": 0.25,
+   "decode_s": 1.1801560000167228,
+   "dur_s": 3.60775,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "fr5",
+   "out": "J'avouerais que le moment où on lance la jambe, avec un socket NICS,",
+   "wer": 0.6923076923076923,
+   "decode_s": 1.2377579999738373,
+   "dur_s": 3.849,
+   "terms": 3,
+   "hits": 0
+  },
+  {
+   "id": "en1",
+   "out": "can you run PNPM test in the work tree and then do a NICS build?",
+   "wer": 0.07142857142857142,
+   "decode_s": 1.1877170410007238,
+   "dur_s": 3.6220625,
+   "terms": 3,
+   "hits": 2
+  },
+  {
+   "id": "en2",
+   "out": "Rewind the last message and depend what I just said.",
+   "wer": 0.1,
+   "decode_s": 1.078372957999818,
+   "dur_s": 2.9214375,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "en3",
+   "out": "The TypeScript extension should talk to the demon over a web socket.",
+   "wer": 0.09090909090909091,
+   "decode_s": 1.2456643340410665,
+   "dur_s": 3.738875,
+   "terms": 3,
+   "hits": 2
+  }
+ ]
+}

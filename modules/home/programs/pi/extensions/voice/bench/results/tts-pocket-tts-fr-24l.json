@@ -1,0 +1,45 @@
+{
+ "model": "pocket-tts-fr-24l",
+ "repo": "french_24l",
+ "load_s": 10.508722125028726,
+ "ttfa_ms_median": 81.40916703268886,
+ "ttfa_ms_max": 85.26279195211828,
+ "rtf": 0.2108466902691655,
+ "streams": true,
+ "rss_peak_mb_above_base": 2976.39936,
+ "mlx_peak_mb": null,
+ "rows": [
+  {
+   "n": 1,
+   "lang": "fr",
+   "ttfa_s": 0.07114024995826185,
+   "total_s": 0.5062260839622468,
+   "audio_s": 2.32,
+   "chunks": 29
+  },
+  {
+   "n": 2,
+   "lang": "fr",
+   "ttfa_s": 0.08526279195211828,
+   "total_s": 1.163893291959539,
+   "audio_s": 5.52,
+   "chunks": 69
+  },
+  {
+   "n": 3,
+   "lang": "fr",
+   "ttfa_s": 0.08176479203393683,
+   "total_s": 1.3381689590169117,
+   "audio_s": 6.32,
+   "chunks": 79
+  },
+  {
+   "n": 4,
+   "lang": "en",
+   "ttfa_s": 0.08105354203144088,
+   "total_s": 1.174910000001546,
+   "audio_s": 5.68,
+   "chunks": 71
+  }
+ ]
+}

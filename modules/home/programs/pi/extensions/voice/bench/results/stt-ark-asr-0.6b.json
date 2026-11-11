@@ -1,0 +1,89 @@
+{
+ "model": "ark-asr-0.6b",
+ "repo": "Edge0/ark-asr-0.6b-int8-onnx",
+ "load_s": 2.609056207991671,
+ "wer": {
+  "fr": 0.24615384615384617,
+  "en": 0.05714285714285714
+ },
+ "terms": "9/19",
+ "decode_ms_median": 509.24518701503985,
+ "rtf": 0.1256829118082166,
+ "rss_peak_mb_above_base": 2712.338432,
+ "mlx_peak_mb": null,
+ "stream": null,
+ "rows": [
+  {
+   "id": "fr1",
+   "out": "Tu peux lancer P N P M install dans le W O R T, puis faire un X build.",
+   "wer": 0.38461538461538464,
+   "decode_s": 0.5958541249856353,
+   "dur_s": 4.8730625,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "fr2",
+   "out": "Regarde le fichier default. x et ajoute l'extension voice dans la liste.",
+   "wer": 0.15384615384615385,
+   "decode_s": 0.5214131660177372,
+   "dur_s": 4.6990625,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "fr3",
+   "out": "Le fauteur ne s'affiche plus depuis le dernier commis. Tu peux vérifier les tests.",
+   "wer": 0.14285714285714285,
+   "decode_s": 0.5924306249944493,
+   "dur_s": 4.7458125,
+   "terms": 2,
+   "hits": 0
+  },
+  {
+   "id": "fr4",
+   "out": "Crée une branche, fais un rebas sur main et pousse sur Jub.",
+   "wer": 0.16666666666666666,
+   "decode_s": 0.49235358397709206,
+   "dur_s": 3.60775,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "fr5",
+   "out": "Je voudrais que le damon tourne en longue cajonne avec un soclet unique.",
+   "wer": 0.38461538461538464,
+   "decode_s": 0.5616437920252793,
+   "dur_s": 3.849,
+   "terms": 3,
+   "hits": 0
+  },
+  {
+   "id": "en1",
+   "out": "Can you run P N P M test in the work tree and then do a nix build?",
+   "wer": 0.0,
+   "decode_s": 0.49707720801234245,
+   "dur_s": 3.6220625,
+   "terms": 3,
+   "hits": 3
+  },
+  {
+   "id": "en2",
+   "out": "Rewind the last message and append what I just said.",
+   "wer": 0.0,
+   "decode_s": 0.36633954202989116,
+   "dur_s": 2.9214375,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "en3",
+   "out": "The TypeScript extension should talk to the demon over a WebSocketocket.",
+   "wer": 0.18181818181818182,
+   "decode_s": 0.40191291697556153,
+   "dur_s": 3.738875,
+   "terms": 3,
+   "hits": 2
+  }
+ ]
+}

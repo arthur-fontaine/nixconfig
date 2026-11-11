@@ -1,0 +1,19 @@
+{
+ "model": "LiquidAI/LFM3-Audio-2B-MLX-4bit",
+ "asr_wer": {
+  "fr": 0.26153846153846155,
+  "en": 0.02857142857142857
+ },
+ "asr_terms": "9/19",
+ "asr_decode_ms_median": 185.148416494485,
+ "tts_total_ms_median": 885.2551250020042,
+ "tts_first_frame_ms": [
+  53,
+  39,
+  39,
+  38
+ ],
+ "tts_rtf": 0.14348366909335034,
+ "rss_peak_mb_above_base": 2946.49856,
+ "mlx_peak_mb": 1879.520095
+}

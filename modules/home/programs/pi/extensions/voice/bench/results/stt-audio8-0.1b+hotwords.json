@@ -1,0 +1,89 @@
+{
+ "model": "audio8-0.1b+hotwords",
+ "repo": "Edge0/Audio8-ASR-0.1B-onnx-runtime",
+ "load_s": 1.5813841670169495,
+ "wer": {
+  "fr": 2.1538461538461537,
+  "en": 0.11428571428571428
+ },
+ "terms": "11/19",
+ "decode_ms_median": 370.7728129811585,
+ "rtf": 0.11000002345939323,
+ "rss_peak_mb_above_base": 1463.058432,
+ "mlx_peak_mb": null,
+ "stream": null,
+ "rows": [
+  {
+   "id": "fr1",
+   "out": "Tu peux lancer p n p n p n n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p n p",
+   "wer": 9.538461538461538,
+   "decode_s": 0.6341256670420989,
+   "dur_s": 4.8730625,
+   "terms": 3,
+   "hits": 0
+  },
+  {
+   "id": "fr2",
+   "out": "Regarde le fichier default.nix et ajoute l'extension values dans la liste.",
+   "wer": 0.07692307692307693,
+   "decode_s": 0.35375825001392514,
+   "dur_s": 4.6990625,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "fr3",
+   "out": "Le pote n'est s'affiche plus depuis le dernier commit, tu peux vérifier les tests.",
+   "wer": 0.14285714285714285,
+   "decode_s": 0.37515616696327925,
+   "dur_s": 4.7458125,
+   "terms": 2,
+   "hits": 1
+  },
+  {
+   "id": "fr4",
+   "out": "cré une branche, fais un rebase sur main époux sur GitHub.",
+   "wer": 0.25,
+   "decode_s": 0.3571398750063963,
+   "dur_s": 3.60775,
+   "terms": 3,
+   "hits": 3
+  },
+  {
+   "id": "fr5",
+   "out": "Je vous travaille de monsieur le monde avec un casoline.",
+   "wer": 0.7692307692307693,
+   "decode_s": 0.3489925420144573,
+   "dur_s": 3.849,
+   "terms": 3,
+   "hits": 0
+  },
+  {
+   "id": "en1",
+   "out": "Can you run p n p n test in the worktree and then do a nix build?",
+   "wer": 0.2857142857142857,
+   "decode_s": 0.36638945899903774,
+   "dur_s": 3.6220625,
+   "terms": 3,
+   "hits": 2
+  },
+  {
+   "id": "en2",
+   "out": "rewind the last message and append what I just said.",
+   "wer": 0.0,
+   "decode_s": 0.6362452500034124,
+   "dur_s": 2.9214375,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "en3",
+   "out": "The TypeScript extension should talk to the daemon over a WebSocket.",
+   "wer": 0.0,
+   "decode_s": 0.45447041699662805,
+   "dur_s": 3.738875,
+   "terms": 3,
+   "hits": 3
+  }
+ ]
+}

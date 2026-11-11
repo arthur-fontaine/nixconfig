@@ -1,0 +1,89 @@
+{
+ "model": "canary-1b-v2",
+ "repo": "Mediform/canary-1b-v2-mlx-q8",
+ "load_s": 17.47491704201093,
+ "wer": {
+  "fr": 0.23076923076923078,
+  "en": 0.05714285714285714
+ },
+ "terms": "9/19",
+ "decode_ms_median": 93.99681250215508,
+ "rtf": 0.02280095975370042,
+ "rss_peak_mb_above_base": 2387.4928640000003,
+ "mlx_peak_mb": 1390.564352,
+ "stream": null,
+ "rows": [
+  {
+   "id": "fr1",
+   "out": "Tu peux lancer PNPM install dans le WordPress, puis faire un X-Build.",
+   "wer": 0.15384615384615385,
+   "decode_s": 0.12487833300838247,
+   "dur_s": 4.8730625,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "fr2",
+   "out": "Regarde le fichier default.nx et ajoute l'extension Voice dans la liste.",
+   "wer": 0.15384615384615385,
+   "decode_s": 0.09649700002046302,
+   "dur_s": 4.6990625,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "fr3",
+   "out": "Le fauteuil ne s'affiche plus depuis le dernier commis, tu peux vérifier les tests ?",
+   "wer": 0.14285714285714285,
+   "decode_s": 0.1049335419666022,
+   "dur_s": 4.7458125,
+   "terms": 2,
+   "hits": 0
+  },
+  {
+   "id": "fr4",
+   "out": "Créer une branche, faire un rebas sur main et pousser sur J-Hub.",
+   "wer": 0.5,
+   "decode_s": 0.07668262498918921,
+   "dur_s": 3.60775,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "fr5",
+   "out": "Je voudrais que le nom tourne en l'unque agent avec un stocker Unix.",
+   "wer": 0.23076923076923078,
+   "decode_s": 0.09149662498384714,
+   "dur_s": 3.849,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "en1",
+   "out": "Can you run pnpm test in the work tree and then do a nx build?",
+   "wer": 0.07142857142857142,
+   "decode_s": 0.07134637498529628,
+   "dur_s": 3.6220625,
+   "terms": 3,
+   "hits": 2
+  },
+  {
+   "id": "en2",
+   "out": "Rewind the last message and append what I just said.",
+   "wer": 0.0,
+   "decode_s": 0.06210087495855987,
+   "dur_s": 2.9214375,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "en3",
+   "out": "The TypeScript extension should talk to the demon over a web socket.",
+   "wer": 0.09090909090909091,
+   "decode_s": 0.10299641697201878,
+   "dur_s": 3.738875,
+   "terms": 3,
+   "hits": 2
+  }
+ ]
+}

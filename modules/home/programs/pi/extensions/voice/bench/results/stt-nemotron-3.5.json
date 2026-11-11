@@ -1,0 +1,95 @@
+{
+ "model": "nemotron-3.5",
+ "repo": "mlx-community/nemotron-3.5-asr-streaming-0.6b-8bit",
+ "load_s": 2.071988584008068,
+ "wer": {
+  "fr": 0.24615384615384617,
+  "en": 0.05714285714285714
+ },
+ "terms": "10/19",
+ "decode_ms_median": 134.9512709712144,
+ "rtf": 0.035188817561348625,
+ "rss_peak_mb_above_base": 1013.9074560000001,
+ "mlx_peak_mb": 993.421624,
+ "stream": {
+  "chunk_ms": 80,
+  "step_ms_median": 0.15224999515339732,
+  "step_ms_p95": 31.205417006276548,
+  "flush_ms_median": 22.522541490616277,
+  "first_text_after_onset_s_median": 1.19590625
+ },
+ "rows": [
+  {
+   "id": "fr1",
+   "out": "Tu peux lancer P N P M installe dans le Work Tray puis faire un X-Bild.",
+   "wer": 0.38461538461538464,
+   "decode_s": 0.16593191598076373,
+   "dur_s": 4.8730625,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "fr2",
+   "out": "Regarde le fichier default point X et ajoute l'extension voice dans la liste.",
+   "wer": 0.07692307692307693,
+   "decode_s": 0.16388691600877792,
+   "dur_s": 4.6990625,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "fr3",
+   "out": "Le feute ne s'affiche plus depuis le dernier commis tu peux vérifier les tests.",
+   "wer": 0.14285714285714285,
+   "decode_s": 0.16650333296274766,
+   "dur_s": 4.7458125,
+   "terms": 2,
+   "hits": 0
+  },
+  {
+   "id": "fr4",
+   "out": "Créer une branche, fais un rebas sur main et pousse sur Jub.",
+   "wer": 0.25,
+   "decode_s": 0.1356962919817306,
+   "dur_s": 3.60775,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "fr5",
+   "out": "Je voudrais que le damon tourne au long de cachant avec un socket unix.",
+   "wer": 0.38461538461538464,
+   "decode_s": 0.1342062499606982,
+   "dur_s": 3.849,
+   "terms": 3,
+   "hits": 1
+  },
+  {
+   "id": "en1",
+   "out": "Can you run PNPM test in the work tree and then do a Nix build?",
+   "wer": 0.0,
+   "decode_s": 0.13043233304051682,
+   "dur_s": 3.6220625,
+   "terms": 3,
+   "hits": 3
+  },
+  {
+   "id": "en2",
+   "out": "Rewind the last message and depend what I just said.",
+   "wer": 0.1,
+   "decode_s": 0.1011420419672504,
+   "dur_s": 2.9214375,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "en3",
+   "out": "The typescript extension should talk to the demon over a web socket.",
+   "wer": 0.09090909090909091,
+   "decode_s": 0.13025104196276516,
+   "dur_s": 3.738875,
+   "terms": 3,
+   "hits": 2
+  }
+ ]
+}

@@ -1,0 +1,89 @@
+{
+ "model": "qwen3-asr-0.6b+hotwords",
+ "repo": "mlx-community/Qwen3-ASR-0.6B-8bit",
+ "load_s": 2.5580210000043735,
+ "wer": {
+  "fr": 0.2923076923076923,
+  "en": 0.02857142857142857
+ },
+ "terms": "14/19",
+ "decode_ms_median": 137.29181248345412,
+ "rtf": 0.0338116640268787,
+ "rss_peak_mb_above_base": 1329.152,
+ "mlx_peak_mb": 1767.309468,
+ "stream": null,
+ "rows": [
+  {
+   "id": "fr1",
+   "out": "Tu peux lancer pnpm install dans le one hook tree puis faire un nix build.",
+   "wer": 0.23076923076923078,
+   "decode_s": 0.1432799999602139,
+   "dur_s": 4.8730625,
+   "terms": 3,
+   "hits": 2
+  },
+  {
+   "id": "fr2",
+   "out": "Regarde le fichier default.nix et ajoute l'extension vscode dans la liste.",
+   "wer": 0.07692307692307693,
+   "decode_s": 0.1359897920046933,
+   "dur_s": 4.6990625,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "fr3",
+   "out": "Le footer ne s'affiche plus depuis le dernier commit. Tu peux vérifier les tests.",
+   "wer": 0.0,
+   "decode_s": 0.13982070900965482,
+   "dur_s": 4.7458125,
+   "terms": 2,
+   "hits": 2
+  },
+  {
+   "id": "fr4",
+   "out": "Crée une branche, fais un rebas sur main et pouce sur GitHub.",
+   "wer": 0.16666666666666666,
+   "decode_s": 0.13359629199840128,
+   "dur_s": 3.60775,
+   "terms": 3,
+   "hits": 2
+  },
+  {
+   "id": "fr5",
+   "out": "Я буду дреклером суналонкажал, а вякен со керникс",
+   "wer": 1.0,
+   "decode_s": 0.16302545898361132,
+   "dur_s": 3.849,
+   "terms": 3,
+   "hits": 0
+  },
+  {
+   "id": "en1",
+   "out": "Can you run pnpm test in the worktree and then do a nix build?",
+   "wer": 0.0,
+   "decode_s": 0.13859383296221495,
+   "dur_s": 3.6220625,
+   "terms": 3,
+   "hits": 3
+  },
+  {
+   "id": "en2",
+   "out": "Rewind the last message and depend what I just said.",
+   "wer": 0.1,
+   "decode_s": 0.1104876670287922,
+   "dur_s": 2.9214375,
+   "terms": 1,
+   "hits": 1
+  },
+  {
+   "id": "en3",
+   "out": "The TypeScript extension should talk to the daemon over a WebSocket.",
+   "wer": 0.0,
+   "decode_s": 0.11910887499107048,
+   "dur_s": 3.738875,
+   "terms": 3,
+   "hits": 3
+  }
+ ]
+}
