@@ -1,11 +1,12 @@
 // What Herdr's Info panel reads about a Pi session: the terminal is labelled with its
 // session file (hc label <terminal> pi.session=<file>), and the Claude usage is kept in
 // ~/.pi/agent/claude-usage.json, account-wide: from each response, and asked of the
-// account every 20 s between them (poll.ts), so it moves while no agent works.
+// account every 20 s between them (poll.ts), so it moves while no agent works. Each window
+// also carries an estimate of the tokens left, fitted from its history (estimate.ts).
 import { execFile } from "node:child_process";
-import path from "node:path";
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { claudeToken, INTERVAL, poll, writeAtomic } from "./poll.ts";
+import { claudeToken, INTERVAL, poll, writeUsage } from "./poll.ts";
+import { refresh } from "./estimate.ts";
 import { usageOf } from "./usage.ts";
 
 // Herdr sets HC_TERMINAL_ID in the terminals it runs; elsewhere there is nothing to label.
@@ -23,7 +24,12 @@ const slot = globalThis as Record<symbol, NodeJS.Timeout | undefined>;
 function startPolling() {
 	clearInterval(slot[TIMER]);
 	const deps = { dir: getAgentDir(), now: Date.now, token: () => claudeToken(), fetch };
-	const tick = () => void poll(deps).catch(() => {});
+	// The estimate refreshes after the poll, every few minutes, by one session at a time.
+	const tick = () =>
+		void poll(deps)
+			.catch(() => {})
+			.then(() => refresh({ dir: deps.dir, now: Date.now() }))
+			.catch(() => {});
 	// Ticks a few times per interval, at a random phase, so the sessions' claims spread out;
 	// the files decide whether a tick asks.
 	setTimeout(tick, Math.random() * 5000).unref();
@@ -57,7 +63,7 @@ export default function (pi: ExtensionAPI) {
 			usingOverage: usage.isUsingOverage === true,
 		};
 		try {
-			writeAtomic(path.join(getAgentDir(), "claude-usage.json"), record);
+			writeUsage(getAgentDir(), record);
 		} catch {}
 	});
 }

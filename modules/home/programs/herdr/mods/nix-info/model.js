@@ -410,8 +410,9 @@ export function infoPace(resetsAt, length, now = Date.now()) {
 }
 
 // ~/.pi/agent/claude-usage.json (herdr-session's) as the panel reads it. Utilization is 0–1;
-// stale when the file is older than 10 minutes. Each window has its pace and how far usage
-// is ahead of it (negative: under it).
+// stale when the file is older than 10 minutes. Each window has its pace, how far usage
+// is ahead of it (negative: under it), and the tokens left herdr-session estimated (`left`,
+// null when it estimated nothing; `tokens` null until its fit has enough data).
 export function infoUsage(record, now = Date.now()) {
   if (!record || (!record.fiveHour && !record.sevenDay)) return null;
   const stale = now - (record.at ?? 0) > 10 * 60 * 1000;
@@ -419,9 +420,25 @@ export function infoUsage(record, now = Date.now()) {
     if (!w || typeof w.utilization !== "number") return null;
     const resetsAt = typeof w.resetsAt === "number" ? w.resetsAt * 1000 : null;
     const pace = infoPace(resetsAt, length, now);
-    return { ratio: w.utilization, resetsAt, pace, ahead: pace === null ? null : w.utilization - pace };
+    const e = w.estimate;
+    const left = e && typeof e === "object" ? { tokens: typeof w.tokensLeft === "number" ? w.tokensLeft : null, spread: e.spread ?? null, stretches: e.stretches ?? 0, needed: e.needed ?? 0 } : null;
+    return { ratio: w.utilization, resetsAt, pace, ahead: pace === null ? null : w.utilization - pace, left };
   };
   return { at: record.at ?? null, stale, fiveHour: window(record.fiveHour, FIVE_HOURS), sevenDay: window(record.sevenDay, SEVEN_DAYS), overage: record.usingOverage === true, overageStatus: record.overageStatus ?? null };
+}
+
+// A window's tokens left as its row shows them: a short text and a one-sentence tooltip;
+// null when nothing was estimated. `limit` names the window ("5-hour", "weekly").
+export function infoTokensLeft(left, limit) {
+  if (!left) return null;
+  if (left.tokens === null) {
+    return { text: "estimating…", tip: `Estimating the tokens left before the ${limit} limit: ${left.stretches} of the ${left.needed} stretches of 5 points it needs so far` };
+  }
+  const spread = left.spread === null ? "" : ` (±${Math.round(left.spread * 100)}%)`;
+  return {
+    text: `≈ ${infoTokens(left.tokens)} left`,
+    tip: `About ${infoTokens(left.tokens)} tokens${spread} before the ${limit} limit, at the token mix of your last 5 hours, cache reads included, from ${left.stretches} stretches of your past usage`,
+  };
 }
 
 // ---- Formatting ----------------------------------------------------------------------

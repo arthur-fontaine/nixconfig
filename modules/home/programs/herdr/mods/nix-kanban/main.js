@@ -249,8 +249,7 @@ export default class Kanban extends View {
     // scheduler has room for, then the Kanban's actions.
     const head = h_flex().flex_none().h(36).px(6).pb(8).gap(2).items_center()
       .child(div().id("capacity").flex_1().min_w(0).pl(6).truncate().text_size(11.5).text_color(t.dim)
-        .when(Boolean(s), (e) => e.tooltip(`${kTokens(this.budgetUsed(s))} of ${kTokens(s.settings.tokenBudget)} tokens used in ${s.settings.budgetWindowHours} h`)
-          .child(this.capacity(s, col))))
+        .when(Boolean(s), (e) => e.child(this.capacity(s, col))))
       .child(this.iconButton("new", "plus", "New card", () => this.openCard(null, "todo"), t, { size: 28, iconSize: 14 }))
       .child(this.iconButton("open-board", "arrow-up-right", "Open the board as a tab", () => this.openBoard(), t, { size: 28, iconSize: 14 }));
     const root = v_flex().id("root").size_full().min_h(0).bg(t.chrome).text_color(t.foreground)
@@ -360,15 +359,12 @@ export default class Kanban extends View {
     if (this.offline) return root.child(this.offlineNote(t));
     if (!s) return root;
     const col = byColumn(s.cards);
-    const used = this.budgetUsed(s);
     const pending = livePending(s.pairing.pending);
     const width = this.columnWidth();
     const header = h_flex().h(48).flex_none().px(16).gap(14).items_center().border_b(1).border_color(t.border).bg(t.chrome)
       .child(svg(ICON("square-kanban")).size(15).text_color(t.muted))
       .child(div().text_size(15).font_semibold().child("Kanban"))
       .child(div().flex_1())
-      .child(div().text_size(11.5).text_color(t.dim).tooltip(`Cards started in the last ${s.settings.budgetWindowHours} h, against the token budget`)
-        .child(`${kTokens(used)} of ${kTokens(s.settings.tokenBudget)} tokens in ${s.settings.budgetWindowHours} h`))
       .when(s.freeRamGB != null, (e) => e.child(div().text_size(11.5).text_color(s.freeRamGB < s.settings.minFreeRamGB ? t.blocked : t.dim)
         .child(`${Math.round(s.freeRamGB)} GB free`)))
       .child(div().text_size(11.5).text_color(t.dim).child(this.capacity(s, col)))
@@ -389,11 +385,6 @@ export default class Kanban extends View {
         .children(COLUMNS.map((c) => this.column(c, col[c.id], s, t, width)))
         // Scrolled to the end, the row's right padding is lost: this keeps Done off the edge.
         .when(width === COLUMN_MIN, (e) => e.child(div().w(2).h(1).flex_none())));
-  }
-
-  budgetUsed(s) {
-    const since = Date.now() - s.settings.budgetWindowHours * 3600_000;
-    return s.cards.filter((c) => c.startedAt != null && c.startedAt >= since).reduce((n, c) => n + (c.estimate ?? s.settings.defaultEstimate), 0);
   }
 
   // An explicit width: inside a scrolling row, flex_1 columns take their content's width.

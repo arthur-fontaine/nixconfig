@@ -9,7 +9,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoLastCall, infoLines, infoNewSession, infoParseTitle, infoResultLines, infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoLastCall, infoLines, infoNewSession, infoParseTitle, infoResultLines, infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
 
 // The editor (../_lib/editor.js) gets the herdr functions it uses.
 const HERDR = { spaces, panes, run, shared, setShared, notify };
@@ -231,9 +231,11 @@ export default class Info extends View {
         .left(`${(Math.max(0, Math.min(1, pace)) * 100).toFixed(1)}%`)));
   }
 
-  // A usage window: label, bar with the pace tick, %, time to reset. The % turns amber more
-  // than 10 points ahead of pace; the tooltip gives the gap either way.
+  // A usage window: label, bar with the pace tick, %, tokens left, time to reset. The % turns
+  // amber more than 10 points ahead of pace; the tooltip gives the gap either way. The
+  // tokens left are herdr-session's estimate, with their own tooltip.
   usageRow(t, u, key, label, w, now) {
+    const left = infoTokensLeft(w.left, key === "week" ? "weekly" : "5-hour");
     const ahead = w.ahead ?? 0;
     const tip = w.ahead === null ? null : `${Math.abs(Math.round(ahead * 100))}% ${ahead >= 0 ? "ahead of" : "under"} the normal pace (the tick)`;
     const reset = w.resetsAt ? `in ${key === "week" ? days(w.resetsAt - now) : infoSpan(w.resetsAt - now)}` : "";
@@ -242,6 +244,8 @@ export default class Info extends View {
       .child(div().flex_1().min_w(0).child(this.bar(t, w.ratio, usageColor(t, w.ratio), w.pace)))
       .child(div().w(36).flex_none().text_right().text_size(13).font_medium()
         .text_color(u.stale ? t.muted : ahead > 0.1 ? t.ansi3 : t.foreground).child(pct(w.ratio)))
+      .when(Boolean(left), (e) => e.child(div().id(`usage-${key}-left`).w(80).flex_none().text_right().whitespace_nowrap().text_size(12)
+        .text_color(w.left.tokens === null ? t.dim : t.muted).child(left.text).tooltip(left.tip)))
       .child(div().w(62).flex_none().text_right().text_size(12).text_color(t.dim).truncate().child(reset));
   }
 

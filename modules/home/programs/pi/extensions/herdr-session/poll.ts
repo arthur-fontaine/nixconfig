@@ -3,16 +3,17 @@
 // says when the account was last asked, and a lock (created exclusively) lets only one
 // session ask at a time. A response written by a turn counts as fresh usage too.
 import { execFile } from "node:child_process";
-import { closeSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { unlinkSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { claim, readJson, writeAtomic } from "./atomic.ts";
+import { withEstimate } from "./estimate.ts";
+import { appendSample } from "./history.ts";
 import type { Window } from "./usage.ts";
 
 // The endpoint 429s after a short burst (anthropics/claude-code#31637); failures back off below.
 export const INTERVAL = 20_000;
-// A lock older than this belongs to a session that died while asking.
-const LOCK_TTL = 30_000;
 const MAX_BACKOFF = 15 * 60_000;
 const ENDPOINT = "https://api.anthropic.com/api/oauth/usage";
 
@@ -39,19 +40,12 @@ const files = (dir: string) => ({
 	lock: path.join(dir, "claude-usage.poll.lock"),
 });
 
-function readJson<T>(file: string): T | null {
+// Every write of the usage, from a poll or a response, also lands in the history.
+export function writeUsage(dir: string, record: UsageRecord) {
+	writeAtomic(files(dir).usage, withEstimate(record, dir));
 	try {
-		return JSON.parse(readFileSync(file, "utf8")) as T;
-	} catch {
-		return null;
-	}
-}
-
-// Written aside then moved, so a reader never sees half a file.
-export function writeAtomic(file: string, value: unknown) {
-	const tmp = `${file}.${process.pid}.tmp`;
-	writeFileSync(tmp, JSON.stringify(value));
-	renameSync(tmp, file);
+		appendSample(dir, record);
+	} catch {}
 }
 
 // The wait after an attempt: the interval, doubled for each failure in a row.
@@ -68,21 +62,6 @@ export function due(dir: string, now: number) {
 	return !attempt || now - attempt.at >= waitAfter(attempt);
 }
 
-function claim(lock: string, now: number) {
-	try {
-		closeSync(openSync(lock, "wx"));
-		return true;
-	} catch {
-		try {
-			if (now - statSync(lock).mtimeMs < LOCK_TTL) return false;
-			unlinkSync(lock);
-			closeSync(openSync(lock, "wx"));
-			return true;
-		} catch {
-			return false;
-		}
-	}
-}
 
 // The endpoint's windows: utilization 0–100 and an ISO reset, as Claude Code's /usage reads
 // them; the record keeps the response headers' units (0–1, epoch seconds). Newer bodies
@@ -135,7 +114,7 @@ export async function poll(deps: Deps): Promise<"skipped" | "written" | "failed"
 		const failures = record ? 0 : (readJson<Attempt>(f.attempt)?.failures ?? 0) + 1;
 		writeAtomic(f.attempt, { at: deps.now(), failures });
 		if (!record) return "failed";
-		writeAtomic(f.usage, record);
+		writeUsage(deps.dir, record);
 		return "written";
 	} finally {
 		try {
