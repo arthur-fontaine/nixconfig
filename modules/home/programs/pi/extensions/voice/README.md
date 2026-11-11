@@ -61,8 +61,9 @@ What only a person can check: the real microphone and speakers.
 
 1. In a Herdr terminal, start `pi` and type `/call`. The first time, the footer shows
    `loading voice models…` for a while (downloads, then ~20 s); then `listening`.
-2. **Permission**: macOS asks whether **Herdr** may use the microphone (once). Allow. If nothing
-   is asked and nothing is heard, check System Settings → Privacy & Security → Microphone → Herdr.
+2. **Permission**: macOS asks whether Herdr may use the microphone (once); the grant is listed as
+   **herdr-core** in System Settings → Privacy & Security → Microphone. If nothing is heard, the
+   daemon log (`~/.cache/pi-voice/daemon.log`) prints the mic level every 5 s.
 3. **Auto-send**: say « Dis-moi bonjour en une phrase. » and stop. Within about a second and a
    half, the message appears and is sent, with a short two-note chime.
 4. **Hesitation**: say « Explique-moi, euh… » wait a second « …ce qu'est un worktree. » One
