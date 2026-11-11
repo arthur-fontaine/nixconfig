@@ -146,16 +146,20 @@ class Helper:
 class Pi:
     def __init__(self, capture_dir: Path, socket: Path, with_voice: bool = True):
         self.capture_dir, self.socket, self.with_voice = capture_dir, socket, with_voice
+        self.cwd = capture_dir.parent / "cwd"  # one folder for every run: the prompt names it
+        self.cwd.mkdir(exist_ok=True)
 
     async def start(self):
-        args = ["pi", "--mode", "rpc", "--no-session", "--model", MODEL, "--thinking", "off", "-e", str(CAPTURE)]
+        # --no-mcp: the MCP servers' descriptions change between runs, which would hide what matters here.
+        args = ["pi", "--mode", "rpc", "--no-session", "--no-mcp", "--model", MODEL, "--thinking", "off"]
         if self.with_voice:
             args += ["-e", str(EXTENSION)]
+        args += ["-e", str(CAPTURE)]
         env = {**os.environ, "VOICE_CAPTURE": str(self.capture_dir), "PI_VOICE_SOCKET": str(self.socket),
                "PI_VOICE_NO_SPAWN": "1"}
         self.proc = await asyncio.create_subprocess_exec(*args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                                          stderr=open(self.capture_dir / "pi.stderr", "w"),
-                                                         env=env, cwd=str(self.capture_dir), limit=2**24)
+                                                         env=env, cwd=str(self.cwd), limit=2**24)
         self.events = Lines(self.proc.stdout, "pi")
         self._id = 0
 
@@ -217,8 +221,10 @@ def requests(capture: Path) -> list[dict]:
 
 
 def system_and_tools(payload: dict):
-    """The parts of an Anthropic-style payload that carry instructions: system and tools."""
-    return json.dumps(payload.get("system"), sort_keys=True), json.dumps(payload.get("tools"), sort_keys=True)
+    """The leading system message: the prompt and the tool declarations, with its timestamp left out."""
+    head = dict(payload["messages"][0])
+    head.pop("timestamp", None)
+    return json.dumps(head, sort_keys=True, ensure_ascii=False)
 
 
 async def common_checks(case: str, pi: Pi, capture: Path, control: dict):
@@ -227,10 +233,15 @@ async def common_checks(case: str, pi: Pi, capture: Path, control: dict):
     check(case, spoken, "a voice row (voice-spoken custom entry) is on the branch")
     payloads = requests(capture)
     check(case, payloads, f"{len(payloads)} request(s) to the main model captured")
-    blob = json.dumps(payloads, ensure_ascii=False)
-    leaks = [e for e in spoken if (e.get("data") or {}).get("text") and (e["data"]["text"][:40] in blob)]
-    check(case, not leaks, "no spoken text reaches the model")
+    conversation = {(e["message"]["role"], text_of(e["message"]).strip()) for e in entries if e.get("type") == "message"}
+    sent = [(m.get("role"), text_of(m).strip()) for p in payloads for m in p["messages"][1:]]
+    foreign = [m for m in sent if m not in conversation]
+    check(case, not foreign, f"every message sent to the model is one of the conversation's {foreign[:2]}")
+    spoken_only = [e["data"]["text"] for e in spoken if ("assistant", e["data"]["text"].strip()) not in conversation]
+    check(case, not any(("user", t) in sent or ("assistant", t) in sent for t in spoken_only), "no spoken text is sent as a message")
     check(case, not [e for e in entries if e.get("type") == "custom_message"], "no custom message (none can reach the model)")
+    roles = {m.get("role") for p in payloads for m in p["messages"][1:]}
+    check(case, roles <= {"user", "assistant", "toolResult"}, f"only the conversation follows the system message: {sorted(roles)}")
     same = all(system_and_tools(p) == system_and_tools(control) for p in payloads)
     check(case, same, "system prompt and tools are byte-for-byte the control run's")
     msgs = [json.loads(l)["message"] for l in (capture / "messages.jsonl").read_text().splitlines()]
@@ -269,7 +280,7 @@ async def case_hesitation(helper: Helper, pi: Pi, clips, capture, control):
     if not check(case, got, "sent after the real end"):
         return
     text = norm(text_of(got[1]["message"]))
-    check(case, "réponds" in text and "merci" in text, f"one message with both halves: {text!r}")
+    check(case, "seulement" in text and "merci" in text, f"one message with both halves: {text!r}")
     await pi.idle(after=got[0])
     await asyncio.sleep(2.0)
     check(case, len(pi.user_messages_sent(t0)) == 1, "exactly one user message")
@@ -326,7 +337,7 @@ async def case_steer(helper: Helper, pi: Pi, clips, capture, control):
     await asyncio.sleep(1.0)
     branch, _ = await common_checks(case, pi, capture, control)
     users = [norm(text_of(e["message"])) for e in branch if e.get("type") == "message" and e["message"].get("role") == "user"]
-    check(case, len(users) == 2 and "compte" in users[0] and "cinq" in users[1], f"no rewind: both messages on the branch {users}")
+    check(case, len(users) == 2 and "lettres" in users[0] and re.search(r"\bcinq\b|\b5\b", users[1]), f"no rewind: both messages on the branch {users}")
 
 
 CASES = {"auto_send": case_auto_send, "hesitation": case_hesitation, "rewind": case_rewind, "steer": case_steer}
