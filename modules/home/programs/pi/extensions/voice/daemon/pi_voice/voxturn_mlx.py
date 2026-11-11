@@ -86,7 +86,7 @@ def fit_window(audio: np.ndarray, n: int = N_SAMPLES) -> np.ndarray:
 
 
 class VoxTurn:
-    def __init__(self, path: Path | None = None):
+    def __init__(self, path: Path | None = None, bits: int | None = 8):
         import mlx.nn as nn
         from mlx_audio.stt.models.qwen3_asr.config import ModelConfig
         from mlx_audio.stt.models.qwen3_asr.qwen3_asr import Qwen3ASRModel
@@ -97,7 +97,13 @@ class VoxTurn:
         self.model = Qwen3ASRModel(ModelConfig(audio_config=config["audio_config"], text_config=config["text_config"]))
         self.model.head = nn.Linear(config["text_config"]["hidden_size"], 1)
         self.model.load_weights(str(path / "model.safetensors"), strict=False)
+        if bits:
+            # The language model in 8 bits (its 1.2 GB of bf16 weights to ~0.65 GB); the audio
+            # encoder, the projector and the head stay as they are. Checked against PyTorch by
+            # tests/test_voxturn_parity.py.
+            nn.quantize(self.model.model, group_size=64, bits=bits)
         mx.eval(self.model.parameters())
+        mx.clear_cache()
         self.questions = json.loads((path / "questions.json").read_text())
         self.tok = Tokenizer.from_file(str(path / "tokenizer.json"))
         self.seq_head = self._ids("<|im_start|>system\n<|im_end|>\n<|im_start|>user\n")

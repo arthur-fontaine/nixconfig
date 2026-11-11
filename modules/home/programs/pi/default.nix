@@ -282,7 +282,11 @@ let
     bash-titles = ./extensions/bash-titles;
     # Tool rows drawn faint, apart from the agent's own words.
     tool-rows-faint = ./extensions/tool-rows-faint;
+    # Voice calls (/call, Ctrl+Alt+V): local turn detection, Whisper and Voxtral in the
+    # pi-voice daemon below; the written answers stay exactly as they are.
+    voice = ./extensions/voice;
   };
+  piVoice = import ./voice.nix { inherit pkgs lib; };
   # Pi loads the folder's extensions in directory order, unsorted, and each tool renderer
   # wraps those of the extensions loaded after it. A manifest fixes the order: these first,
   # so that what they add to a row (auto-mode's note, background-tools' detached rows,
@@ -331,6 +335,9 @@ in
   # physical device, say), so parallel workers take turns. mkdir is atomic; the lease goes
   # when the command ends, and one left by a crash goes after 30 minutes without refresh.
   home.packages = [
+    # The voice extension starts `pi-voice serve`, which starts `pi-voice-audio`.
+    piVoice.daemon
+    piVoice.audio
     (pkgs.writeShellScriptBin "with-lease" ''
       set -eu
       [ $# -ge 2 ] || { echo "usage: with-lease <name> <command...>" >&2; exit 2; }
