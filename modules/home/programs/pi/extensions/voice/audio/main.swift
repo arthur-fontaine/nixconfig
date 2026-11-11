@@ -58,10 +58,27 @@ final class Audio {
     let micFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: micRate, channels: 1, interleaved: true)!
     var converter: AVAudioConverter?
     var micOn = false
+    var configured = false
     var pending = 0  // speech buffers scheduled and not yet played
     let queue = DispatchQueue(label: "pi-voice-audio")
 
-    func start() throws {
+    /// The engine (and so the microphone, and macOS's orange indicator) runs only while a call has
+    /// the mic on: the daemon outlives calls, the microphone mustn't.
+    func setMic(_ on: Bool) throws {
+        micOn = on
+        if on, !engine.isRunning {
+            if !configured { try configure() }
+            engine.prepare()
+            try engine.start()
+            player.play()
+        } else if !on, engine.isRunning {
+            player.stop()
+            engine.stop()
+            queue.sync { pending = 0 }
+        }
+    }
+
+    func configure() throws {
         // Playback first: voice processing takes its echo reference from the output it finds attached.
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: speakerFormat)
@@ -76,9 +93,7 @@ final class Audio {
         engine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: input) { [weak self] buffer, _ in
             self?.mic(buffer)
         }
-        engine.prepare()
-        try engine.start()
-        player.play()
+        configured = true
     }
 
     func mic(_ buffer: AVAudioPCMBuffer) {
@@ -98,6 +113,7 @@ final class Audio {
     }
 
     func play(seq: UInt32, pcm: Data) {
+        guard engine.isRunning else { return }
         let frames = pcm.count / 2
         guard frames > 0, let buffer = AVAudioPCMBuffer(pcmFormat: speakerFormat, frameCapacity: AVAudioFrameCount(frames)) else { return }
         buffer.frameLength = AVAudioFrameCount(frames)
@@ -150,13 +166,7 @@ if CommandLine.arguments.contains("--devices") {
 }
 
 let audio = Audio()
-do {
-    try audio.start()
-    out.event(["event": "ready"])
-} catch {
-    out.event(["event": "error", "message": "audio: \(error.localizedDescription)"])
-    exit(1)
-}
+out.event(["event": "ready"])
 
 // Commands from the daemon, until it closes stdin.
 DispatchQueue.global().async {
@@ -172,8 +182,13 @@ DispatchQueue.global().async {
             guard let cmd = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] else { continue }
             switch cmd["cmd"] as? String {
             case "mic":
-                audio.micOn = (cmd["on"] as? Bool) ?? false
-                out.event(["event": audio.micOn ? "mic_open" : "mic_closed"])
+                let on = (cmd["on"] as? Bool) ?? false
+                do {
+                    try audio.setMic(on)
+                    out.event(["event": on ? "mic_open" : "mic_closed"])
+                } catch {
+                    out.event(["event": "error", "message": "audio: \(error.localizedDescription)"])
+                }
             case "stop":
                 audio.stop()
             case "gain":
