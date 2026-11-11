@@ -34,7 +34,7 @@ ONSET_S = 0.15  # speech this long starts a turn
 PAUSE_S = 0.2  # silence this long is a pause: ask whether the turn ended
 RECHECK_S = 0.25
 FALLBACK_S = 1.5  # silence this long ends the turn whatever the models say
-PREROLL_S = 0.3
+PREROLL_S = 0.5  # audio kept from before the onset: 0.3 s clipped the first word ("Compte") in the e2e run
 BARGE_S = 0.3  # speech over Pi's voice this long, judged an interruption, stops it
 BARGE_LONG_S = 0.6  # speech over Pi's voice this long stops it whatever VoxTurn says: a backchannel is shorter
 # What people say to show they listen, not to take the turn. Measured: VoxTurn's "intent" question took
