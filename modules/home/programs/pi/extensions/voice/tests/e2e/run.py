@@ -158,6 +158,7 @@ class Pi:
         env = {**os.environ, "VOICE_CAPTURE": str(self.capture_dir), "PI_VOICE_SOCKET": str(self.socket),
                "PI_VOICE_NO_SPAWN": "1"}
         self.proc = await asyncio.create_subprocess_exec(*args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                                         start_new_session=True,
                                                          stderr=open(self.capture_dir / "pi.stderr", "w"),
                                                          env=env, cwd=str(self.cwd), limit=2**24)
         self.events = Lines(self.proc.stdout, "pi")
@@ -351,9 +352,10 @@ async def main(argv: list[str]):
     clips = make_clips(work)
     socket, control_sock = work / "daemon.sock", work / "helper.sock"
     helper_cmd = f"{shlex.quote(sys.executable)} -m pi_voice.fake_audio --control {control_sock} --out {work / 'played.wav'}"
+    # Its own process group, so the cleanup below takes the helper with it.
     daemon = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "pi_voice", "serve", "--socket", str(socket), "--audio", helper_cmd,
-        stdout=open(work / "daemon.log", "w"), stderr=subprocess.STDOUT)
+        stdout=open(work / "daemon.log", "w"), stderr=subprocess.STDOUT, start_new_session=True)
     try:
         helper = Helper(control_sock)
         await helper.open()
@@ -387,9 +389,16 @@ async def main(argv: list[str]):
                     pass
                 await pi.stop()
     finally:
-        if daemon.returncode is None:
-            daemon.terminate()
-            await daemon.wait()
+        # The daemon holds ~6 GB of models: never leave it behind, even when a case crashed.
+        import signal
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            if daemon.returncode is not None:
+                break
+            try:
+                os.killpg(daemon.pid, sig)
+                await asyncio.wait_for(daemon.wait(), 10)
+            except (ProcessLookupError, asyncio.TimeoutError):
+                pass
     failed = [r for r in results if not r[1]]
     print(f"\n{len(results) - len(failed)} passed, {len(failed)} failed", flush=True)
     if not keep and not failed:

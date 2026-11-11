@@ -208,12 +208,17 @@ class Daemon:
         for sig in (signal.SIGTERM, signal.SIGINT):
             self.loop.add_signal_handler(sig, self.stopping.set)
         print(f"pi-voice: listening on {self.socket}", flush=True)
-        async with server:
+        try:
             await self.stopping.wait()
+        finally:
+            server.close()
         if self.helper_proc and self.helper_proc.returncode is None:
             self.helper_proc.terminate()
         if self.socket.exists():
             self.socket.unlink()
+        print("pi-voice: stopped", flush=True)
+        # The model worker thread can be busy for seconds; nothing in it needs to finish.
+        os._exit(0)
 
 
 class LoopFuture:

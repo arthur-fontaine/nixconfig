@@ -28,10 +28,12 @@ export default function (pi: ExtensionAPI) {
 	const voiceTexts: string[] = []; // sent by voice, waiting for their entry
 	let pendingRewind: { entryId: string; text: string } | undefined;
 	// The answer being spoken: blocks of Pi's text, said in order.
-	let answer: { id: string; blocks: Blocks; chain: Promise<void>; said: string[]; sentences: number; gen: number; started?: number } | undefined;
+	let answer: { id: string; blocks: Blocks; chain: Promise<void>; said: string[]; sentences: number; gen: number } | undefined;
 	let answerCount = 0;
 	let generation = 0;
 	const opened = new Map<string, { value: boolean }>();
+	// When each answer started playing, by id: the daemon reports it spoken after the answer is done here.
+	const started = new Map<string, number>();
 
 	const client = new Client(onEvent, () => {
 		if (call.active && call.mine) ctx?.ui.notify("The voice daemon stopped; the call ended.", "warning");
@@ -100,7 +102,7 @@ export default function (pi: ExtensionAPI) {
 				if (e.phase === "confirmed") generation++;
 				break;
 			case "speaking":
-				if (answer && answer.started === undefined) answer.started = Date.now();
+				if (!started.has(String(e.id))) started.set(String(e.id), Date.now());
 				break;
 			case "spoken":
 				onSpoken(String(e.id ?? ""), String(e.text ?? ""), Boolean(e.interrupted));
@@ -150,7 +152,9 @@ export default function (pi: ExtensionAPI) {
 
 	function onSpoken(id: string, text: string, interrupted: boolean) {
 		if (!text.trim()) return;
-		const durationMs = answer?.id === id && answer.started ? Date.now() - answer.started : undefined;
+		const begin = started.get(id);
+		started.delete(id);
+		const durationMs = begin === undefined ? undefined : Date.now() - begin;
 		pi.appendEntry<SpokenEntry>(ENTRY, { text: text.trim(), interrupted, durationMs });
 	}
 
