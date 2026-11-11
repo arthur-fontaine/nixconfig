@@ -59,6 +59,11 @@ and that the written answer is exactly what the provider streamed.
 
 What only a person can check: the real microphone and speakers.
 
+Passed live on 2026-11-11 (Mac's built-in mic and speakers, in Herdr): auto-send, hesitation,
+adding details (rewind), interrupting with "ok" not stopping Pi, no self-hearing on the
+speakers, the Spoke row, and hanging up with `/call`. Not run then: two chats taking the call
+(step 9) and the memory release 10 minutes after a call (step 10).
+
 1. In a Herdr terminal, start `pi` and type `/call`. The first time, the footer shows
    `loading voice models…` for a while (downloads, then ~20 s); then `listening`.
 2. **Permission**: macOS asks whether Herdr may use the microphone (once); the grant is listed as
