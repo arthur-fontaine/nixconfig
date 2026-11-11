@@ -4,7 +4,7 @@ import {
   infoCache, infoCategory, infoCommand, infoFiles, infoLastCall, infoContext, infoDuration, infoFeed, infoLineDiff, infoLines, infoNewSession, infoParseTitle,
   infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length,
   infoCapValue, infoClock, infoEditDiff, infoJsonLines, infoParseDiff, infoResultLines, RESULT_CAP,
-  infoPace, FIVE_HOURS, SEVEN_DAYS,
+  infoPace, FIVE_HOURS, SEVEN_DAYS, infoTokensLeft,
 } from "../model.js";
 
 const line = (o) => JSON.stringify(o) + "\n";
@@ -97,6 +97,25 @@ test("usage: ratios, reset times, staleness", () => {
   assert.equal(u.sevenDay.resetsAt, null);
   assert.equal(infoUsage({ at: now - 11 * 60000, fiveHour: { utilization: 0.1 } }, now).stale, true);
   assert.equal(infoUsage(null), null);
+});
+
+test("usage: the tokens left, as herdr-session estimated them", () => {
+  const now = 1_793_700_000_000;
+  const estimate = { perPoint: 269_466, spread: 0.11, stretches: 225, needed: 8, mix: 11.4 };
+  const u = infoUsage({ at: now, fiveHour: { utilization: 0.43, tokensLeft: 174_506_624, estimate }, sevenDay: { utilization: 0.1, tokensLeft: null, estimate: { ...estimate, perPoint: null, spread: null, stretches: 3 } } }, now);
+  assert.deepEqual(u.fiveHour.left, { tokens: 174_506_624, spread: 0.11, stretches: 225, needed: 8 });
+  assert.deepEqual(infoTokensLeft(u.fiveHour.left, "5-hour"), {
+    text: "≈ 175M left",
+    tip: "About 175M tokens (±11%) before the 5-hour limit, at the token mix of your last 5 hours, cache reads included, from 225 stretches of your past usage",
+  });
+  assert.deepEqual(infoTokensLeft(u.sevenDay.left, "weekly"), {
+    text: "estimating…",
+    tip: "Estimating the tokens left before the weekly limit: 3 of the 8 stretches of 5 points it needs so far",
+  });
+  // Nothing estimated (an older herdr-session): nothing shown.
+  assert.equal(infoUsage({ at: now, fiveHour: { utilization: 0.4 } }, now).fiveHour.left, null);
+  assert.equal(infoTokensLeft(null, "5-hour"), null);
+  assert.equal(infoTokensLeft({ tokens: 0, spread: 0.1, stretches: 9, needed: 8 }, "5-hour").text, "≈ 0 left");
 });
 
 test("usage: the normal pace is the elapsed share of each window", () => {
