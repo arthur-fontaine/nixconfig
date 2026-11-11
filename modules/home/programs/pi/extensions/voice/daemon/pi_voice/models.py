@@ -9,6 +9,7 @@ two chunks of the speech being generated (a Voxtral chunk is ~0.5 s of audio,
 
 import queue
 import re
+import sys
 import threading
 import time
 from concurrent.futures import Future
@@ -29,6 +30,14 @@ VOCABULARY = ["Pi", "pnpm", "worktree", "nix build", "default.nix", "commit", "r
 HALLUCINATIONS = re.compile(r"sous-titr|amara\.org|merci d'avoir regardé|thanks for watching|subtitles by", re.I)
 
 
+T0 = time.time()  # roughly the process start: this module is imported first thing
+
+
+def timing(what: str, since: float) -> None:
+    """One line per startup phase in the daemon log: `pi-voice: timing <what> <seconds>`."""
+    print(f"pi-voice: timing {what} {time.time() - since:.2f}s", file=sys.stdout, flush=True)
+
+
 @dataclass
 class Transcript:
     text: str
@@ -42,7 +51,11 @@ class Stt:
     def __init__(self):
         import mlx_whisper  # noqa: F401  (imported here so the daemon starts without it)
         self.vocabulary = list(VOCABULARY)
-        self(np.zeros(16000, np.float32))  # loads and warms the model
+        # Loads the weights now; no warm-up transcription: it costs as much as a real one (0.9 s)
+        # and the first real one isn't slower.
+        import mlx.core as mx
+        from mlx_whisper.transcribe import ModelHolder
+        ModelHolder.get_model(WHISPER, mx.float16)
 
     def __call__(self, audio: np.ndarray) -> Transcript:
         import mlx_whisper
@@ -73,26 +86,44 @@ class Tts:
 
 
 class EndOfTurn:
-    """VoxTurn (MLX port) given the transcript so far, with Smart Turn rescuing short answers (RESEARCH.md §2)."""
+    """VoxTurn (MLX port) given the transcript so far, with Smart Turn rescuing short answers (RESEARCH.md §2).
+
+    Smart Turn (8 MB) is there from the start of a call; VoxTurn (2 s to load) comes a moment
+    later, in the background. Until it does, Smart Turn decides alone, at 0.5 (measured: 6/18
+    hesitations cut, 282 ms after a real end, against 1/18 with VoxTurn).
+    """
 
     def __init__(self):
         from .smart_turn import SmartTurn
-        from .voxturn_mlx import VoxTurn
-        self.voxturn = VoxTurn()
+        t = time.time()
         self.smart = SmartTurn()
-        self.voxturn.predict(np.zeros(16000, np.float32))
+        timing("load smart-turn", t)
+        self.voxturn = None
+
+    def load_voxturn(self) -> None:
+        from .voxturn_mlx import VoxTurn
+        t = time.time()
+        v = VoxTurn()
+        v.predict(np.zeros(16000, np.float32))
+        self.voxturn = v
+        timing("load voxturn", t)
 
     def __call__(self, audio: np.ndarray, text: str | None) -> tuple[bool, float, float]:
+        if self.voxturn is None:
+            smart = self.smart(audio)
+            return smart >= 0.5, 0.0, smart
         vox = self.voxturn.predict(audio, "eot", text=text or None)["yes"]
         smart = self.smart(audio) if vox < 0.5 else 0.0
         return ended(vox, smart), vox, smart
 
     def invalid(self, audio: np.ndarray) -> float:
         """P(this is not speech: a cough, a laugh, a noise)."""
-        return self.voxturn.predict(audio, "invalid")["yes"]
+        return 0.0 if self.voxturn is None else self.voxturn.predict(audio, "invalid")["yes"]
 
     def interrupts(self, audio: np.ndarray, text: str | None = None) -> float:
         """While Pi speaks: P(the person is interrupting) rather than backchanneling ("mm", "ok")."""
+        if self.voxturn is None:
+            return 1.0  # without VoxTurn, the words decide (backchannel list), as after 0.6 s anyway
         return self.voxturn.predict(audio, "intent", text=text, speaker="agent")["interrupt"]
 
 
@@ -187,15 +218,38 @@ class Models:
         self.eot: EndOfTurn | None = None
         self.loaded_at = 0.0
 
-    def load(self) -> Future:
-        def run():
+    def load(self, on_tts: Callable[[], None] | None = None) -> Future:
+        """What a call needs to listen (Whisper, Smart Turn); the returned future is done then.
+
+        VoxTurn and Voxtral follow in the background (lower priority than the call's own jobs);
+        `on_tts` runs on the worker once Voxtral is ready, so speech waiting for it can start.
+        """
+        def core():
             t0 = time.time()
             self.eot = self.eot or EndOfTurn()
-            self.stt = self.stt or Stt()
-            self.tts = self.tts or Tts()
-            self.loaded_at = time.time()
+            if self.stt is None:
+                t = time.time()
+                self.stt = Stt()
+                timing("load whisper", t)
             return time.time() - t0
-        return self.worker.submit(run, priority=0)
+
+        def voxturn():
+            if self.eot is not None and self.eot.voxturn is None:
+                self.eot.load_voxturn()
+
+        def voxtral():
+            if self.tts is None:
+                t = time.time()
+                self.tts = Tts()
+                timing("load voxtral", t)
+            self.loaded_at = time.time()
+            if on_tts:
+                on_tts()
+
+        fut = self.worker.submit(core, priority=0)
+        self.worker.submit(voxturn, priority=2)
+        self.worker.submit(voxtral, priority=2)
+        return fut
 
     def unload(self) -> Future:
         def run():
@@ -209,4 +263,9 @@ class Models:
 
     @property
     def ready(self) -> bool:
-        return self.stt is not None and self.tts is not None and self.eot is not None
+        """Ready to listen (the rest may still be loading)."""
+        return self.stt is not None and self.eot is not None
+
+    @property
+    def complete(self) -> bool:
+        return self.ready and self.tts is not None and self.eot.voxturn is not None

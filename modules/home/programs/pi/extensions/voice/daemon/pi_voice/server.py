@@ -27,7 +27,7 @@ from pathlib import Path
 
 from . import framing
 from .call import Call
-from .models import Models, Worker
+from .models import T0, Models, Worker, timing
 
 UNLOAD_AFTER_S = 600.0
 EXIT_AFTER_S = 1800.0
@@ -84,10 +84,15 @@ class Daemon:
         while (got := await framing.read_frame(reader)) is not None:
             kind, payload = got
             if kind == framing.MIC:
+                if self.call and getattr(self, "first_mic", False):
+                    self.first_mic = False
+                    timing("call: first mic frame", self.call_t0)
                 if self.call:
                     self.call.mic(payload)
             elif kind == framing.EVENT:
                 ev = json.loads(payload)
+                if ev.get("event") == "mic_open" and getattr(self, "call_t0", None):
+                    timing("call: mic open", self.call_t0)
                 if self.call and ev.get("event") == "played":
                     self.call.played(ev["seq"])
                 elif self.call and ev.get("event") == "drained":
@@ -161,17 +166,27 @@ class Daemon:
             self.models.stt.vocabulary = list(dict.fromkeys([*self.models.stt.vocabulary, *msg.get("words", [])]))
 
     async def start_call(self, client: Client):
+        self.call_t0 = time.time()
+        self.first_mic = True
         previous = self.owner
         if previous is not None and previous is not client:
             previous.send({"type": "call", "active": False, "owner": client.name, "mine": False, "moved_to": client.name})
         self.owner = client
         self.call_ended_at = None
-        if not self.models.ready:
-            client.send({"type": "loading"})
-            seconds = await asyncio.wrap_future(self.models.load())
-            client.send({"type": "ready", "seconds": round(seconds, 1)})
+        if not self.models.complete:
+            if not self.models.ready:
+                client.send({"type": "loading"})
+            # Speech that waited for Voxtral starts when it's there.
+            on_tts = lambda: self.loop.call_soon_threadsafe(lambda: self.call and self.call._next_sentence())  # noqa: E731
+            fut = self.models.load(on_tts)
+            if not self.models.ready:
+                seconds = await asyncio.wrap_future(fut)
+                client.send({"type": "ready", "seconds": round(seconds, 1)})
+        timing("call: models ready", self.call_t0)
         if self.call is None:
+            t = time.time()
             self.call = Call(self.models, self.run, self.to_owner, self.to_helper)
+            timing("load silero", t)
             self.call.run_stream = self.run_stream
             self.to_helper(framing.json_frame(framing.CONTROL, {"cmd": "mic", "on": True}))
         self.call_status()
@@ -208,6 +223,7 @@ class Daemon:
         for sig in (signal.SIGTERM, signal.SIGINT):
             self.loop.add_signal_handler(sig, self.stopping.set)
         print(f"pi-voice: listening on {self.socket}", flush=True)
+        timing("socket ready (since start)", T0)
         try:
             await self.stopping.wait()
         finally:

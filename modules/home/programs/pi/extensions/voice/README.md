@@ -28,7 +28,10 @@ Research, measurements and the design: [RESEARCH.md](RESEARCH.md), [DESIGN.md](D
   `~/.cache/pi-voice/daemon.sock`; one daemon for every chat, so one call at a time. It runs
   Silero VAD, VoxTurn (ported to MLX, 8-bit; Smart Turn rescues short answers) for the end of
   turn, Whisper large-v3-turbo with a vocabulary prompt for the transcript, and Voxtral 4B TTS
-  (4-bit). About 6 GB while a call is on; it unloads the models 10 minutes after a call and
+  (4-bit). A call listens as soon as Whisper and Smart Turn are loaded (~1.3 s from a cold
+  `/call`, 0.2 s with the daemon still up); VoxTurn and Voxtral load behind it, Smart Turn
+  alone deciding the end of turn for those first seconds (`daemon/tests/call_latency.py`).
+  About 6 GB while a call is on; it unloads the models 10 minutes after a call and
   exits after 30 minutes without a client. Log: `~/.cache/pi-voice/daemon.log`.
 - `audio/` (`pi-voice-audio`, Swift): the only process that opens the microphone and the
   speakers, with macOS voice processing (echo cancellation). The daemon also drops speech that
