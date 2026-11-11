@@ -3,9 +3,8 @@
 // ~/.pi/agent/claude-usage.json, account-wide: from each response, and asked of the
 // account every 20 s between them (poll.ts), so it moves while no agent works.
 import { execFile } from "node:child_process";
-import path from "node:path";
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { claudeToken, INTERVAL, poll, writeAtomic } from "./poll.ts";
+import { claudeToken, INTERVAL, poll, writeUsage } from "./poll.ts";
 import { usageOf } from "./usage.ts";
 
 // Herdr sets HC_TERMINAL_ID in the terminals it runs; elsewhere there is nothing to label.
@@ -57,7 +56,7 @@ export default function (pi: ExtensionAPI) {
 			usingOverage: usage.isUsingOverage === true,
 		};
 		try {
-			writeAtomic(path.join(getAgentDir(), "claude-usage.json"), record);
+			writeUsage(getAgentDir(), record);
 		} catch {}
 	});
 }

@@ -120,3 +120,11 @@ test("the token is Claude Code's OAuth access token while unexpired", () => {
 	assert.equal(tokenOf("not json", 1000), null);
 	assert.equal(tokenOf(null, 1000), null);
 });
+
+test("each written sample is appended to the history", async () => {
+	const now = { t: 1_000_000 };
+	const { d } = deps(now, () => Response.json(BODY));
+	assert.equal(await poll(d), "written");
+	const lines = readFileSync(path.join(dir, "claude-usage.history.jsonl"), "utf8").trim().split("\n");
+	assert.deepEqual(JSON.parse(lines[0]), { at: 1_000_000, fiveHour: usage().fiveHour, sevenDay: usage().sevenDay });
+});

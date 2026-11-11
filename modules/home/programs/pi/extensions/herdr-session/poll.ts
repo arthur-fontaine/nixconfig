@@ -3,10 +3,12 @@
 // says when the account was last asked, and a lock (created exclusively) lets only one
 // session ask at a time. A response written by a turn counts as fresh usage too.
 import { execFile } from "node:child_process";
-import { closeSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { writeAtomic } from "./atomic.ts";
+import { appendSample } from "./history.ts";
 import type { Window } from "./usage.ts";
 
 // The endpoint 429s after a short burst (anthropics/claude-code#31637); failures back off below.
@@ -47,11 +49,14 @@ function readJson<T>(file: string): T | null {
 	}
 }
 
-// Written aside then moved, so a reader never sees half a file.
-export function writeAtomic(file: string, value: unknown) {
-	const tmp = `${file}.${process.pid}.tmp`;
-	writeFileSync(tmp, JSON.stringify(value));
-	renameSync(tmp, file);
+export { writeAtomic };
+
+// Every write of the usage, from a poll or a response, also lands in the history.
+export function writeUsage(dir: string, record: UsageRecord) {
+	writeAtomic(files(dir).usage, record);
+	try {
+		appendSample(dir, record);
+	} catch {}
 }
 
 // The wait after an attempt: the interval, doubled for each failure in a row.
@@ -135,7 +140,7 @@ export async function poll(deps: Deps): Promise<"skipped" | "written" | "failed"
 		const failures = record ? 0 : (readJson<Attempt>(f.attempt)?.failures ?? 0) + 1;
 		writeAtomic(f.attempt, { at: deps.now(), failures });
 		if (!record) return "failed";
-		writeAtomic(f.usage, record);
+		writeUsage(deps.dir, record);
 		return "written";
 	} finally {
 		try {
