@@ -17,8 +17,7 @@ Research, measurements and the design: [RESEARCH.md](RESEARCH.md), [DESIGN.md](D
 
 ## How it works
 
-- `index.ts` (this extension, in every Pi): the command and keys, the footer item (`📞
-  listening`), sending and rewinding messages, the spoken pass and the row. It adds nothing to
+- `index.ts` (this extension, in every Pi): the command and keys, the footer item (`listening`), sending and rewinding messages, the spoken pass and the row. It adds nothing to
   the model's context: no prompt, no message, no tool. The spoken text is a custom entry
   (`voice-spoken`), which Pi never sends to the model.
 - The spoken pass (`spoken.ts`): Pi's text is cut into blocks as it streams; a short plain block
@@ -61,7 +60,7 @@ and that the written answer is exactly what the provider streamed.
 What only a person can check: the real microphone and speakers.
 
 1. In a Herdr terminal, start `pi` and type `/call`. The first time, the footer shows
-   `📞 loading voice models…` for a while (downloads, then ~20 s); then `📞 listening`.
+   `loading voice models…` for a while (downloads, then ~20 s); then `listening`.
 2. **Permission**: macOS asks whether **Herdr** may use the microphone (once). Allow. If nothing
    is asked and nothing is heard, check System Settings → Privacy & Security → Microphone → Herdr.
 3. **Auto-send**: say « Dis-moi bonjour en une phrase. » and stop. Within about a second and a

@@ -57,6 +57,7 @@ final class Audio {
     let speakerFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: speakerRate, channels: 1, interleaved: false)!
     let micFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: micRate, channels: 1, interleaved: true)!
     var converter: AVAudioConverter?
+    var mono: AVAudioFormat?
     var micOn = false
     var configured = false
     var pending = 0  // speech buffers scheduled and not yet played
@@ -89,15 +90,31 @@ final class Audio {
                 AVAudioVoiceProcessingOtherAudioDuckingConfiguration(enableAdvancedDucking: false, duckingLevel: .min)
         }
         let input = engine.inputNode.outputFormat(forBus: 0)
-        converter = AVAudioConverter(from: input, to: micFormat)
+        // With voice processing on, the input comes as several channels with a discrete layout,
+        // and AVAudioConverter turns such a format into silence when it downmixes (seen live: every
+        // mic frame was zero). So channel 0, the processed voice, is taken as mono first.
+        mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: input.sampleRate, channels: 1, interleaved: false)
+        converter = AVAudioConverter(from: mono!, to: micFormat)
+        FileHandle.standardError.write("pi-voice-audio: mic tap \(input.channelCount) ch, \(input.sampleRate) Hz, interleaved \(input.isInterleaved)\n".data(using: .utf8)!)
         engine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: input) { [weak self] buffer, _ in
             self?.mic(buffer)
         }
         configured = true
     }
 
-    func mic(_ buffer: AVAudioPCMBuffer) {
-        guard micOn, let converter else { return }
+    /// Channel 0 of the tap's buffer, as a mono float buffer at the same rate.
+    func firstChannel(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let mono, let src = buffer.floatChannelData,
+              let out = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: buffer.frameLength) else { return nil }
+        out.frameLength = buffer.frameLength
+        let stride = buffer.format.isInterleaved ? Int(buffer.format.channelCount) : 1
+        let dst = out.floatChannelData![0]
+        for i in 0..<Int(buffer.frameLength) { dst[i] = src[0][i * stride] }
+        return out
+    }
+
+    func mic(_ tapped: AVAudioPCMBuffer) {
+        guard micOn, let converter, let buffer = firstChannel(tapped) else { return }
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * micRate / buffer.format.sampleRate) + 16
         guard let converted = AVAudioPCMBuffer(pcmFormat: micFormat, frameCapacity: capacity) else { return }
         var given = false

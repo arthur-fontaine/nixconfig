@@ -69,9 +69,9 @@ test("a click opens and closes the row; Ctrl+O (expanded) opens it", () => {
 
 test("the footer item follows the call", () => {
 	assert.equal(statusText({ active: false, mine: false }), undefined);
-	assert.equal(statusText({ active: true, mine: true, state: "listening" }), "📞 listening");
-	assert.equal(statusText({ active: true, mine: true, state: "user_speaking", partial: "fais un commit" }), "📞 « fais un commit »");
-	assert.equal(statusText({ active: true, mine: true, state: "pi_speaking" }), "📞 Pi is speaking");
-	assert.equal(statusText({ active: true, mine: true, loading: true }), "📞 loading voice models…");
-	assert.equal(statusText({ active: true, mine: false, owner: "nixconfig" }), "📞 call in nixconfig");
+	assert.equal(statusText({ active: true, mine: true, state: "listening" }), "listening");
+	assert.equal(statusText({ active: true, mine: true, state: "user_speaking", partial: "fais un commit" }), "« fais un commit »");
+	assert.equal(statusText({ active: true, mine: true, state: "pi_speaking" }), "Pi is speaking");
+	assert.equal(statusText({ active: true, mine: true, loading: true }), "loading voice models…");
+	assert.equal(statusText({ active: true, mine: false, owner: "nixconfig" }), "call in nixconfig");
 });

@@ -30,13 +30,13 @@ const STATES: Record<string, string> = {
 	muted: "muted",
 };
 
-/** The footer's call item: "📞 listening", "📞 « partial »", "📞 call in other-chat"… */
+/** The footer's call item: "listening", "« partial »", "call in other-chat"… (no emoji: the person's choice) */
 export function statusText(s: { active: boolean; mine: boolean; owner?: string | null; state?: string; partial?: string; loading?: boolean }): string | undefined {
 	if (!s.active) return undefined;
-	if (!s.mine) return `📞 call in ${s.owner ?? "another chat"}`;
-	if (s.loading) return "📞 loading voice models…";
-	if ((s.state === "user_speaking" || s.state === "paused") && s.partial) return `📞 « ${s.partial} »`;
-	return `📞 ${STATES[s.state ?? "listening"] ?? s.state}`;
+	if (!s.mine) return `call in ${s.owner ?? "another chat"}`;
+	if (s.loading) return "loading voice models…";
+	if ((s.state === "user_speaking" || s.state === "paused") && s.partial) return `« ${s.partial} »`;
+	return `${STATES[s.state ?? "listening"] ?? s.state}`;
 }
 
 function seconds(ms: number | undefined): string {

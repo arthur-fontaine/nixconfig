@@ -91,6 +91,11 @@ class Call:
         self.language = "fr"
         self.muted = False
         self.last_speech = now()
+        # Mic level, logged every few seconds: the first thing to look at when nothing is heard.
+        self.level_sum = 0.0
+        self.level_peak = 0.0
+        self.level_n = 0
+        self.level_at = now()
         # Pi's speech: queue of (answer id, sentence); what was played, for the row and the echo filter.
         self.say_queue: list[tuple[str, str, bool]] = []
         self.saying: dict | None = None
@@ -121,11 +126,27 @@ class Call:
     # ------------------------------------------------------------------ mic
     def mic(self, pcm16: bytes) -> None:
         samples = np.frombuffer(pcm16, dtype="<i2").astype(np.float32) / 32768.0
+        self._level(samples)
         self.buffer = np.concatenate([self.buffer, samples])
         while len(self.buffer) >= FRAME:
             frame, self.buffer = self.buffer[:FRAME], self.buffer[FRAME:]
             self._frame(frame)
         self.tick()
+
+    def _level(self, samples: np.ndarray) -> None:
+        if len(samples):
+            self.level_sum += float(np.sum(samples ** 2))
+            self.level_peak = max(self.level_peak, float(np.abs(samples).max()))
+            self.level_n += len(samples)
+        t = self.now()
+        if t - self.level_at >= 5.0:
+            db = lambda x: 20 * math.log10(max(x, 1e-9))  # noqa: E731
+            rms = math.sqrt(self.level_sum / self.level_n) if self.level_n else 0.0
+            print(f"pi-voice: mic {self.level_n / (t - self.level_at):.0f} samples/s, rms {db(rms):.0f} dBFS, "
+                  f"peak {db(self.level_peak):.0f} dBFS", flush=True)
+            self.level_sum = self.level_peak = 0.0
+            self.level_n = 0
+            self.level_at = t
 
     def _frame(self, frame: np.ndarray) -> None:
         if self.muted:
