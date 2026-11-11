@@ -1,5 +1,13 @@
 // What the call shows: the footer status, and the "Spoke" row of each spoken answer.
-import { type Component, MouseRegion, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+// pi-tui's helpers come in as `Tui` (index.ts passes the real ones), so tests run with Node alone.
+import type { Component, MouseRegionHandler } from "@earendil-works/pi-tui";
+
+export interface Tui {
+	truncateToWidth(text: string, width: number, ellipsis?: string): string;
+	visibleWidth(text: string): number;
+	wrapTextWithAnsi(text: string, width: number): string[];
+	MouseRegion: new (child: Component, onMouse: MouseRegionHandler) => Component;
+}
 
 /** The data of a voice-spoken custom entry (pi.appendEntry): never part of the model's context. */
 export interface SpokenEntry {
@@ -36,7 +44,8 @@ function seconds(ms: number | undefined): string {
 }
 
 /** The row's lines: one collapsed, the whole spoken text when expanded. */
-export function spokenLines(data: SpokenEntry, expanded: boolean, width: number, theme: Paint): string[] {
+export function spokenLines(tui: Tui, data: SpokenEntry, expanded: boolean, width: number, theme: Paint): string[] {
+	const { truncateToWidth, visibleWidth, wrapTextWithAnsi } = tui;
 	const title = `Spoke${seconds(data.durationMs)}${data.interrupted ? ", interrupted" : ""}`;
 	const bullet = theme.fg("dim", "⦁ ");
 	if (!expanded) {
@@ -52,12 +61,12 @@ export function spokenLines(data: SpokenEntry, expanded: boolean, width: number,
 }
 
 /** The row as a component: a click opens or closes it; Ctrl+O (`expanded`) opens every row. */
-export function spokenRow(data: SpokenEntry, globalExpanded: boolean, open: { value: boolean }, theme: Paint): Component {
+export function spokenRow(tui: Tui, data: SpokenEntry, globalExpanded: boolean, open: { value: boolean }, theme: Paint): Component {
 	const inner: Component = {
-		render: (width) => spokenLines(data, globalExpanded || open.value, width, theme),
+		render: (width) => spokenLines(tui, data, globalExpanded || open.value, width, theme),
 		invalidate() {},
 	};
-	return new MouseRegion(inner, (event) => {
+	return new tui.MouseRegion(inner, (event) => {
 		if (event.type !== "click" || event.button !== "left") return undefined;
 		open.value = !open.value;
 		return { handled: true };

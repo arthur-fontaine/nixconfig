@@ -6,10 +6,13 @@
 // tool. The spoken text is kept as a custom entry ("voice-spoken"), which Pi never sends to the
 // model, and drawn as a collapsed row.
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { MouseRegion, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { changedFiles, type Phase, whatToDoWithAddition } from "./addition.ts";
 import { Client, type DaemonEvent } from "./client.ts";
 import { Blocks, isPlain, languageOf, ON_SCREEN, PROMPT, request, sentences } from "./spoken.ts";
-import { type SpokenEntry, spokenRow, statusText } from "./view.ts";
+import { type SpokenEntry, spokenRow, statusText, type Tui } from "./view.ts";
+
+const TUI: Tui = { MouseRegion, truncateToWidth, visibleWidth, wrapTextWithAnsi };
 
 const ENTRY = "voice-spoken";
 const STATUS = "voice";
@@ -328,7 +331,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerEntryRenderer<SpokenEntry>(ENTRY, (entry, { expanded }, theme) => {
 		let open = opened.get(entry.id);
 		if (!open) opened.set(entry.id, (open = { value: false }));
-		return spokenRow(entry.data as SpokenEntry, expanded, open, theme);
+		return spokenRow(TUI, entry.data as SpokenEntry, expanded, open, theme);
 	});
 
 	// ------------------------------------------------------------------ lifecycle
