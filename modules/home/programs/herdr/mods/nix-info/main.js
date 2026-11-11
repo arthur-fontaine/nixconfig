@@ -9,7 +9,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoBudgetLeft, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoLastCall, infoLines, infoNewSession, infoParseTitle, infoResultLines, infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoLastCall, infoLines, infoNewSession, infoParseTitle, infoResultLines, infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length } from "./model.js";
 
 // The editor (../_lib/editor.js) gets the herdr functions it uses.
 const HERDR = { spaces, panes, run, shared, setShared, notify };
@@ -19,8 +19,6 @@ const POLL = 100;
 // Sessions kept read, for switching between panes.
 const KEPT = 6;
 const USAGE_EVERY = 5000;
-// The Kanban daemon's local API (herdr/kanban), read only: its token budget.
-const KANBAN_STATE = "http://127.0.0.1:7742/api/state";
 const CHUNK_BYTES = 4 * 1024 * 1024;
 // From byte $2 on: whole lines, up to CHUNK_BYTES; nothing while the file ends mid-line.
 const CHUNK = `[ "$(tail -c 1 "$1" | od -An -tx1 | tr -d ' ')" = "0a" ] || exit 0
@@ -175,7 +173,6 @@ export default class Info extends View {
   async readUsage() {
     const text = await readFile(`${home()}/.pi/agent/claude-usage.json`, "utf8").catch(() => null);
     try { this.usageRecord = text ? JSON.parse(text) : null; } catch { this.usageRecord = null; }
-    this.kanban = await fetch(KANBAN_STATE).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     if (!Object.keys(this.windows).length) {
       const store = await readFile(`${home()}/.pi/agent/models-store.json`, "utf8").catch(() => null);
       try {
@@ -248,22 +245,10 @@ export default class Info extends View {
       .child(div().w(62).flex_none().text_right().text_size(12).text_color(t.dim).truncate().child(reset));
   }
 
-  // The tokens left in the Kanban's budget, under the bar of the same window (Claude's usage
-  // has only percentages); any other window says its length.
-  budgetLine(t, b, own) {
-    const tip = `The Kanban's token budget: ${infoTokens(b.used)} of ${infoTokens(b.budget)} estimated tokens taken by cards started in the last ${b.windowHours} h. Claude reports only percentages.`;
-    return h_flex().id("usage-budget").h(16).pl(62).items_center().tooltip(tip)
-      .child(div().min_w(0).truncate().text_size(11.5).text_color(b.left ? t.dim : t.blocked)
-        .child(`≈ ${infoTokens(b.left)} tokens left${own ? "" : ` in ${b.windowHours} h`}`));
-  }
-
-  usageRows(t, u, b, now) {
-    const five = b?.windowHours === 5;
+  usageRows(t, u, now) {
     return [
-      ...(u?.fiveHour ? [this.usageRow(t, u, "five", "5 hours", u.fiveHour, now)] : []),
-      ...(b && five && u?.fiveHour ? [this.budgetLine(t, b, true)] : []),
-      ...(u?.sevenDay ? [this.usageRow(t, u, "week", "Week", u.sevenDay, now)] : []),
-      ...(b && !(five && u?.fiveHour) ? [this.budgetLine(t, b, false)] : []),
+      ...(u.fiveHour ? [this.usageRow(t, u, "five", "5 hours", u.fiveHour, now)] : []),
+      ...(u.sevenDay ? [this.usageRow(t, u, "week", "Week", u.sevenDay, now)] : []),
     ];
   }
 
@@ -429,8 +414,7 @@ export default class Info extends View {
   figures(now) {
     const s = this.session, p = this.pane;
     const usage = infoUsage(this.usageRecord, now);
-    const budget = infoBudgetLeft(this.kanban, now);
-    if (!s) return { usage, budget };
+    if (!s) return { usage };
     const window = this.windows[s.model] ?? 1_000_000;
     const working = p?.status === "working";
     const tools = infoTools(s);
@@ -438,7 +422,7 @@ export default class Info extends View {
     const running = working ? infoRunning(s) : [];
     const history = tools.filter((c) => !running.some((r) => r.id === c.id));
     return {
-      usage, budget, window, working, running, history,
+      usage, window, working, running, history,
       context: infoContext(s, window), cache: infoCache(s), lines: infoLines(s),
       errors: tools.filter((c) => c.error).length, total: tools.length,
       started: s.started !== null && s.requests.length + s.messages > 0,
@@ -450,14 +434,14 @@ export default class Info extends View {
   // Both windows at a glance; there is no detail behind it.
   usageTile(t, f, now) {
     const u = f.usage;
-    if (!u && !f.budget) return this.tile(t, "usage", "Usage", this.figure(t, "—", t.muted), "no usage reported yet", null, null);
-    const note = !u ? null : u.overage ? [`Overage on${u.overageStatus ? ` · ${u.overageStatus}` : ""}`, t.blocked] : u.stale ? [`${infoAge(now - (u.at ?? now))} ago`, t.dim] : null;
+    if (!u) return this.tile(t, "usage", "Usage", this.figure(t, "—", t.muted), "no usage reported yet", null, null);
+    const note = u.overage ? [`Overage on${u.overageStatus ? ` · ${u.overageStatus}` : ""}`, t.blocked] : u.stale ? [`${infoAge(now - (u.at ?? now))} ago`, t.dim] : null;
     return h_flex().id("tile-usage").px(16).py(10).gap(10).items_center().border_b(1).border_color(t.border)
       .child(v_flex().flex_1().min_w(0).gap(4)
         .child(h_flex().gap(8).items_baseline()
           .child(div().flex_1().text_size(12).font_medium().text_color(t.muted).line_height("16px").child("Usage"))
           .when(Boolean(note), (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(note[1]).child(note[0]))))
-        .children(this.usageRows(t, u, f.budget, now)));
+        .children(this.usageRows(t, u, now)));
   }
 
   overview(t, f, now) {

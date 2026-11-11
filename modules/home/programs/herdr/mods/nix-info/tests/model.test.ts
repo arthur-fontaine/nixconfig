@@ -4,7 +4,7 @@ import {
   infoCache, infoCategory, infoCommand, infoFiles, infoLastCall, infoContext, infoDuration, infoFeed, infoLineDiff, infoLines, infoNewSession, infoParseTitle,
   infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length,
   infoCapValue, infoClock, infoEditDiff, infoJsonLines, infoParseDiff, infoResultLines, RESULT_CAP,
-  infoPace, FIVE_HOURS, SEVEN_DAYS, infoBudgetLeft,
+  infoPace, FIVE_HOURS, SEVEN_DAYS,
 } from "../model.js";
 
 const line = (o) => JSON.stringify(o) + "\n";
@@ -97,24 +97,6 @@ test("usage: ratios, reset times, staleness", () => {
   assert.equal(u.sevenDay.resetsAt, null);
   assert.equal(infoUsage({ at: now - 11 * 60000, fiveHour: { utilization: 0.1 } }, now).stale, true);
   assert.equal(infoUsage(null), null);
-});
-
-test("usage: tokens left in the Kanban's budget, counted as its scheduler does", () => {
-  const now = 1_793_700_000_000;
-  const h = 3600 * 1000;
-  const settings = { tokenBudget: 2_000_000, budgetWindowHours: 5, defaultEstimate: 100_000 };
-  const cards = [
-    { startedAt: now - h, estimate: 1_000_000 },
-    { startedAt: now - 4 * h, estimate: null }, // the default estimate
-    { startedAt: now - 6 * h, estimate: 500_000 }, // before the window
-    { startedAt: null, estimate: 300_000 }, // not started
-  ];
-  assert.deepEqual(infoBudgetLeft({ settings, cards }, now), { left: 900_000, used: 1_100_000, budget: 2_000_000, windowHours: 5 });
-  // Over budget: nothing left, not a negative figure.
-  assert.equal(infoBudgetLeft({ settings: { ...settings, tokenBudget: 1_000_000 }, cards }, now).left, 0);
-  assert.equal(infoBudgetLeft({ settings, cards: [] }, now).left, 2_000_000);
-  assert.equal(infoBudgetLeft(null, now), null);
-  assert.equal(infoBudgetLeft({ cards: [] }, now), null);
 });
 
 test("usage: the normal pace is the elapsed share of each window", () => {

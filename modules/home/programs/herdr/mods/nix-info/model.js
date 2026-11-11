@@ -424,19 +424,6 @@ export function infoUsage(record, now = Date.now()) {
   return { at: record.at ?? null, stale, fiveHour: window(record.fiveHour, FIVE_HOURS), sevenDay: window(record.sevenDay, SEVEN_DAYS), overage: record.usingOverage === true, overageStatus: record.overageStatus ?? null };
 }
 
-// The Kanban daemon's token budget (its GET /api/state): what is left of it in its window.
-// Counted as its scheduler counts (kanban/src/scheduler.ts): each card started within the
-// window, at its estimate or the default one. Claude's usage only reports percentages, so
-// this is the only count of tokens at hand.
-export function infoBudgetLeft(state, now = Date.now()) {
-  const s = state?.settings;
-  if (!s || typeof s.tokenBudget !== "number" || typeof s.budgetWindowHours !== "number") return null;
-  const since = now - s.budgetWindowHours * 3600_000;
-  const used = (state.cards ?? []).filter((c) => c.startedAt != null && c.startedAt >= since)
-    .reduce((n, c) => n + (c.estimate ?? s.defaultEstimate ?? 0), 0);
-  return { left: Math.max(0, s.tokenBudget - used), used, budget: s.tokenBudget, windowHours: s.budgetWindowHours };
-}
-
 // ---- Formatting ----------------------------------------------------------------------
 
 // 412000 → "412k", 1400000 → "1.4M", 8600 → "8.6k" (one decimal under 10).
