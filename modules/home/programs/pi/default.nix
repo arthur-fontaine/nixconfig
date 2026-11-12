@@ -191,6 +191,14 @@ let
     buildPhase = "swiftc -O main.swift -o quicklook";
     installPhase = "install -Dm755 quicklook $out/bin/quicklook";
   };
+  # The browser extension draws with image-view's kitty.ts, imported as ../image-view/kitty.ts
+  # in the repo; the store copy brings its own, since each extension folder is linked alone.
+  browserExtension = pkgs.runCommand "pi-extension-browser" { } ''
+    cp -R ${./extensions/browser} $out
+    chmod -R u+w $out
+    cp ${./extensions/image-view/kitty.ts} $out/kitty.ts
+    substituteInPlace $out/liveview.ts --replace-fail '"../image-view/kitty.ts"' '"./kitty.ts"'
+  '';
   imageView = pkgs.runCommand "pi-extension-image-view" { } ''
     cp -R ${./extensions/image-view} $out
     chmod -R u+w $out
@@ -273,6 +281,9 @@ let
     footer = ./extensions/footer;
     # web_search and web_fetch through TinyFish, and view_image to look at a URL's image.
     web = ./extensions/web;
+    # Claude Code's Claude in Chrome tools, through the extension's native host, with the
+    # tab live in the tool's row.
+    browser = browserExtension;
     # Commands run in the environment of an interactive shell in the session's folder,
     # direnv's included, however Pi was started (Herdr, `hc run`).
     shell-env = ./extensions/shell-env;
@@ -301,6 +312,8 @@ let
     "bash-changes"
     "syntax-highlighting"
     "image-view"
+    # Its live view goes under compact-tools' row, as image-view's tiles do.
+    "browser"
     "compact-tools"
   ];
   extensionsManifest = (pkgs.formats.json { }).generate "pi-extensions-package.json" {
