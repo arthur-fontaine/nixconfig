@@ -13,6 +13,7 @@ import { loadCredentials } from "../remote-control/api.ts";
 import { BridgeWsClient, claudeAccountUuid } from "./bridge.ts";
 import { BrowserNotConnectedError, DisconnectedMidCallError, ToolTimeoutError } from "./client.ts";
 import { type Frame, FramePump, LiveView } from "./liveview.ts";
+import { type CallPermissions, callPermissions } from "./permissions.ts";
 import { claudeToolName, piToolDefinitions, SERVER } from "./tools.ts";
 
 const WIDGET = "claude-in-chrome-tui";
@@ -87,20 +88,25 @@ export default function browser(pi: ExtensionAPI) {
 	// The calls' scope: this session's own tab group, as each Claude Code session has.
 	const callOptions = () => ({
 		sessionScope: { sessionId: sessionId ?? "pi", ...(tabGroupId !== undefined && { tabGroupId }) },
-		// Pi's auto-mode has already let this call through: the extension's site
-		// prompt for it is answered the same way, as Claude Code answers it through
-		// its own permission flow. No second permission system of ours.
+		// A prompt the extension still raises is for a call Pi's auto-mode let through:
+		// answered "allow", as Claude Code answers it through its own permission flow.
 		onPermissionRequest: () => true,
 	});
+	// Hosts this session's calls were let through on (Claude Code's allowed_domains).
+	const allowedHosts = new Set<string>();
+	const classifierAllowed = (toolCallId: string): boolean => {
+		const check = (globalThis as Record<symbol, unknown>)[Symbol.for("pi-auto-mode.classifier-allowed")];
+		return typeof check === "function" && (check as (id: string) => boolean)(toolCallId) === true;
+	};
 
 	/** One screenshot of the tab, as a PNG frame sized for the terminal. */
-	function frameSource(tabId: number) {
+	function frameSource(tabId: number, permissions: () => CallPermissions | undefined) {
 		let fullWidth: number | undefined;
 		let last: Frame | undefined;
 		return async (): Promise<Frame | null> => {
 			const target = Math.min(MAX_FRAME_PX, (tui?.terminal.columns ?? 120) * getCellDimensions().widthPx);
 			const scale = fullWidth ? Math.min(1, Math.max(0.1, target / fullWidth)) : 0.5;
-			const response = await getClient().callTool("computer", { action: "screenshot", tabId, scale }, { ...callOptions(), timeoutMs: 15_000 });
+			const response = await getClient().callTool("computer", { action: "screenshot", tabId, scale }, { ...callOptions(), ...permissions(), timeoutMs: 15_000 });
 			const image = toPiContent(response.result?.content).find((c): c is Extract<PiContent, { type: "image" }> => c.type === "image");
 			if (!image) return null;
 			const key = createHash("sha1").update(image.data).digest("hex");
@@ -133,6 +139,8 @@ export default function browser(pi: ExtensionAPI) {
 			async execute(toolCallId, params, signal, onUpdate, ctx) {
 				const live = VIEWED.has(tool) && ctx.hasUI && isKitty() ? liveFor(toolCallId) : undefined;
 				let tabId: number | undefined;
+				// This call's own permission mode (permissions.ts), also used by its live view.
+				let permissions: CallPermissions | undefined;
 				const update = () =>
 					onUpdate?.({ content: [{ type: "text", text: `Browser: tab ${tabId ?? "?"}` }], details: { tabId } satisfies Details });
 				const startView = (id: number) => {
@@ -140,7 +148,7 @@ export default function browser(pi: ExtensionAPI) {
 					if (!live || live.pump) return;
 					live.tabId = id;
 					live.pump = new FramePump({
-						capture: frameSource(id),
+						capture: frameSource(id, () => permissions),
 						onFrame: (frame) => {
 							live.view.setFrame(frame);
 							live.invalidate?.();
@@ -159,6 +167,17 @@ export default function browser(pi: ExtensionAPI) {
 							tabGroupId = id;
 						},
 						browsers: { list: () => getClient().listExtensions(), select: (id) => getClient().select(id) },
+						permissionsFor: (host) => {
+							permissions = callPermissions({
+								classifierAllowed: classifierAllowed(toolCallId),
+								host,
+								deniedHosts: [],
+								allowedHosts: [...allowedHosts],
+								onPermissionRequest: () => true,
+							});
+							if (host) allowedHosts.add(host);
+							return permissions;
+						},
 					});
 					let frame: FrameRef | undefined;
 					if (live?.pump) {
@@ -212,6 +231,7 @@ export default function browser(pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
 		sessionId = ctx.sessionManager.getSessionId();
 		tabGroupId = undefined;
+		allowedHosts.clear();
 		if (ctx.mode !== "tui") return;
 		// The TUI, for writing the frames' uploads; the widget itself draws nothing.
 		ctx.ui.setWidget(

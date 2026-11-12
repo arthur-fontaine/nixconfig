@@ -45,6 +45,8 @@ export type PermissionMode = "ask" | "skip_all_permission_checks" | "follow_a_pl
 
 export type CallOptions = {
 	permissionMode?: PermissionMode;
+	/** With follow_a_plan: the hosts the extension may act on without asking. */
+	allowedDomains?: string[];
 	/** Answer the extension's permission prompts over the socket instead of in the browser. */
 	handlePermissionPrompts?: boolean;
 	/** Each session gets its own tab group, as Claude Code's sessions do. */

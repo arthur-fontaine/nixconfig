@@ -283,6 +283,7 @@ export class BridgeWsClient implements BrowserTransport {
 			supports_tool_result_error_code: true,
 			target_device_id: target,
 			permission_mode: options.permissionMode ?? "ask",
+			...(options.allowedDomains?.length && { allowed_domains: options.allowedDomains }),
 			...(options.onPermissionRequest && { handle_permission_prompts: true }),
 			...(options.sessionScope && { session_scope: options.sessionScope }),
 		};

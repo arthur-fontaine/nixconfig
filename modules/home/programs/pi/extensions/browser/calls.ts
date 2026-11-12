@@ -6,6 +6,7 @@ import { readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import type { BrowserTransport, Extension } from "./bridge.ts";
+import { type CallPermissions, hostOf, targetUrl } from "./permissions.ts";
 import { type CallOptions, type ContentBlock, contentText, type ToolResponse } from "./protocol.ts";
 import { stripSaveToDisk } from "./tools.ts";
 
@@ -113,7 +114,27 @@ export type CallContext = {
 	onTab?: (tabId: number) => void;
 	/** Keeps the tab group the extension reports, for later calls' scope. */
 	onTabGroup?: (tabGroupId: number) => void;
+	/** The extension's permission options for this call, given the host it acts on (permissions.ts). */
+	permissionsFor?: (host: string | undefined) => CallPermissions;
 };
+
+// Tools whose call needs no page: their mode stays whatever options() says.
+const NO_PAGE = new Set(["tabs_context_mcp", "tabs_create_mcp", "tabs_close_mcp", "gif_creator"]);
+
+/** The URL of a tab of the session's group, as Claude Code looks it up before a call: tabs_context_mcp in "ask". */
+async function tabUrl(ctx: CallContext, tabId: number): Promise<string | undefined> {
+	const { onPermissionRequest: _drop, ...scope } = ctx.options();
+	const response = await ctx.client.callTool("tabs_context_mcp", {}, { ...scope, permissionMode: "ask", timeoutMs: 8_000, signal: ctx.signal }).catch(() => undefined);
+	const text = response && !response.error ? contentText(response.result?.content) : "";
+	for (const line of text.split("\n")) {
+		try {
+			const tabs = (JSON.parse(line) as { availableTabs?: { tabId?: unknown; url?: unknown }[] }).availableTabs;
+			const url = tabs?.find((t) => t.tabId === tabId)?.url;
+			if (typeof url === "string") return url;
+		} catch {}
+	}
+	return undefined;
+}
 
 /** Runs one tool as Claude Code would, returning Pi content or throwing a ToolError. */
 export async function callBrowserTool(tool: string, input: Record<string, unknown>, ctx: CallContext): Promise<PiContent[]> {
@@ -139,8 +160,11 @@ export async function callBrowserTool(tool: string, input: Record<string, unknow
 	let args = stripped;
 	if (tool === "file_upload") args = { ...args, files: await readUploads(args.paths) };
 
-	const call = (name: string, a: Record<string, unknown>) =>
-		ctx.client.callTool(name, a, { ...ctx.options(), timeoutMs: timeoutFor(name), signal: ctx.signal });
+	const call = (name: string, a: Record<string, unknown>, permissions?: CallPermissions) => {
+		const { onPermissionRequest, ...scope } = ctx.options();
+		const own = permissions ?? { onPermissionRequest };
+		return ctx.client.callTool(name, a, { ...scope, ...own, timeoutMs: timeoutFor(name), signal: ctx.signal });
+	};
 
 	// navigate without a tab: the session's first tab, made if need be, and its list appended.
 	let appended: string | undefined;
@@ -162,7 +186,19 @@ export async function callBrowserTool(tool: string, input: Record<string, unknow
 		if (first) ctx.onTab?.(first.input!.tabId as number);
 	}
 
-	let content = unwrap(await call(tool, args));
+	let permissions: CallPermissions | undefined;
+	if (ctx.permissionsFor && !NO_PAGE.has(tool)) {
+		const tab =
+			typeof args.tabId === "number"
+				? (args.tabId as number)
+				: tool === "browser_batch"
+					? ((args.actions as { input?: { tabId?: unknown } }[] | undefined)?.find((a) => typeof a?.input?.tabId === "number")?.input?.tabId as number | undefined)
+					: undefined;
+		const own = targetUrl(tool, args, undefined);
+		const url = own ?? (tab !== undefined ? await tabUrl(ctx, tab) : undefined);
+		permissions = ctx.permissionsFor(hostOf(url));
+	}
+	let content = unwrap(await call(tool, args, permissions));
 	if (tool === "tabs_context_mcp" || tool === "tabs_create_mcp") {
 		const found = tabContext(content);
 		if (found?.tabGroupId !== undefined) ctx.onTabGroup?.(found.tabGroupId);
