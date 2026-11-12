@@ -1,17 +1,13 @@
 // What Claude Code does around a Claude in Chrome call before and after the
 // extension runs it: the parts of each tool that live in the client.
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
-import { promisify } from "node:util";
-import type { BridgeClient } from "./client.ts";
-import { type CallOptions, type ContentBlock, contentText, findSockets, type ToolResponse } from "./protocol.ts";
+import type { BrowserTransport, Extension } from "./bridge.ts";
+import { type CallOptions, type ContentBlock, contentText, type ToolResponse } from "./protocol.ts";
 import { stripSaveToDisk } from "./tools.ts";
-
-const run = promisify(execFile);
 
 // Claude Code's per-call timeouts: a batch gets longer.
 export function timeoutFor(tool: string): number {
@@ -107,50 +103,34 @@ export function saveImages(content: PiContent[], dir = join(tmpdir(), "pi-browse
 	return out;
 }
 
-/** The browsers reachable here: one native host per browser profile that has the extension. */
-export async function listBrowsers(): Promise<{ deviceId: string; name: string; socket: string }[]> {
-	const sockets = await findSockets();
-	const out = [];
-	for (const socket of sockets) {
-		// The host's parent is the browser that started it.
-		const parent = await run("/bin/ps", ["-o", "ppid=", "-p", String(socket.pid)]).catch(() => null);
-		const ppid = parent?.stdout.trim();
-		const command = ppid ? await run("/bin/ps", ["-o", "comm=", "-p", ppid]).catch(() => null) : null;
-		const app = /\/([^/]+)\.app\//.exec(command?.stdout ?? "")?.[1] ?? "Chrome";
-		out.push({ deviceId: `local-${socket.pid}`, name: app, socket: socket.path });
-	}
-	return out;
-}
-
 export type CallContext = {
-	client: BridgeClient;
+	client: BrowserTransport;
+	/** The browsers on the bridge, and the choice of one (select_browser). */
+	browsers?: { list(): Promise<Extension[]>; select(deviceId: string): void };
 	options: () => CallOptions & { onPermissionRequest?: (p: Record<string, unknown>) => boolean | Promise<boolean> };
 	signal?: AbortSignal;
 	/** Called with the tab a call acts on, once known (for the live view). */
 	onTab?: (tabId: number) => void;
 	/** Keeps the tab group the extension reports, for later calls' scope. */
 	onTabGroup?: (tabGroupId: number) => void;
-	selectBrowser?: (socket: string | undefined) => void;
 };
 
 /** Runs one tool as Claude Code would, returning Pi content or throwing a ToolError. */
 export async function callBrowserTool(tool: string, input: Record<string, unknown>, ctx: CallContext): Promise<PiContent[]> {
-	if (tool === "list_connected_browsers") {
-		const browsers = await listBrowsers();
-		return [{ type: "text", text: JSON.stringify({ browsers: browsers.map(({ deviceId, name }) => ({ deviceId, name, isLocal: true, onThisComputer: true })) }) }];
-	}
-	if (tool === "select_browser") {
-		const browser = (await listBrowsers()).find((b) => b.deviceId === input.deviceId);
-		if (!browser) throw new ToolError(`No connected browser with deviceId ${JSON.stringify(input.deviceId)}. Call list_connected_browsers.`);
-		ctx.selectBrowser?.(browser.socket);
-		return [{ type: "text", text: `Selected ${browser.name} (${browser.deviceId}).` }];
-	}
-	if (tool === "switch_browser") {
-		const browsers = await listBrowsers();
+	if (tool === "list_connected_browsers" || tool === "select_browser" || tool === "switch_browser") {
+		const list = (await ctx.browsers?.list()) ?? [];
+		const browsers = list.map(({ deviceId, name, osPlatform }) => ({ deviceId, name, osPlatform, isLocal: osPlatform === "macOS" }));
+		if (tool === "list_connected_browsers") return [{ type: "text", text: JSON.stringify({ browsers }) }];
+		if (tool === "select_browser") {
+			const browser = browsers.find((b) => b.deviceId === input.deviceId);
+			if (!browser) throw new ToolError(`No connected browser with deviceId ${JSON.stringify(input.deviceId)}. Call list_connected_browsers.`);
+			ctx.browsers?.select(browser.deviceId);
+			return [{ type: "text", text: `Selected ${browser.name ?? browser.deviceId} (${browser.deviceId}).` }];
+		}
 		return [
 			{
 				type: "text",
-				text: `This session reaches browsers through their local native host, so there is no connection request to send. Connected: ${browsers.map((b) => `${b.name} (${b.deviceId})`).join(", ") || "none"}. Use select_browser with one of these deviceIds.`,
+				text: `Connected browsers: ${browsers.map((b) => `${b.name ?? "Chrome"} (${b.deviceId})`).join(", ") || "none"}. Ask the person which one to use, then call select_browser with its deviceId.`,
 			},
 		];
 	}

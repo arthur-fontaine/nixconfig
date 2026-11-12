@@ -1,7 +1,7 @@
 // Browser use for Pi through Claude in Chrome, as Claude Code does it: Claude
 // Code's 20 browser tools, run by the extension in the person's browser through
-// the native host Claude Code installed, with the tab's screen live in the
-// tool's row. See README.md.
+// Anthropic's Claude in Chrome bridge, with the tab's screen live in the tool's
+// row. See README.md.
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,7 +9,9 @@ import { join } from "node:path";
 import { convertToPng, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, getCapabilities, getCellDimensions, getImageDimensions, type TUI, Text } from "@earendil-works/pi-tui";
 import { callBrowserTool, type PiContent, ToolError, toPiContent } from "./calls.ts";
-import { BridgeClient, BrowserNotConnectedError, DisconnectedMidCallError, ToolTimeoutError } from "./client.ts";
+import { loadCredentials } from "../remote-control/api.ts";
+import { BridgeWsClient, claudeAccountUuid } from "./bridge.ts";
+import { BrowserNotConnectedError, DisconnectedMidCallError, ToolTimeoutError } from "./client.ts";
 import { type Frame, FramePump, LiveView } from "./liveview.ts";
 import { claudeToolName, piToolDefinitions, SERVER } from "./tools.ts";
 
@@ -48,12 +50,20 @@ const GUIDANCE = `You have Claude in Chrome's browser tools (mcp__claude-in-chro
 - If browser calls keep failing (2–3 tries), the extension doesn't answer, or the page doesn't respond, stop and ask the person how to go on.`;
 
 export default function browser(pi: ExtensionAPI) {
-	let client: BridgeClient | undefined;
+	let client: BridgeWsClient | undefined;
 	let sessionId: string | undefined;
 	let tabGroupId: number | undefined;
 	let tui: TUI | undefined;
 	const lives = new Map<string, Live>();
-	const getClient = () => (client ??= new BridgeClient());
+	// Claude Code's login, read-only through remote-control's loader (keychain item
+	// "Claude Code-credentials", else ~/.claude/.credentials.json); never logged or kept.
+	const getClient = () =>
+		(client ??= new BridgeWsClient({
+			credentials: async () => {
+				const [{ accessToken }, accountUuid] = await Promise.all([loadCredentials(), claudeAccountUuid()]);
+				return { accessToken, accountUuid };
+			},
+		}));
 
 	const isKitty = () => getCapabilities().images === "kitty" && pi.getSettings().terminal?.showImages !== false;
 	const write = (sequence: string) => (tui ? tui.terminal.write(sequence) : process.stdout.write(sequence));
@@ -148,7 +158,7 @@ export default function browser(pi: ExtensionAPI) {
 						onTabGroup: (id) => {
 							tabGroupId = id;
 						},
-						selectBrowser: (socket) => getClient().prefer(socket),
+						browsers: { list: () => getClient().listExtensions(), select: (id) => getClient().select(id) },
 					});
 					let frame: FrameRef | undefined;
 					if (live?.pump) {
