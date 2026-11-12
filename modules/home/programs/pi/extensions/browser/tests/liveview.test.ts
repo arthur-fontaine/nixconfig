@@ -99,37 +99,32 @@ function kittyView(kitty = true) {
 	return { view, writes };
 }
 
-test("kitty: each new frame is uploaded once and drawn as placeholders", () => {
+// Placed directly, as Pi's own Image does: Herdr draws Unicode placeholder cells with the
+// line gap between rows showing, which striped the live view.
+test("kitty: a frame is placed directly on its first row, the others left empty", () => {
 	const { view, writes } = kittyView();
 	view.setFrame(frame("a"));
 	const rows = view.render(100);
 	assert.equal(rows.length, 31);
-	assert.ok(rows.every((row) => row.includes("\u{10eeee}")));
-	// The id is the foreground colour of every placeholder cell.
-	assert.ok(rows[0]!.includes("\x1b[38;2;0;3;232m"));
-	assert.equal(writes.length, 1);
-	assert.match(writes[0]!, /^\x1b_Ga=T,U=1,f=100,q=2,i=1000,c=100,r=31;/);
-	view.render(100);
-	assert.equal(writes.length, 1, "the same frame isn't uploaded again");
+	assert.match(rows[0]!, /^\x1b_Ga=T,f=100,q=2,C=1,i=1000,c=100,r=31;/);
+	assert.ok(rows.slice(1).every((row) => row === ""));
+	assert.ok(!rows.join("").includes("\u{10eeee}"), "no placeholders");
+	assert.equal(writes.length, 0, "nothing written outside the rows");
+	assert.equal(view.render(100)[0], rows[0], "the same frame draws the same row");
 
 	view.setFrame(frame("b"));
 	const next = view.render(100);
-	assert.ok(next[0]!.includes("\x1b[38;2;0;3;233m"), "a new frame gets a new id, so its lines change");
-	assert.match(writes[1]!, /i=1001,c=100,r=31;/);
-	assert.equal(writes[2], "\x1b_Ga=d,d=I,i=1000,q=2\x1b\\", "the old frame is deleted");
+	assert.notEqual(next[0], rows[0], "a new frame changes the row, so Pi redraws it");
+	assert.match(next[0]!, /i=1000,c=100,r=31;/, "under the same id, replacing the old picture");
 });
 
-test("kitty: a narrower row re-uploads at the new size; invalidate re-uploads", () => {
+test("kitty: a narrower row places the frame at the new size; dispose deletes it", () => {
 	const { view, writes } = kittyView();
 	view.setFrame(frame("a"));
 	view.render(100);
-	view.render(50);
-	assert.match(writes.at(-2)!, /c=50,r=16;/);
-	view.invalidate();
-	view.render(50);
-	assert.match(writes.at(-2)!, /c=50,r=16;/);
+	assert.match(view.render(50)[0]!, /c=50,r=16;/);
 	view.dispose();
-	assert.match(writes.at(-1)!, /a=d,d=I/);
+	assert.equal(writes.at(-1), "\x1b_Ga=d,d=I,i=1000,q=2\x1b\\");
 });
 
 test("without kitty graphics the view is a line of text", () => {

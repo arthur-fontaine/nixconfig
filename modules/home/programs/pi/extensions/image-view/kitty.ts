@@ -34,6 +34,22 @@ export function kittyTransmit(png: string, id: number, columns: number, rows: nu
 	return out;
 }
 
+/**
+ * Uploads and places a PNG `columns` × `rows` cells at the cursor, without moving it (C=1),
+ * as Pi's own Image does: one line carries the sequence, the next `rows - 1` stay empty.
+ * Sending it again under the same id replaces the picture in place.
+ */
+export function kittyPlace(png: string, id: number, columns: number, rows: number): string {
+	const head = `a=T,f=100,q=2,C=1,i=${id},c=${columns},r=${rows}`;
+	if (png.length <= CHUNK) return `\x1b_G${head};${png}\x1b\\`;
+	let out = "";
+	for (let at = 0; at < png.length; at += CHUNK) {
+		const more = at + CHUNK < png.length ? 1 : 0;
+		out += `\x1b_G${at === 0 ? `${head},` : ""}m=${more};${png.slice(at, at + CHUNK)}\x1b\\`;
+	}
+	return out;
+}
+
 export function kittyDelete(id: number): string {
 	return `\x1b_Ga=d,d=I,i=${id},q=2\x1b\\`;
 }

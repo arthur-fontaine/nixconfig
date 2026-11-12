@@ -1,7 +1,7 @@
 // The live view of the tab a browser tool acts on: screenshots taken while the
-// tool runs (FramePump), drawn across the tool's row with Kitty Unicode
-// placeholders (LiveView), the last one left as a still once the tool ends.
-import { allocateKittyId, KITTY_MAX_ROWS, kittyDelete, kittyRows, kittyTransmit } from "../image-view/kitty.ts";
+// tool runs (FramePump), placed across the tool's row with the Kitty graphics
+// protocol (LiveView), the last one left as a still once the tool ends.
+import { allocateKittyId, KITTY_MAX_ROWS, kittyDelete, kittyPlace } from "../image-view/kitty.ts";
 
 export type Frame = {
 	/** Base64 PNG, as kitty's f=100 wants it. */
@@ -112,14 +112,17 @@ export type LiveViewOptions = {
 };
 
 /**
- * A component that draws the current frame. Each new frame (or size) gets a new
- * image id, so its placeholder lines differ and Pi redraws them; the previous
- * image is deleted once the new one is uploaded.
+ * A component that draws the current frame, placed directly as Pi's own Image is:
+ * its first line carries the upload, the other lines stay empty. Unicode
+ * placeholders (image-view's tiles) showed the line gap between rows in Herdr,
+ * striping the frame. A new frame or size changes that line, so Pi redraws it,
+ * and the same id replaces the picture in place.
  */
 export class LiveView {
 	private frame: Frame | undefined;
 	private caption = "";
-	private shown: { id: number; key: string; columns: number; rows: number } | undefined;
+	private id: number | undefined;
+	private lines: { key: string; width: number; rows: string[] } | undefined;
 	private readonly options: LiveViewOptions;
 
 	constructor(options: LiveViewOptions) {
@@ -141,24 +144,23 @@ export class LiveView {
 			const size = `${frame.width}×${frame.height}`;
 			return [[this.caption, `screen ${size}`].filter(Boolean).join(" · ")];
 		}
+		const cached = this.lines;
+		if (cached && cached.key === frame.key && cached.width === width) return cached.rows;
 		const { columns, rows } = fitFrame(frame, Math.max(1, width), this.options.cell(), this.options.maxRows());
-		const shown = this.shown;
-		if (!shown || shown.key !== frame.key || shown.columns !== columns || shown.rows !== rows) {
-			const id = (this.options.allocateId ?? allocateKittyId)();
-			this.options.write(kittyTransmit(frame.png, id, columns, rows));
-			if (shown) this.options.write(kittyDelete(shown.id));
-			this.shown = { id, key: frame.key, columns, rows };
-		}
-		return kittyRows(this.shown!.id, columns, rows);
+		this.id ??= (this.options.allocateId ?? allocateKittyId)();
+		const out = [kittyPlace(frame.png, this.id, columns, rows), ...Array.from({ length: rows - 1 }, () => "")];
+		this.lines = { key: frame.key, width, rows: out };
+		return out;
 	}
 
-	/** Pi may have cleared the terminal's images (resize, theme): upload again on the next render. */
+	/** Pi may have cleared the terminal's images (resize, theme): the next render places it again. */
 	invalidate() {
-		if (this.shown) this.shown = { ...this.shown, key: "" };
+		this.lines = undefined;
 	}
 
 	dispose() {
-		if (this.shown) this.options.write(kittyDelete(this.shown.id));
-		this.shown = undefined;
+		if (this.id !== undefined) this.options.write(kittyDelete(this.id));
+		this.id = undefined;
+		this.lines = undefined;
 	}
 }
