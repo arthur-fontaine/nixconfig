@@ -55,6 +55,8 @@ export class BridgeClient {
 	private readonly listeners = new Set<(n: Notification) => void>();
 	private decoder = new FrameDecoder();
 	socketPath: string | undefined;
+	/** select_browser's choice: dialled first while it is alive. */
+	preferredSocket: string | undefined;
 	private readonly options: ClientOptions;
 
 	constructor(options: ClientOptions = {}) {
@@ -80,7 +82,8 @@ export class BridgeClient {
 	}
 
 	private async dial(): Promise<Socket> {
-		const candidates = await (this.options.findSockets ?? (() => findSockets()))();
+		const found = await (this.options.findSockets ?? (() => findSockets()))();
+		const candidates = [...found.filter((c) => c.path === this.preferredSocket), ...found.filter((c) => c.path !== this.preferredSocket)];
 		if (candidates.length === 0) throw new BrowserNotConnectedError(notConnectedMessage());
 		let lastError: unknown;
 		for (const candidate of candidates) {
@@ -236,6 +239,12 @@ export class BridgeClient {
 			this.pending.delete(id);
 			call.reject(error);
 		}
+	}
+
+	/** Uses another host from the next call on. */
+	prefer(path: string | undefined) {
+		this.preferredSocket = path;
+		if (path && this.socketPath !== path && this.pending.size === 0) this.close();
 	}
 
 	close() {
