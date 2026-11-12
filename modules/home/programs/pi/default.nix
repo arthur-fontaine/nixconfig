@@ -191,13 +191,16 @@ let
     buildPhase = "swiftc -O main.swift -o quicklook";
     installPhase = "install -Dm755 quicklook $out/bin/quicklook";
   };
-  # The browser extension draws with image-view's kitty.ts, imported as ../image-view/kitty.ts
-  # in the repo; the store copy brings its own, since each extension folder is linked alone.
+  # The browser extension draws with image-view's kitty.ts and signs in with remote-control's
+  # api.ts (Claude Code's credentials), imported from their folders in the repo; the store copy
+  # brings its own, since each extension folder is linked alone.
   browserExtension = pkgs.runCommand "pi-extension-browser" { } ''
     cp -R ${./extensions/browser} $out
     chmod -R u+w $out
     cp ${./extensions/image-view/kitty.ts} $out/kitty.ts
+    cp ${./extensions/remote-control/api.ts} $out/remote-control-api.ts
     substituteInPlace $out/liveview.ts --replace-fail '"../image-view/kitty.ts"' '"./kitty.ts"'
+    substituteInPlace $out/index.ts --replace-fail '"../remote-control/api.ts"' '"./remote-control-api.ts"'
   '';
   imageView = pkgs.runCommand "pi-extension-image-view" { } ''
     cp -R ${./extensions/image-view} $out
