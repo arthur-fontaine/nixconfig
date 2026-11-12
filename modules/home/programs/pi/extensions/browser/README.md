@@ -16,6 +16,8 @@ live in the tool's row.
 - **Permissions.** No prompt of ours. Pi's auto-mode classifies each call like any
   tool's; a call it lets through has the extension's site prompt answered "allow"
   (see [Permissions](#permissions)).
+- **Transport.** Anthropic's Claude in Chrome bridge, signed in with Claude Code's
+  login, as Claude Code does (see [How it reaches the extension](#how-it-reaches-the-extension)).
 - **Live view.** While a tool acts on a tab, the tab is screenshotted at up to
   3 fps (fewer when screenshots are slow: at most half the time is spent
   capturing), and the frame is drawn across the row with Kitty Unicode
@@ -26,100 +28,96 @@ live in the tool's row.
 - **Each session its own tabs.** Calls carry `session_scope: {sessionId}` (Pi's
   session id), so each Pi session gets its own tab group, as Claude Code sessions do.
 
-## The protocol
+## How it reaches the extension
 
-Claude Code installs a native messaging host for the extension
-(`com.anthropic.claude_code_browser_extension`, `~/.claude/chrome/chrome-native-host`
-→ `claude --chrome-native-host`). The browser starts it when the extension
-connects. It relays between the extension (stdin/stdout, Chrome native messaging)
-and a Unix socket that Claude Code (and this extension) dial.
+Like Claude Code 2.1.322: through Anthropic's Claude in Chrome bridge
+(`bridge.ts`). Claude Code's Chrome setup (`createChromeContext`) configures the
+bridge and no local pairing. The extension honours the client's permission
+settings only on bridge calls (source `bridge`) or on paired native calls; a
+clear-text call on the native socket gets the extension's own popup, which
+refused at once here.
 
-**Socket.** `/tmp/claude-mcp-browser-bridge-<user>/<host pid>.sock`. The folder
-is 0700 and the socket 0600, both the user's. Claude Code refuses anything else,
-and so does `findSockets`. One host runs per browser profile with the extension.
-A socket whose pid is gone is stale. Claude Code lists the folder and dials each socket.
+**Sign-in.** Claude Code's OAuth access token, read read-only by
+remote-control's `loadCredentials` (keychain item `Claude Code-credentials`, else
+`~/.claude/.credentials.json`), never logged, written or refreshed: an expired
+login fails with "Start `claude` once to refresh it". The claude.ai account uuid
+comes from Claude Code's `~/.claude.json` (`oauthAccount.accountUuid`).
 
-**Framing.** Both ways, and on the native messaging side too: a 4-byte
-little-endian length, then that many bytes of UTF-8 JSON. The host drops a
-client that sends a length of 0 or one past its maximum.
+**Connection.** A WebSocket to
+`wss://bridge.claudeusercontent.com/chrome/<account uuid>`. Every frame is one
+JSON text message. The client opens with
+`{"type":"connect","client_type":"claude-code","oauth_token":"…"}`, and the
+bridge answers `paired` (an extension is online for the account) or `waiting`.
+`ping`/`pong` both ways every 30 s; no pong for 90 s means a dead link.
 
-**Client → host.**
+**Choosing the browser.** `{"type":"list_extensions"}` →
+`{"type":"extensions_list","extensions":[{deviceId,name,osPlatform,connectedAt}]}`;
+`peer_connected` / `peer_disconnected` follow changes. One extension is taken
+as is. With several, this Mac's (macOS), most recently connected, unless
+`select_browser` chose one.
+
+**A call.**
 
 ```json
-{"method": "execute_tool", "params": {
-  "client_id": "claude-code",
-  "tool": "navigate",
-  "args": {"url": "http://127.0.0.1:8917/", "tabId": 373894482},
-  "tool_use_id": "53b6ba83-…",
-  "session_scope": {"sessionId": "<session id>", "tabGroupId": 721964087},
-  "permission_mode": "ask",
-  "handle_permission_prompts": true
-}}
+{"type": "tool_call", "tool_use_id": "<uuid>", "client_type": "claude-code",
+ "tool": "navigate", "args": {"url": "http://127.0.0.1:8917/", "tabId": 373894578},
+ "supports_tool_result_notices": true, "supports_tool_result_error_code": true,
+ "target_device_id": "<deviceId>", "permission_mode": "ask",
+ "handle_permission_prompts": true, "session_scope": {"sessionId": "<Pi session id>", "tabGroupId": 636092276}}
 ```
 
-The host wraps it as `{"type": "tool_request", "method", "params"}` for the
-extension. The last three params are optional:
-- `session_scope`: a tab group per session.
-- `permission_mode`: one of `ask`, `skip_all_permission_checks`, `follow_a_plan`.
-- `handle_permission_prompts`: the client answers the site prompts itself.
+The bridge acknowledges with `{"type":"routing_ack","tool_use_id"}`. The
+extension may then ask:
+`{"type":"permission_request","tool_use_id","request_id","tool_type":"navigate","url":…}`,
+answered with
+`{"type":"permission_response","request_id","allowed":true,"target_device_id"}`.
+The result is `{"type":"tool_result","tool_use_id","content":[…],"is_error"?}`
+(or `result`/`error` objects). Content is MCP's: text, and image blocks for
+screenshots. A prompt or result for another `tool_use_id` (Claude Code's,
+another Pi session's) is ignored, so they all share the bridge.
 
-`{"method": "permission_response", "params": {"request_id", "allowed"}}`
-answers a prompt.
+## The native host socket
 
-**Host → client.** The extension's `tool_response` and `notification` messages
-lose their `type` and go to **every** connected client:
-
-- a response: `{"tool_use_id", "result": {"content": [...]}}`, or
-  `{"tool_use_id", "error": {"content": "..."}}`. Content is MCP's: text blocks,
-  and image blocks for screenshots.
-- a notification: `{"method", "params"}`, for example
-  `{"method": "permission_request", "params": {"request_id", "tool_use_id", "tool_type", "url", …}}`.
-
-The host also sends `mcp_connected` / `mcp_disconnected` to the extension when
-a client comes or goes, and answers the extension's `ping` (`pong`) and
-`get_status` (`status_response` with its version and the computer's name) itself.
-
-**Ids.** The host keeps no call table: replies are routed by `tool_use_id`, a UUID
-per call, and a client ignores the others. That is what lets Claude Code's own
-`--chrome`, several Pi sessions and anything else share one host. Claude Code
-keeps one call in flight per connection. This client keeps a map, so calls may
-overlap; the live view's screenshots run beside the agent's call.
-
-**Not used here.** Claude Code can also pair with the extension over the socket
-(`local_pairing`: an ES256 assertion from claude.ai, ECDH, then AES-GCM-sealed
-frames), and can reach browsers on other computers through
-`wss://bridge.claudeusercontent.com`. The extension still accepts the clear-text
-frames above from a local client, so neither is needed for the browser on this Mac.
-`switch_browser`, `list_connected_browsers` and `select_browser` are answered
-here from the local host sockets.
+`client.ts` and `protocol.ts` also speak to the native messaging host that Claude
+Code installs (`claude --chrome-native-host`); they're kept for reference and
+tests, but tools go through the bridge. The host listens on
+`/tmp/claude-mcp-browser-bridge-<user>/<pid>.sock` (0700 folder, 0600 socket).
+Frames are a 4-byte little-endian length then UTF-8 JSON.
+`{"method":"execute_tool","params":{client_id,tool,args,tool_use_id,session_scope?,permission_mode?,handle_permission_prompts?}}`
+goes to the extension, and every reply
+(`{tool_use_id,result|error}`) and notification (`{method,params}`) goes to every
+connected client, routed by `tool_use_id`. The extension refuses site actions
+from such clear-text calls unless the socket is paired (`local_pairing`: an ES256
+assertion from `api.anthropic.com/api/oauth/local_pairing/attest`, ECDH, then
+AES-GCM-sealed frames), and it pairs only with Claude Desktop (`client_kind`
+`desktop`).
 
 ## Permissions
 
-The extension asks before acting on a site. A call with no `permission_mode`
-and no prompt handler is refused at once ("Permission denied by user").
+Arthur's decisions of 2026-11-13:
 
-Claude Code has two cases:
-- **Bypass-permissions mode** (`--dangerously-skip-permissions`): it sends
-  `permission_mode: "skip_all_permission_checks"` (through
-  `CLAUDE_CHROME_PERMISSION_MODE` to its MCP server).
-- **Otherwise:** it sets `handle_permission_prompts` and answers each
-  `permission_request` through its own permission flow.
-
-Pi's permission flow is auto-mode, which has already classified the call, so
-`index.ts` answers `allowed: true` for the call that raised the prompt. Prompts
-for other clients' calls are left to them.
+- **A: auto-mode is the only permission system.** Pi's auto-mode classifies each
+  browser call like any tool's. For a call it let through, the extension's site
+  prompts (`permission_request` for that `tool_use_id`) are answered
+  `allowed: true`. A call auto-mode denies never reaches the extension. No
+  `skip_all_permission_checks`, no dialog of Pi's. With Claude Code he never set a
+  permission for the extension: in his auto mode, Claude Code's flow approves the
+  prompts the same way.
+- **Bridge.** Pi reaches the extension as Claude Code does, through the bridge
+  with his Claude Code OAuth token (read-only, never printed, logged or written),
+  rather than spawning Claude Code or pairing locally.
 
 ## Browser closed
 
-With no live host socket, a call fails with a clear message: open Some Browser
-(its extension starts the host) and retry. A host that goes away mid-call fails
-the call with "connection closed". The next call dials again, so a browser
-restart needs nothing else.
+With no extension on the bridge for the account, a call waits up to 10 s for one
+to come online, then fails with a clear message: open Some Browser (signed in to
+the same claude.ai account) and retry. A connection lost mid-call fails the call;
+the next call connects again.
 
 ## Files
 
-- `protocol.ts`: framing, request building, socket discovery and checks.
-- `client.ts`: the socket client: calls by id, permission prompts, notifications.
+- `bridge.ts`: the bridge client: sign-in, browser choice, calls by id, permission prompts, keepalive.
+- `protocol.ts`, `client.ts`: the native host socket's framing and client (not used for calls).
 - `calls.ts`: what Claude Code does around a call:
   - `navigate` without a `tabId` makes or finds the session's tab;
   - `file_upload` reads `paths` into `files`;
@@ -136,6 +134,9 @@ restart needs nothing else.
 node --test 'tests/*.test.ts'   # Node 24 runs the TypeScript directly
 ```
 
+- `bridge.test.ts`: a fake bridge: connect frame and URL, tool_call fields, a
+  permission prompt answered for our call only, errors, ping, browser choice,
+  no extension, no login.
 - `protocol.test.ts`: framing (cut at any byte), requests, a fake host relaying
   to two clients, a permission prompt answered, no socket.
 - `tools.test.ts`: the 20 tools as Pi declares them. It also checks the snapshot
