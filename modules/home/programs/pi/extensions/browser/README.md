@@ -14,14 +14,15 @@ live in the tool's row.
   loads them, as Claude Code's ToolSearch does. A short guidance section goes in
   the system prompt.
 - **Permissions.** No prompt of ours. Pi's auto-mode classifies each call like any
-  tool's; a call it lets through has the extension's site prompt answered "allow"
-  (see [Permissions](#permissions)).
+  tool's; a call its classifier lets through has the extension's site checks
+  lifted for that call, as Claude Code does (see [Permissions](#permissions)).
 - **Transport.** Anthropic's Claude in Chrome bridge, signed in with Claude Code's
   login, as Claude Code does (see [How it reaches the extension](#how-it-reaches-the-extension)).
 - **Live view.** While a tool acts on a tab, the tab is screenshotted at up to
   3 fps (fewer when screenshots are slow: at most half the time is spent
   capturing), and the frame is drawn across the row with Kitty Unicode
-  placeholders (image-view's `kitty.ts`). An unchanged screen is not redrawn.
+  placed directly as Pi's own images are (image-view's `kitty.ts`): Unicode
+  placeholders showed Herdr's line gaps as stripes. An unchanged screen is not redrawn.
   When the tool ends, one more screenshot is kept as a still, saved under
   `$TMPDIR/pi-browser-frames/` so a resumed session shows it too. Without Kitty
   graphics, the row gets a line of text instead, and no screenshots are taken.
@@ -94,15 +95,34 @@ AES-GCM-sealed frames), and it pairs only with Claude Desktop (`client_kind`
 
 ## Permissions
 
+Pi's auto-mode is the only permission system, as Claude Code's is in Arthur's
+setup. Each call's permission mode is chosen as Claude Code 2.1.322 chooses it
+(`permissions.ts`, its Chrome tools' `call`), from the page the call acts on:
+the navigate URL, a batch's own navigate, else the tab's current URL (looked up
+with `tabs_context_mcp` in `ask` mode).
+
+- **The classifier let the call through, its host is known, no deny rule:**
+  `permission_mode: "skip_all_permission_checks"` for that call only. A fast-path
+  allow doesn't count: auto-mode tells the extension through
+  `Symbol.for("pi-auto-mode.classifier-allowed")`.
+- **A known host otherwise:** `follow_a_plan` with `allowed_domains` (that host and
+  those of earlier calls), and the extension's prompts answered `allowed: true`.
+- **No host:** `follow_a_plan` with the hosts allowed so far, or `ask`.
+
+Nothing is session-wide: every call carries its own mode, and the live view's
+screenshots carry their call's.
+
 Arthur's decisions of 2026-11-13:
 
-- **A: auto-mode is the only permission system.** Pi's auto-mode classifies each
-  browser call like any tool's. For a call it let through, the extension's site
-  prompts (`permission_request` for that `tool_use_id`) are answered
-  `allowed: true`. A call auto-mode denies never reaches the extension. No
-  `skip_all_permission_checks`, no dialog of Pi's. With Claude Code he never set a
-  permission for the extension: in his auto mode, Claude Code's flow approves the
-  prompts the same way.
+- **B′, this per-call choice, replaces decision A as the primary path.** A only
+  answered the extension's `permission_request`s. But a step inside
+  `browser_batch` never raises one: the extension stops the batch with
+  "permission_required … call computer standalone (not in browser_batch) so the
+  user is prompted". A batch that clicked then zoomed failed that way. Claude Code
+  avoids it by lifting the site checks for the calls its auto mode classified.
+- **A, still the fallback:** for calls not lifted, a prompt for a call Pi let
+  through is answered `allowed: true`. A call auto-mode denies never reaches the
+  extension, and Pi adds no dialog of its own.
 - **Bridge.** Pi reaches the extension as Claude Code does, through the bridge
   with his Claude Code OAuth token (read-only, never printed, logged or written),
   rather than spawning Claude Code or pairing locally.
@@ -124,6 +144,7 @@ the next call connects again.
   - `save_to_disk` keeps the screenshot in a file;
   - the three browser-choice tools are answered here;
   - results become Pi content.
+- `permissions.ts`: each call's permission mode, as Claude Code chooses it.
 - `tools.ts`: the tool definitions from `claude-tools.json`.
 - `liveview.ts`: the frame pump and the Kitty view.
 - `index.ts`: the Pi wiring.
@@ -139,6 +160,8 @@ node --test 'tests/*.test.ts'   # Node 24 runs the TypeScript directly
   no extension, no login.
 - `protocol.test.ts`: framing (cut at any byte), requests, a fake host relaying
   to two clients, a permission prompt answered, no socket.
+- `permissions.test.ts`: each branch of the choice, a batch that clicks then
+  zooms on one host, and how the target page is found.
 - `tools.test.ts`: the 20 tools as Pi declares them. It also checks the snapshot
   against the installed Claude Code's `tools/list`; when that fails, refresh
   `claude-tools.json`.
