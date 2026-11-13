@@ -37,9 +37,12 @@ const VIEWED = new Set([
 // ctrl+b) and Herdr's keys.
 export const VIDEO_KEY = "ctrl+alt+b";
 const LINGER_MS = 4000;
-// The extension runs screenshots concurrently; three in flight gave ~6 fps here.
-const IN_FLIGHT = 3;
-const MIN_GAP_MS = 110;
+// Each screenshot hides the extension's orange glow, captures, then shows it again; when
+// screenshots overlap, one's "show" lands during another's capture and the glow gets into
+// the video (36% of frames at 3 in flight). Two in flight started 200 ms apart, about the
+// extension's own time per shot, gave no glow in 378 frames at ~4.4 fps (1 in flight: 2.3).
+const IN_FLIGHT = 2;
+const MIN_GAP_MS = 200;
 
 type Client = BrowserTransport & { listExtensions(): Promise<Extension[]>; select(deviceId: string): void };
 

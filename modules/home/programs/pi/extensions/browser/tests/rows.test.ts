@@ -11,8 +11,11 @@ const tabContext = `\n\nTab Context:\n- Executed on tabId: ${TAB}\n- Available t
 function fakeClient(navigateMs = 0) {
 	const calls: { tool: string; args: Record<string, unknown> }[] = [];
 	let shot = 0;
+	let inFlight = 0;
+	const pacing = { maxInFlight: 0, starts: [] as number[] };
 	return {
 		calls,
+		pacing,
 		screenshots: () => calls.filter((c) => c.tool === "computer" && c.args.action === "screenshot").length,
 		client: {
 			async callTool(tool: string, args: Record<string, unknown>, options: { signal?: AbortSignal } = {}) {
@@ -30,7 +33,10 @@ function fakeClient(navigateMs = 0) {
 					return { result: { content: [{ type: "text", text: `Navigated to ${args.url}` }, { type: "text", text: tabContext }] } };
 				}
 				if (tool === "computer" && args.action === "screenshot") {
-					await sleep(20);
+					pacing.starts.push(Date.now());
+					pacing.maxInFlight = Math.max(pacing.maxInFlight, ++inFlight);
+					await sleep(400);
+					inFlight--;
 					return { result: { content: [{ type: "image", data: Buffer.from(`shot-${shot++}`).toString("base64"), mimeType: "image/jpeg" }, { type: "text", text: tabContext }] } };
 				}
 				return { result: { content: [{ type: "text", text: "ok" }, { type: "text", text: tabContext }] } };
@@ -114,7 +120,7 @@ test("a screenshot Pi asks for stays in its result, for the model and the row, d
 
 test("the video: a non-capturing top-right overlay that plays while a call runs and stops at session end", async () => {
 	const { pi, tools, shortcuts, emit } = fakePi();
-	const fake = fakeClient(600);
+	const fake = fakeClient(1200);
 	const { ui, overlays, writes } = fakeUi();
 	browser(pi as never, { client: fake.client as never });
 	assert.ok(shortcuts.has(VIDEO_KEY));
@@ -130,7 +136,7 @@ test("the video: a non-capturing top-right overlay that plays while a call runs 
 
 	const navigate = tools.get("mcp__claude-in-chrome__navigate");
 	const running = navigate.execute("t3", { url: "http://127.0.0.1:8917/page.html", tabId: TAB }, new AbortController().signal, undefined, ctxFor(ui));
-	await sleep(300);
+	await sleep(900);
 	assert.equal(o.hidden, false);
 	assert.ok(fake.screenshots() >= 3, `screenshots while navigating: ${fake.screenshots()}`);
 	const lines = o.component.render(o.options.overlayOptions.width);
@@ -144,6 +150,25 @@ test("the video: a non-capturing top-right overlay that plays while a call runs 
 	assert.equal(fake.screenshots(), atEnd, "no capture after session end");
 	assert.equal(o.done, true, "the overlay is closed");
 	assert.match(writes.at(-1)!, /^\x1b_Ga=d,d=I,i=\d+/, "its image is freed");
+});
+
+// Each screenshot hides the extension's glow, captures, then shows it again. Overlapping
+// screenshots let one's "show" land during another's capture, so the glow got into 36% of
+// the frames at 3 in flight. 2 in flight started 200 ms apart (the extension's ~215 ms of
+// work per shot) gave 0 of 378 frames with the glow, at ~4.4 fps.
+test("the video's screenshots: at most 2 in flight, started at least 200 ms apart", async () => {
+	const { pi, tools, emit } = fakePi();
+	const fake = fakeClient(2500);
+	const { ui } = fakeUi();
+	browser(pi as never, { client: fake.client as never });
+	await emit("session_start", {}, ctxFor(ui));
+	await tools.get("mcp__claude-in-chrome__navigate").execute("tp", { url: "http://127.0.0.1:8917/", tabId: TAB }, undefined, undefined, ctxFor(ui));
+	await emit("session_shutdown", {}, ctxFor(ui));
+	const { starts, maxInFlight } = fake.pacing;
+	assert.ok(starts.length >= 4, `screenshots: ${starts.length}`);
+	assert.equal(maxInFlight, 2);
+	const gaps = starts.slice(1).map((t, i) => t - starts[i]!);
+	assert.ok(Math.min(...gaps) >= 195, `gaps: ${gaps}`);
 });
 
 test("Esc: the call's abort hides the video and stops capture at once", async () => {
