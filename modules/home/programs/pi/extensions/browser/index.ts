@@ -4,6 +4,7 @@
 // as a video in a picture-in-picture view at the top right; the chat keeps text
 // rows. See README.md.
 import { createHash } from "node:crypto";
+import { appendFileSync } from "node:fs";
 import { convertToPng, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, getCellDimensions, getImageDimensions, renderImage, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { loadCredentials } from "../remote-control/api.ts";
@@ -99,7 +100,25 @@ export default function browser(pi: ExtensionAPI, deps: { client?: Client } = {}
 		imageId: number;
 		timer?: ReturnType<typeof setTimeout>;
 		frame?: Frame;
+		/** Since the capture last started: for PI_BROWSER_VIDEO_STATS. */
+		run?: { since: number; requests: number; frames: number; skipped: number; stale: number; pngBytes: number };
 	};
+
+	// PI_BROWSER_VIDEO_STATS=<file>: one JSON line per stretch of capture (fps, skipped
+	// frames, bytes of PNG sent to the terminal), to measure the video where it runs.
+	const statsFile = process.env.PI_BROWSER_VIDEO_STATS;
+	function noteRun(v: Video, running: boolean) {
+		if (!statsFile) return;
+		const s = v.scheduler;
+		if (running && !v.run) v.run = { since: Date.now(), requests: s.requests, frames: s.frames, skipped: s.skipped, stale: s.stale, pngBytes: 0 };
+		else if (!running && v.run) {
+			const seconds = (Date.now() - v.run.since) / 1000;
+			const frames = s.frames - v.run.frames;
+			const line = { seconds, requests: s.requests - v.run.requests, frames, fps: +(frames / seconds).toFixed(2), skipped: s.skipped - v.run.skipped, stale: s.stale - v.run.stale, pngKBps: +(v.run.pngBytes / 1024 / seconds).toFixed(1) };
+			appendFileSync(statsFile, `${JSON.stringify(line)}\n`);
+			v.run = undefined;
+		}
+	}
 
 	/** Shows, hides, starts and pauses what the state says, and sets the timer for its next change. */
 	function update() {
@@ -107,7 +126,9 @@ export default function browser(pi: ExtensionAPI, deps: { client?: Client } = {}
 		if (!v) return;
 		const now = Date.now();
 		v.setHidden(state.mode(now) === "hidden");
-		v.scheduler.setActive(state.capturing(now) && tabId !== undefined && ownTabs.has(tabId));
+		const capture = state.capturing(now) && tabId !== undefined && ownTabs.has(tabId);
+		v.scheduler.setActive(capture);
+		noteRun(v, capture);
 		if (v.timer) clearTimeout(v.timer);
 		v.timer = undefined;
 		const next = state.nextChange(now);
@@ -185,6 +206,7 @@ export default function browser(pi: ExtensionAPI, deps: { client?: Client } = {}
 					onFrame: (frame) => {
 						if (!video) return;
 						video.frame = frame;
+						if (video.run) video.run.pngBytes += frame.png.length;
 						tui.requestRender();
 					},
 					maxInFlight: IN_FLIGHT,
@@ -225,6 +247,7 @@ export default function browser(pi: ExtensionAPI, deps: { client?: Client } = {}
 		const v = video;
 		if (!v) return;
 		video = undefined;
+		noteRun(v, false);
 		v.scheduler.stop();
 		if (v.timer) clearTimeout(v.timer);
 		v.close();
