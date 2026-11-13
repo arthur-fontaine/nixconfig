@@ -12,6 +12,7 @@ import { BridgeWsClient, claudeAccountUuid, type Extension } from "./bridge.ts";
 import { callBrowserTool, type PiContent, type TabInfo, ToolError, tabsIn, toPiContent } from "./calls.ts";
 import { BrowserNotConnectedError, DisconnectedMidCallError, ToolTimeoutError } from "./client.ts";
 import { allocateKittyId, kittyDelete } from "../image-view/kitty.ts";
+import { decodePng, showsGlow } from "./glow.ts";
 import { compositeOverImages, OverlayState, VideoOverlay } from "./overlay.ts";
 import { type CallPermissions, callPermissions, hostOf } from "./permissions.ts";
 import { claudeToolName, piToolDefinitions, SERVER } from "./tools.ts";
@@ -104,20 +105,21 @@ export default function browser(pi: ExtensionAPI, deps: { client?: Client } = {}
 		timer?: ReturnType<typeof setTimeout>;
 		frame?: Frame;
 		/** Since the capture last started: for PI_BROWSER_VIDEO_STATS. */
-		run?: { since: number; requests: number; frames: number; skipped: number; stale: number; pngBytes: number };
+		run?: { since: number; requests: number; frames: number; skipped: number; stale: number; pngBytes: number; glowDropped: number };
 	};
 
 	// PI_BROWSER_VIDEO_STATS=<file>: one JSON line per stretch of capture (fps, skipped
-	// frames, bytes of PNG sent to the terminal), to measure the video where it runs.
+	// frames, frames dropped for the glow, bytes of PNG sent to the terminal), to measure
+	// the video where it runs.
 	const statsFile = process.env.PI_BROWSER_VIDEO_STATS;
 	function noteRun(v: Video, running: boolean) {
 		if (!statsFile) return;
 		const s = v.scheduler;
-		if (running && !v.run) v.run = { since: Date.now(), requests: s.requests, frames: s.frames, skipped: s.skipped, stale: s.stale, pngBytes: 0 };
+		if (running && !v.run) v.run = { since: Date.now(), requests: s.requests, frames: s.frames, skipped: s.skipped, stale: s.stale, pngBytes: 0, glowDropped: 0 };
 		else if (!running && v.run) {
 			const seconds = (Date.now() - v.run.since) / 1000;
 			const frames = s.frames - v.run.frames;
-			const line = { seconds, requests: s.requests - v.run.requests, frames, fps: +(frames / seconds).toFixed(2), skipped: s.skipped - v.run.skipped, stale: s.stale - v.run.stale, pngKBps: +(v.run.pngBytes / 1024 / seconds).toFixed(1) };
+			const line = { seconds, requests: s.requests - v.run.requests, frames, fps: +(frames / seconds).toFixed(2), skipped: s.skipped - v.run.skipped, stale: s.stale - v.run.stale, glowDropped: v.run.glowDropped, pngKBps: +(v.run.pngBytes / 1024 / seconds).toFixed(1) };
 			appendFileSync(statsFile, `${JSON.stringify(line)}\n`);
 			v.run = undefined;
 		}
@@ -159,6 +161,13 @@ export default function browser(pi: ExtensionAPI, deps: { client?: Client } = {}
 			const png = image.mimeType === "image/png" ? image.data : (await convertToPng(image.data, image.mimeType))?.data;
 			const dims = png ? getImageDimensions(png, "image/png") : null;
 			if (!png || !dims) return null;
+			// Only the browser shows the extension's glow; a frame that caught it is dropped (glow.ts).
+			const pixels = decodePng(Buffer.from(png, "base64"));
+			if (pixels && showsGlow(pixels)) {
+				lastHash = undefined;
+				if (video?.run) video.run.glowDropped++;
+				return null;
+			}
 			fullWidth = Math.round(dims.widthPx / rounded);
 			lastHash = hash;
 			last = { png, width: dims.widthPx, height: dims.heightPx, key: hash };

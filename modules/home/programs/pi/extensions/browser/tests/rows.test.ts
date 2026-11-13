@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "./stubs/hooks.ts";
+import { readFileSync } from "node:fs";
 import { tabsIn } from "../calls.ts";
 
 const { default: browser, VIDEO_KEY } = await import("../index.ts");
@@ -8,7 +9,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const TAB = 373894614;
 const tabContext = `\n\nTab Context:\n- Executed on tabId: ${TAB}\n- Available tabs:\n  • tabId ${TAB}: "k22 motion test" ("http://127.0.0.1:8917/page.html")`;
 
-function fakeClient(navigateMs = 0) {
+function fakeClient(navigateMs = 0, shotImage?: () => { data: string; mimeType: string }) {
 	const calls: { tool: string; args: Record<string, unknown> }[] = [];
 	let shot = 0;
 	let inFlight = 0;
@@ -37,7 +38,8 @@ function fakeClient(navigateMs = 0) {
 					pacing.maxInFlight = Math.max(pacing.maxInFlight, ++inFlight);
 					await sleep(400);
 					inFlight--;
-					return { result: { content: [{ type: "image", data: Buffer.from(`shot-${shot++}`).toString("base64"), mimeType: "image/jpeg" }, { type: "text", text: tabContext }] } };
+					const image = shotImage?.() ?? { data: Buffer.from(`shot-${shot++}`).toString("base64"), mimeType: "image/jpeg" };
+					return { result: { content: [{ type: "image", ...image }, { type: "text", text: tabContext }] } };
 				}
 				return { result: { content: [{ type: "text", text: "ok" }, { type: "text", text: tabContext }] } };
 			},
@@ -169,6 +171,25 @@ test("the video's screenshots: at most 2 in flight, started at least 200 ms apar
 	assert.equal(maxInFlight, 2);
 	const gaps = starts.slice(1).map((t, i) => t - starts[i]!);
 	assert.ok(Math.min(...gaps) >= 195, `gaps: ${gaps}`);
+});
+
+test("a frame that caught the extension's glow is never drawn; a clean one is", async () => {
+	const png = (name: string) => ({ data: readFileSync(new URL(`./fixtures/frame-${name}.png`, import.meta.url)).toString("base64"), mimeType: "image/png" });
+	for (const [name, drawn] of [["glow", false], ["glow-faint", false], ["clean", true]] as const) {
+		const { pi, tools, emit } = fakePi();
+		const fake = fakeClient(1500, () => png(name));
+		const { ui, overlays } = fakeUi();
+		browser(pi as never, { client: fake.client as never });
+		await emit("session_start", {}, ctxFor(ui));
+		const running = tools.get("mcp__claude-in-chrome__navigate").execute(`tg-${name}`, { url: "http://127.0.0.1:8917/", tabId: TAB }, undefined, undefined, ctxFor(ui));
+		await sleep(1100);
+		const o = overlays[0]!;
+		assert.ok(fake.screenshots() >= 2, `${name}: screenshots ${fake.screenshots()}`);
+		const lines: string[] = o.component.render(o.options.overlayOptions.width);
+		assert.equal(lines.some((l) => l.includes("\x1b_G")), drawn, `${name}: drawn`);
+		await running;
+		await emit("session_shutdown", {}, ctxFor(ui));
+	}
 });
 
 test("Esc: the call's abort hides the video and stops capture at once", async () => {
