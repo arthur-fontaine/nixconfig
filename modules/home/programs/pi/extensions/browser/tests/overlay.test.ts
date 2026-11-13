@@ -191,6 +191,13 @@ test("before the first frame the video area says it is connecting, with no image
 	assert.ok(lines.some((l) => plain(l).includes("Waiting for the first frame")));
 });
 
+test("a page with no host (a new tab) is named by its title alone", () => {
+	const o = overlay({ tab: () => ({ title: "New Tab" }) });
+	o.state.callStarted("a", 0);
+	o.setFrame(frame("a"));
+	assert.match(plain(o.view.render(80)[0]!), /^╭─ ● New Tab ─+ ctrl\+alt\+b ─╮$/);
+});
+
 test("idle (lingering after the last call): the dot goes dim", () => {
 	const o = overlay();
 	o.state.callStarted("a", 0);

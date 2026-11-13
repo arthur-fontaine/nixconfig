@@ -147,8 +147,10 @@ export class VideoOverlay implements Component {
 		return this.o.theme.fg(this.o.state.live() ? "success" : "dim", "●");
 	}
 
+	/** The page's host; for a page with none (chrome://newtab), its title. */
 	private host(): string {
-		return this.o.tab().host ?? "browser";
+		const tab = this.o.tab();
+		return tab.host ?? tab.title ?? "Browser";
 	}
 
 	private pillText(): string {
@@ -176,7 +178,7 @@ export class VideoOverlay implements Component {
 		const room = inner - 2 - this.o.visibleWidth(right) - 1;
 		const host = this.o.truncate(this.host(), Math.max(4, room - 3));
 		const titleRoom = room - 3 - this.o.visibleWidth(host) - 2;
-		const title = tab.title && tab.title !== tab.host && titleRoom >= 6 ? this.o.truncate(tab.title, titleRoom) : "";
+		const title = tab.host && tab.title && tab.title !== tab.host && titleRoom >= 6 ? this.o.truncate(tab.title, titleRoom) : "";
 		const left = ` ${this.dot()} ${theme.fg("text", host)}${title ? `  ${theme.fg("muted", title)}` : ""} `;
 		const fill = Math.max(1, inner - 1 - this.o.visibleWidth(left) - this.o.visibleWidth(right) - 1);
 		const top = border("╭─") + left + border("─".repeat(fill)) + theme.fg("dim", right) + border("─╮");

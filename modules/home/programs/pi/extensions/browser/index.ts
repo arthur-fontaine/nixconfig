@@ -189,7 +189,7 @@ export default function browser(pi: ExtensionAPI, deps: { client?: Client } = {}
 					frame: () => video?.frame,
 					tab: () => {
 						const info = tabId !== undefined ? ownTabs.get(tabId) : undefined;
-						return { host: hostOf(info?.url) ?? info?.url, title: info?.title };
+						return { host: hostOf(info?.url), title: info?.title };
 					},
 					terminal: () => ({ columns: tui.terminal.columns, rows: tui.terminal.rows }),
 					cell: () => getCellDimensions(),
