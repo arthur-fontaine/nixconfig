@@ -152,9 +152,15 @@ one is dropped.
 it again, unless the remote flag `cic_signs_stay_up` is on (it isn't for this
 account). With screenshots overlapping, one's "show" lands during another's
 capture and the glow gets into the frame: 36% of frames at 3 in flight (6.6 fps),
-none of 378 at 2 in flight spaced 140–280 ms. In the browser itself the glow is
-steady when Pi is idle and mostly hidden while the video runs. One at a time
-(2.3 fps) makes it blink about twice a second instead.
+none of 378 at 2 in flight spaced 140–280 ms. The extension also shows the glow
+when one of Pi's calls starts or ends, or takes its own screenshots (a batch's
+scrolls), and a capture can land then: 14 of 116 shots of a live run at that pace
+had it. So each frame is checked before it's drawn (`glow.ts`): the glow is an
+orange band along the page's edges, and a frame whose outermost strip is warm
+and warmer than just inside, on at least three edges, is dropped (decoding and
+checking takes ~6 ms per frame). In the browser itself the glow is steady when
+Pi is idle and mostly hidden while the video runs. One at a time (2.3 fps) makes
+it blink about twice a second instead.
 
 **Drawing.** One Kitty image id, replaced in place by each frame through pi-tui's
 `renderImage`, so Pi's renderer re-places it on redraws and frees nothing by
@@ -167,7 +173,8 @@ lists among this session's own (never another tab), and with the permissions of
 the call it watches. It stops at session end and on `/reload`, and frees its image.
 
 **Measuring it.** `PI_BROWSER_VIDEO_STATS=<file>` appends one JSON line per
-stretch of capture: fps, skipped and stale frames, PNG KB/s sent to the terminal.
+stretch of capture: fps, skipped and stale frames, frames dropped for the glow,
+PNG KB/s sent to the terminal.
 
 ## Browser closed
 
@@ -190,6 +197,7 @@ the next call connects again.
 - `tools.ts`: the tool definitions from `claude-tools.json`.
 - `video.ts`: the frame scheduler (screenshots in flight, in order, unchanged ones skipped) and the video's size.
 - `overlay.ts`: the overlay's state (shown, hidden, collapsed) and its component.
+- `glow.ts`: a small PNG decoder, and the check that drops frames showing the extension's glow.
 - `index.ts`: the Pi wiring.
 
 ## Tests
@@ -212,6 +220,10 @@ node --test 'tests/*.test.ts'   # Node 24 runs the TypeScript directly
   stop and back-off; the size and aspect, the pill below the minimum size.
 - `overlay.test.ts`: when it shows, hides and collapses (collapsed stays
   collapsed), Esc; the bordered video, the title bar, the pill, clicks.
+- `glow.test.ts`: frames from a live run (`tests/fixtures`: the glow, the glow
+  fading in, a clean frame) and made-up ones (an orange sidebar or page isn't
+  the glow); PNG rows with the Sub and Up filters.
 - `rows.test.ts`: index.ts with Pi's packages stubbed (`tests/stubs`): rows
   without frames, screenshots once, the overlay's options, 2 in flight 200 ms
-  apart, Esc and session end, only the session's own tabs.
+  apart, frames with the glow never drawn, Esc and session end, only the
+  session's own tabs.
