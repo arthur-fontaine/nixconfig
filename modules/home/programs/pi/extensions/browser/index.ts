@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { convertToPng, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, getCapabilities, getCellDimensions, getImageDimensions, type TUI, Text } from "@earendil-works/pi-tui";
+import { type Component, Container, getCapabilities, getCellDimensions, getImageDimensions, renderImage, type TUI, Text } from "@earendil-works/pi-tui";
 import { callBrowserTool, type PiContent, ToolError, toPiContent } from "./calls.ts";
 import { loadCredentials } from "../remote-control/api.ts";
 import { BridgeWsClient, claudeAccountUuid } from "./bridge.ts";
@@ -78,6 +78,7 @@ export default function browser(pi: ExtensionAPI) {
 					write,
 					cell: () => getCellDimensions(),
 					maxRows: () => Math.max(6, Math.floor((tui?.terminal.rows ?? 40) * 0.6)),
+					renderImage: (png, dims, options) => renderImage(png, dims, options),
 				}),
 			};
 			lives.set(toolCallId, live);

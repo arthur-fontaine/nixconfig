@@ -127,6 +127,31 @@ test("kitty: a narrower row places the frame at the new size; dispose deletes it
 	assert.equal(writes.at(-1), "\x1b_Ga=d,d=I,i=1000,q=2\x1b\\");
 });
 
+// Pi's fullscreen renderer deletes every placement on an image redraw and puts back only
+// the images registered through pi-tui's renderImage (and crops those scrolled half out):
+// a raw a=T line vanished on the next redraw, leaving its empty rows.
+test("kitty: with Pi's renderImage, frames go through it under one stable id", () => {
+	const calls: { id?: number; maxWidthCells?: number; maxHeightCells?: number; png: string }[] = [];
+	const view = new LiveView({
+		kitty: () => true,
+		write: () => {},
+		cell: () => ({ widthPx: 10, heightPx: 20 }),
+		maxRows: () => 40,
+		allocateId: () => 4242,
+		renderImage: (png, _dims, options) => {
+			calls.push({ id: options.imageId, maxWidthCells: options.maxWidthCells, maxHeightCells: options.maxHeightCells, png });
+			return { sequence: `<img ${options.imageId}>`, rows: 3 };
+		},
+	});
+	view.setFrame(frame("a"));
+	assert.deepEqual(view.render(100), ["<img 4242>", "", ""]);
+	view.setFrame(frame("b"));
+	view.render(100);
+	assert.deepEqual(calls.map((c) => c.id), [4242, 4242]);
+	assert.deepEqual([calls[0]!.maxWidthCells, calls[0]!.maxHeightCells], [100, 31]);
+	assert.notEqual(calls[0]!.png, calls[1]!.png);
+});
+
 test("without kitty graphics the view is a line of text", () => {
 	const { view, writes } = kittyView(false);
 	view.setFrame(frame("a"));

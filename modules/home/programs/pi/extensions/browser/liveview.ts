@@ -109,6 +109,16 @@ export type LiveViewOptions = {
 	cell: () => CellSize;
 	maxRows: () => number;
 	allocateId?: () => number;
+	/**
+	 * pi-tui's renderImage. Pi's fullscreen renderer deletes every placement on an image
+	 * redraw and puts back, or crops when scrolled half out, only the images registered
+	 * through it, so frames must go through it to survive redraws and scrolling.
+	 */
+	renderImage?: (
+		png: string,
+		dims: { widthPx: number; heightPx: number },
+		options: { maxWidthCells: number; maxHeightCells: number; imageId: number; moveCursor: false },
+	) => { sequence: string; rows: number } | null;
 };
 
 /**
@@ -148,7 +158,10 @@ export class LiveView {
 		if (cached && cached.key === frame.key && cached.width === width) return cached.rows;
 		const { columns, rows } = fitFrame(frame, Math.max(1, width), this.options.cell(), this.options.maxRows());
 		this.id ??= (this.options.allocateId ?? allocateKittyId)();
-		const out = [kittyPlace(frame.png, this.id, columns, rows), ...Array.from({ length: rows - 1 }, () => "")];
+		let out: string[];
+		const placed = this.options.renderImage?.(frame.png, { widthPx: frame.width, heightPx: frame.height }, { maxWidthCells: columns, maxHeightCells: rows, imageId: this.id, moveCursor: false });
+		if (placed) out = [placed.sequence, ...Array.from({ length: placed.rows - 1 }, () => "")];
+		else out = [kittyPlace(frame.png, this.id, columns, rows), ...Array.from({ length: rows - 1 }, () => "")];
 		this.lines = { key: frame.key, width, rows: out };
 		return out;
 	}
