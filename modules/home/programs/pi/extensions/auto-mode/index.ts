@@ -312,6 +312,11 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerToolRenderer(noteRenderer((toolCallId) => allowedCalls.has(toolCallId)));
 
+	// Whether the classifier itself let a call through (not a fast path): the browser extension
+	// lifts the extension's site checks for such a call only, as Claude Code does in auto mode.
+	(globalThis as Record<symbol, unknown>)[Symbol.for("pi-auto-mode.classifier-allowed")] = (toolCallId: string) =>
+		enabled && allowedCalls.has(toolCallId);
+
 	pi.on("tool_call", async (event, ctx) => {
 		if (!enabled) return undefined;
 		const input = event.input as Record<string, unknown>;

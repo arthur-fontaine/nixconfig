@@ -80,6 +80,9 @@ export function messageSources(content: unknown, root = blobRoot()): Source[] {
  * screenshot, say) only has the bytes.
  */
 export function toolSources(toolName: string, args: unknown, content: unknown, cwd: string): Source[] {
+	// A browser screenshot is Pi's own picture in the row (the tab's video plays in the
+	// browser extension's overlay); a tile's label under it would only add a stray "#1".
+	if (toolName.startsWith("mcp__claude-in-chrome__")) return [];
 	const images = blocks(content).filter(isImage);
 	const path = (args as { path?: unknown; file_path?: unknown } | null)?.path ?? (args as { file_path?: unknown } | null)?.file_path;
 	if (toolName === "read" && images.length === 1 && typeof path === "string") {

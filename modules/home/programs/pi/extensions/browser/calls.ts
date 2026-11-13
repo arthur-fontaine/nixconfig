@@ -1,0 +1,230 @@
+// What Claude Code does around a Claude in Chrome call before and after the
+// extension runs it: the parts of each tool that live in the client.
+import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, extname, join } from "node:path";
+import type { BrowserTransport, Extension } from "./bridge.ts";
+import { type CallPermissions, hostOf, targetUrl } from "./permissions.ts";
+import { type CallOptions, type ContentBlock, contentText, type ToolResponse } from "./protocol.ts";
+import { stripSaveToDisk } from "./tools.ts";
+
+// Claude Code's per-call timeouts: a batch gets longer.
+export function timeoutFor(tool: string): number {
+	return tool === "browser_batch" ? 90_000 : 60_000;
+}
+
+export type PiContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+
+/** The extension's blocks as Pi's: MCP-style images, or Anthropic-style ones with a `source`. */
+export function toPiContent(content: ContentBlock[] | string | undefined): PiContent[] {
+	if (typeof content === "string") return [{ type: "text", text: content }];
+	const out: PiContent[] = [];
+	for (const block of content ?? []) {
+		const b = block as Record<string, any>;
+		if (b.type === "text" && typeof b.text === "string") out.push({ type: "text", text: b.text });
+		else if (b.type === "image" && typeof b.data === "string") out.push({ type: "image", data: b.data, mimeType: b.mimeType ?? b.mime_type ?? "image/png" });
+		else if (b.type === "image" && b.source?.type === "base64") out.push({ type: "image", data: b.source.data, mimeType: b.source.media_type ?? "image/png" });
+	}
+	return out;
+}
+
+export class ToolError extends Error {
+	override name = "ToolError";
+}
+
+/** A result's content, or a ToolError with its text when the extension refused or failed. */
+export function unwrap(response: ToolResponse): PiContent[] {
+	if (response.error) throw new ToolError(contentText(response.error.content) || "The browser extension returned an error");
+	const result = response.result;
+	if (!result) throw new ToolError("The browser extension returned no result");
+	const content = toPiContent(result.content);
+	if (result.isError || result.is_error) throw new ToolError(content.filter((c) => c.type === "text").map((c) => c.text).join("\n") || "The tool failed");
+	return content;
+}
+
+/** The tab list in a tabs_context_mcp reply, if there is one. */
+export function tabContext(content: PiContent[]): { tabId?: number; tabGroupId?: number; json: string } | undefined {
+	for (const block of content) {
+		if (block.type !== "text") continue;
+		try {
+			const parsed = JSON.parse(block.text) as { availableTabs?: { tabId?: unknown }[]; tabGroupId?: unknown };
+			if (!Array.isArray(parsed.availableTabs)) continue;
+			const tabId = parsed.availableTabs.find((t) => typeof t?.tabId === "number")?.tabId as number | undefined;
+			return { tabId, tabGroupId: typeof parsed.tabGroupId === "number" ? parsed.tabGroupId : undefined, json: block.text };
+		} catch {}
+	}
+	return undefined;
+}
+
+export type TabInfo = { title?: string; url?: string };
+
+/**
+ * The tabs a result names, with their titles and URLs: tabs_context_mcp's JSON, or the
+ * "Tab Context" the extension appends to a result (`• tabId 7: "Title" ("https://…")`).
+ * These are the session's own group's tabs.
+ */
+export function tabsIn(content: PiContent[]): Map<number, TabInfo> {
+	const tabs = new Map<number, TabInfo>();
+	for (const block of content) {
+		if (block.type !== "text") continue;
+		for (const m of block.text.matchAll(/tabId (\d+): "((?:[^"\\]|\\.)*)" \("((?:[^"\\]|\\.)*)"\)/g)) tabs.set(Number(m[1]), { title: m[2], url: m[3] });
+		try {
+			const parsed = JSON.parse(block.text) as { availableTabs?: { tabId?: unknown; title?: unknown; url?: unknown }[] };
+			for (const t of parsed.availableTabs ?? [])
+				if (typeof t?.tabId === "number") tabs.set(t.tabId, { title: typeof t.title === "string" ? t.title : undefined, url: typeof t.url === "string" ? t.url : undefined });
+		} catch {}
+	}
+	return tabs;
+}
+
+const MIME: Record<string, string> = {
+	".png": "image/png",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif": "image/gif",
+	".webp": "image/webp",
+	".pdf": "application/pdf",
+	".txt": "text/plain",
+	".csv": "text/csv",
+	".json": "application/json",
+	".html": "text/html",
+	".zip": "application/zip",
+};
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/** file_upload's `paths`, read here and sent as `files`, as Claude Code does. */
+export async function readUploads(paths: unknown): Promise<{ data: string; name: string; mimeType: string }[]> {
+	if (!Array.isArray(paths) || paths.length === 0) throw new ToolError("file_upload needs `paths`: absolute paths of the files to upload.");
+	let total = 0;
+	const files = [];
+	for (const path of paths) {
+		if (typeof path !== "string" || !path.startsWith("/")) throw new ToolError(`Not an absolute path: ${JSON.stringify(path)}`);
+		const info = await stat(path).catch(() => null);
+		if (!info?.isFile()) throw new ToolError(`No such file: ${path}`);
+		total += info.size;
+		if (total > MAX_UPLOAD_BYTES) throw new ToolError("The combined size of all files in a single call must stay under 10 MB.");
+		files.push({ data: (await readFile(path)).toString("base64"), name: basename(path), mimeType: MIME[extname(path).toLowerCase()] ?? "application/octet-stream" });
+	}
+	return files;
+}
+
+/** save_to_disk: the screenshot goes in a file and its path in the result. */
+export function saveImages(content: PiContent[], dir = join(tmpdir(), "pi-browser-screenshots")): PiContent[] {
+	const out: PiContent[] = [...content];
+	for (const block of content) {
+		if (block.type !== "image") continue;
+		const bytes = Buffer.from(block.data, "base64");
+		const ext = block.mimeType === "image/jpeg" ? "jpg" : block.mimeType.split("/")[1] ?? "png";
+		const path = join(dir, `screenshot-${createHash("sha256").update(bytes).digest("hex").slice(0, 16)}.${ext}`);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(path, bytes);
+		out.push({ type: "text", text: `Saved screenshot to ${path}` });
+	}
+	return out;
+}
+
+export type CallContext = {
+	client: BrowserTransport;
+	/** The browsers on the bridge, and the choice of one (select_browser). */
+	browsers?: { list(): Promise<Extension[]>; select(deviceId: string): void };
+	options: () => CallOptions & { onPermissionRequest?: (p: Record<string, unknown>) => boolean | Promise<boolean> };
+	signal?: AbortSignal;
+	/** Called with the tab a call acts on, once known (for the live view). */
+	onTab?: (tabId: number) => void;
+	/** Keeps the tab group the extension reports, for later calls' scope. */
+	onTabGroup?: (tabGroupId: number) => void;
+	/** The extension's permission options for this call, given the host it acts on (permissions.ts). */
+	permissionsFor?: (host: string | undefined) => CallPermissions;
+};
+
+// Tools whose call needs no page: their mode stays whatever options() says.
+const NO_PAGE = new Set(["tabs_context_mcp", "tabs_create_mcp", "tabs_close_mcp", "gif_creator"]);
+
+/** The URL of a tab of the session's group, as Claude Code looks it up before a call: tabs_context_mcp in "ask". */
+async function tabUrl(ctx: CallContext, tabId: number): Promise<string | undefined> {
+	const { onPermissionRequest: _drop, ...scope } = ctx.options();
+	const response = await ctx.client.callTool("tabs_context_mcp", {}, { ...scope, permissionMode: "ask", timeoutMs: 8_000, signal: ctx.signal }).catch(() => undefined);
+	const text = response && !response.error ? contentText(response.result?.content) : "";
+	for (const line of text.split("\n")) {
+		try {
+			const tabs = (JSON.parse(line) as { availableTabs?: { tabId?: unknown; url?: unknown }[] }).availableTabs;
+			const url = tabs?.find((t) => t.tabId === tabId)?.url;
+			if (typeof url === "string") return url;
+		} catch {}
+	}
+	return undefined;
+}
+
+/** Runs one tool as Claude Code would, returning Pi content or throwing a ToolError. */
+export async function callBrowserTool(tool: string, input: Record<string, unknown>, ctx: CallContext): Promise<PiContent[]> {
+	if (tool === "list_connected_browsers" || tool === "select_browser" || tool === "switch_browser") {
+		const list = (await ctx.browsers?.list()) ?? [];
+		const browsers = list.map(({ deviceId, name, osPlatform }) => ({ deviceId, name, osPlatform, isLocal: osPlatform === "macOS" }));
+		if (tool === "list_connected_browsers") return [{ type: "text", text: JSON.stringify({ browsers }) }];
+		if (tool === "select_browser") {
+			const browser = browsers.find((b) => b.deviceId === input.deviceId);
+			if (!browser) throw new ToolError(`No connected browser with deviceId ${JSON.stringify(input.deviceId)}. Call list_connected_browsers.`);
+			ctx.browsers?.select(browser.deviceId);
+			return [{ type: "text", text: `Selected ${browser.name ?? browser.deviceId} (${browser.deviceId}).` }];
+		}
+		return [
+			{
+				type: "text",
+				text: `Connected browsers: ${browsers.map((b) => `${b.name ?? "Chrome"} (${b.deviceId})`).join(", ") || "none"}. Ask the person which one to use, then call select_browser with its deviceId.`,
+			},
+		];
+	}
+
+	const { args: stripped, wantsSave } = stripSaveToDisk(tool, input);
+	let args = stripped;
+	if (tool === "file_upload") args = { ...args, files: await readUploads(args.paths) };
+
+	const call = (name: string, a: Record<string, unknown>, permissions?: CallPermissions) => {
+		const { onPermissionRequest, ...scope } = ctx.options();
+		const own = permissions ?? { onPermissionRequest };
+		return ctx.client.callTool(name, a, { ...scope, ...own, timeoutMs: timeoutFor(name), signal: ctx.signal });
+	};
+
+	// navigate without a tab: the session's first tab, made if need be, and its list appended.
+	let appended: string | undefined;
+	if (tool === "navigate" && args.tabId == null) {
+		const url = typeof args.url === "string" ? args.url.trim().toLowerCase() : "";
+		if (url === "back" || url === "forward") throw new ToolError('tabId is required for url:"back"/"forward". Call tabs_context_mcp first to get a tab ID.');
+		if (url) {
+			const found = tabContext(unwrap(await call("tabs_context_mcp", { createIfEmpty: true })));
+			if (found?.tabGroupId !== undefined) ctx.onTabGroup?.(found.tabGroupId);
+			if (found?.tabId !== undefined) {
+				args = { ...args, tabId: found.tabId };
+				appended = found.json;
+			}
+		}
+	}
+	if (typeof args.tabId === "number") ctx.onTab?.(args.tabId);
+	else if (tool === "browser_batch") {
+		const first = (args.actions as { input?: { tabId?: unknown } }[] | undefined)?.find((a) => typeof a?.input?.tabId === "number");
+		if (first) ctx.onTab?.(first.input!.tabId as number);
+	}
+
+	let permissions: CallPermissions | undefined;
+	if (ctx.permissionsFor && !NO_PAGE.has(tool)) {
+		const tab =
+			typeof args.tabId === "number"
+				? (args.tabId as number)
+				: tool === "browser_batch"
+					? ((args.actions as { input?: { tabId?: unknown } }[] | undefined)?.find((a) => typeof a?.input?.tabId === "number")?.input?.tabId as number | undefined)
+					: undefined;
+		const own = targetUrl(tool, args, undefined);
+		const url = own ?? (tab !== undefined ? await tabUrl(ctx, tab) : undefined);
+		permissions = ctx.permissionsFor(hostOf(url));
+	}
+	let content = unwrap(await call(tool, args, permissions));
+	if (tool === "tabs_context_mcp" || tool === "tabs_create_mcp") {
+		const found = tabContext(content);
+		if (found?.tabGroupId !== undefined) ctx.onTabGroup?.(found.tabGroupId);
+	}
+	if (appended) content = [...content, { type: "text", text: `\n\nTab context (tabs_context_mcp{createIfEmpty:true} was called for you):\n${appended}` }];
+	if (wantsSave) content = saveImages(content);
+	return content;
+}

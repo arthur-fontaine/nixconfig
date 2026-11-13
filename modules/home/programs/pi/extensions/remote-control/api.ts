@@ -70,7 +70,8 @@ export class HttpError extends Error {
 	}
 }
 
-function headers(bearer: string, trustedDeviceToken?: string): Record<string, string> {
+/** The headers Claude Code sends to its private endpoints (also the browser extension's bridge). */
+export function headers(bearer: string, trustedDeviceToken?: string): Record<string, string> {
 	return {
 		Authorization: `Bearer ${bearer}`,
 		"Content-Type": "application/json",

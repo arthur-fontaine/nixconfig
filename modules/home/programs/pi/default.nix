@@ -191,6 +191,18 @@ let
     buildPhase = "swiftc -O main.swift -o quicklook";
     installPhase = "install -Dm755 quicklook $out/bin/quicklook";
   };
+  # The browser extension draws with image-view's kitty.ts and signs in with remote-control's
+  # api.ts (Claude Code's credentials), imported from their folders in the repo; the store copy
+  # brings its own, since each extension folder is linked alone.
+  browserExtension = pkgs.runCommand "pi-extension-browser" { } ''
+    cp -R ${./extensions/browser} $out
+    chmod -R u+w $out
+    cp ${./extensions/image-view/kitty.ts} $out/kitty.ts
+    cp ${./extensions/remote-control/api.ts} $out/remote-control-api.ts
+    substituteInPlace $out/index.ts \
+      --replace-fail '"../image-view/kitty.ts"' '"./kitty.ts"' \
+      --replace-fail '"../remote-control/api.ts"' '"./remote-control-api.ts"'
+  '';
   imageView = pkgs.runCommand "pi-extension-image-view" { } ''
     cp -R ${./extensions/image-view} $out
     chmod -R u+w $out
@@ -273,6 +285,9 @@ let
     footer = ./extensions/footer;
     # web_search and web_fetch through TinyFish, and view_image to look at a URL's image.
     web = ./extensions/web;
+    # Claude Code's Claude in Chrome tools, through the Claude in Chrome bridge, with the
+    # tab playing as a video in a picture-in-picture view while Pi uses the browser.
+    browser = browserExtension;
     # Commands run in the environment of an interactive shell in the session's folder,
     # direnv's included, however Pi was started (Herdr, `hc run`).
     shell-env = ./extensions/shell-env;
