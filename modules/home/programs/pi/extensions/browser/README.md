@@ -2,8 +2,8 @@
 
 Browser use for Pi through the Claude in Chrome extension, the way Claude Code's
 `--chrome` does it: Claude Code's own 20 browser tools, run by the extension in
-Some Browser (any Chromium browser with the extension), with the tab's screen
-live in the tool's row.
+Some Browser (any Chromium browser with the extension). While Pi uses the
+browser, the tab plays as a video in a picture-in-picture view at the top right.
 
 - **Tools.** `mcp__claude-in-chrome__navigate`, `…__computer`, `…__read_page`,
   `…__find`, `…__form_input`, `…__tabs_context_mcp`, `…__tabs_create_mcp`,
@@ -18,14 +18,9 @@ live in the tool's row.
   lifted for that call, as Claude Code does (see [Permissions](#permissions)).
 - **Transport.** Anthropic's Claude in Chrome bridge, signed in with Claude Code's
   login, as Claude Code does (see [How it reaches the extension](#how-it-reaches-the-extension)).
-- **Live view.** While a tool acts on a tab, the tab is screenshotted at up to
-  3 fps (fewer when screenshots are slow: at most half the time is spent
-  capturing), and the frame is drawn across the row with Kitty Unicode
-  placed directly as Pi's own images are (image-view's `kitty.ts`): Unicode
-  placeholders showed Herdr's line gaps as stripes. An unchanged screen is not redrawn.
-  When the tool ends, one more screenshot is kept as a still, saved under
-  `$TMPDIR/pi-browser-frames/` so a resumed session shows it too. Without Kitty
-  graphics, the row gets a line of text instead, and no screenshots are taken.
+- **The video.** See [The video](#the-video). The chat keeps text rows: no
+  renderer of ours, so compact-tools draws browser rows like any tool's, and a
+  screenshot the model takes shows once, as Pi draws any tool image.
 - **Each session its own tabs.** Calls carry `session_scope: {sessionId}` (Pi's
   session id), so each Pi session gets its own tab group, as Claude Code sessions do.
 
@@ -127,6 +122,53 @@ Arthur's decisions of 2026-11-13:
   with his Claude Code OAuth token (read-only, never printed, logged or written),
   rather than spawning Claude Code or pairing locally.
 
+## The video
+
+**Where it shows.** A non-capturing overlay (`ctx.ui.custom` with `overlay: true`,
+`nonCapturing: true`) at the top right: typing stays in the editor. It takes 40%
+of the width, keeps the page's aspect, and stays in the top half, clear of the
+editor and the footer. The title bar sits on the top border: a dot (green while
+a browser call runs, dim after), the page's host and title, and the key. It
+shows when a browser call starts and hides 4 s after the last one ends. Esc
+hides it at once.
+
+**Collapse.** `ctrl+alt+b` (ctrl+b is background-tools'; this one is free in Pi,
+the other extensions and Herdr's keys) or a click on the title bar shrinks it to
+a one-line pill: dot, host, key. It stays a pill for the rest of the session,
+later browser uses included, until the same key or a click on the pill expands
+it. A pill takes no frames. Below 70×18 cells the video is always the pill.
+
+**Frames.** The extension has no stream a client can reach: its own viewer
+(`chat_tab_frame`, `captureForViewer`) answers claude.ai's page only, and the
+bridge has no screencast or tabCapture. So the video is `computer screenshot`
+calls through the bridge, sized to the overlay (at most 800 px wide). Each takes
+~400 ms here (~185 ms of it the bridge round trip), so one at a time gives
+2.3 fps. They run 2 at a time, started at least 200 ms apart: ~4.4 fps. An
+unchanged picture isn't converted or redrawn, and a frame landing after a newer
+one is dropped.
+
+**Why not faster: the glow.** Each screenshot hides the extension's orange
+"Claude is working" glow (`HIDE_FOR_TOOL_USE`), waits 50 ms, captures, then shows
+it again, unless the remote flag `cic_signs_stay_up` is on (it isn't for this
+account). With screenshots overlapping, one's "show" lands during another's
+capture and the glow gets into the frame: 36% of frames at 3 in flight (6.6 fps),
+none of 378 at 2 in flight spaced 140–280 ms. In the browser itself the glow is
+steady when Pi is idle and mostly hidden while the video runs. One at a time
+(2.3 fps) makes it blink about twice a second instead.
+
+**Drawing.** One Kitty image id, replaced in place by each frame through pi-tui's
+`renderImage`, so Pi's renderer re-places it on redraws and frees nothing by
+mistake; `z=1` keeps it above the chat's own images. A chat row holding an image
+would make pi-tui drop the overlay's row there; that row is composited after the
+image instead.
+
+**When it runs.** Only while the full video shows, only on a tab the extension
+lists among this session's own (never another tab), and with the permissions of
+the call it watches. It stops at session end and on `/reload`, and frees its image.
+
+**Measuring it.** `PI_BROWSER_VIDEO_STATS=<file>` appends one JSON line per
+stretch of capture: fps, skipped and stale frames, PNG KB/s sent to the terminal.
+
 ## Browser closed
 
 With no extension on the bridge for the account, a call waits up to 10 s for one
@@ -146,7 +188,8 @@ the next call connects again.
   - results become Pi content.
 - `permissions.ts`: each call's permission mode, as Claude Code chooses it.
 - `tools.ts`: the tool definitions from `claude-tools.json`.
-- `liveview.ts`: the frame pump and the Kitty view.
+- `video.ts`: the frame scheduler (screenshots in flight, in order, unchanged ones skipped) and the video's size.
+- `overlay.ts`: the overlay's state (shown, hidden, collapsed) and its component.
 - `index.ts`: the Pi wiring.
 
 ## Tests
@@ -165,5 +208,10 @@ node --test 'tests/*.test.ts'   # Node 24 runs the TypeScript directly
 - `tools.test.ts`: the 20 tools as Pi declares them. It also checks the snapshot
   against the installed Claude Code's `tools/list`; when that fails, refresh
   `claude-tools.json`.
-- `liveview.test.ts`: the pump's rate and CPU budget, unchanged frames skipped,
-  sizing, and the Kitty uploads, deletes and text fallback.
+- `video.test.ts`: pipelining and spacing, unchanged and stale frames, pause,
+  stop and back-off; the size and aspect, the pill below the minimum size.
+- `overlay.test.ts`: when it shows, hides and collapses (collapsed stays
+  collapsed), Esc; the bordered video, the title bar, the pill, clicks.
+- `rows.test.ts`: index.ts with Pi's packages stubbed (`tests/stubs`): rows
+  without frames, screenshots once, the overlay's options, 2 in flight 200 ms
+  apart, Esc and session end, only the session's own tabs.
