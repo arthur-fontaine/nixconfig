@@ -194,5 +194,5 @@ test("the capture width is the video's pixel width, capped", () => {
 	const layout = layoutVideo(undefined, { columns: 200, rows: 60 }, cell);
 	assert.equal(layout.kind === "full" && layout.pixelWidth, 780);
 	const big = layoutVideo(undefined, { columns: 400, rows: 120 }, { widthPx: 20, heightPx: 40 });
-	assert.equal(big.kind === "full" && big.pixelWidth, 1000);
+	assert.equal(big.kind === "full" && big.pixelWidth, 800);
 });

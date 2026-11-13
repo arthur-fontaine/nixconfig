@@ -149,7 +149,8 @@ const MIN_ROWS = 18;
 const WIDTH_SHARE = 0.4;
 // The video keeps to the top half, clear of the editor and the footer.
 const HEIGHT_SHARE = 0.5;
-const MAX_PIXEL_WIDTH = 1000;
+// Retina cells would ask for ~1000 px; 800 px looks the same in a 40% view and costs a third less (PNG bytes, Pi's CPU).
+const MAX_PIXEL_WIDTH = 800;
 
 /** The video's size: ~40% of the width, the page's aspect, at most half the height; else the pill. */
 export function layoutVideo(size: { width: number; height: number } | undefined, terminal: { columns: number; rows: number }, cell: CellSize): VideoLayout {
