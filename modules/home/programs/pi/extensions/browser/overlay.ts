@@ -178,7 +178,8 @@ export class VideoOverlay implements Component {
 		const room = inner - 2 - this.o.visibleWidth(right) - 1;
 		const host = this.o.truncate(this.host(), Math.max(4, room - 3));
 		const titleRoom = room - 3 - this.o.visibleWidth(host) - 2;
-		const title = tab.host && tab.title && tab.title !== tab.host && titleRoom >= 6 ? this.o.truncate(tab.title, titleRoom) : "";
+		// Until the page has a title, the extension reports its URL as one.
+		const title = tab.host && tab.title && tab.title !== tab.host && !tab.title.includes("://") && titleRoom >= 6 ? this.o.truncate(tab.title, titleRoom) : "";
 		const left = ` ${this.dot()} ${theme.fg("text", host)}${title ? `  ${theme.fg("muted", title)}` : ""} `;
 		const fill = Math.max(1, inner - 1 - this.o.visibleWidth(left) - this.o.visibleWidth(right) - 1);
 		const top = border("╭─") + left + border("─".repeat(fill)) + theme.fg("dim", right) + border("─╮");

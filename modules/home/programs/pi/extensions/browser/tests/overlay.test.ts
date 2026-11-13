@@ -198,6 +198,13 @@ test("a page with no host (a new tab) is named by its title alone", () => {
 	assert.match(plain(o.view.render(80)[0]!), /^╭─ ● New Tab ─+ ctrl\+alt\+b ─╮$/);
 });
 
+test("a page still loading, whose title is its URL, shows the host alone", () => {
+	const o = overlay({ tab: () => ({ host: "127.0.0.1:8917", title: "http://127.0.0.1:8917/page.html" }) });
+	o.state.callStarted("a", 0);
+	o.setFrame(frame("a"));
+	assert.match(plain(o.view.render(80)[0]!), /^╭─ ● 127\.0\.0\.1:8917 ─+ ctrl\+alt\+b ─╮$/);
+});
+
 test("idle (lingering after the last call): the dot goes dim", () => {
 	const o = overlay();
 	o.state.callStarted("a", 0);
