@@ -91,7 +91,7 @@ test("a link goes to Quick Look when it is a local image file", () => {
 	assert.equal(imagePathFromUrl("not a url", all), undefined);
 });
 
-test("the browser extension's rows get no tiles: its live view already shows the screen", () => {
+test("the browser extension's rows get no tiles: Pi already draws the screenshot there", () => {
 	const content = [{ type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" }];
 	assert.deepEqual(toolSources("mcp__claude-in-chrome__browser_batch", {}, content, "/"), []);
 	assert.deepEqual(toolSources("mcp__claude-in-chrome__computer", {}, content, "/"), []);
