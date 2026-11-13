@@ -199,8 +199,9 @@ let
     chmod -R u+w $out
     cp ${./extensions/image-view/kitty.ts} $out/kitty.ts
     cp ${./extensions/remote-control/api.ts} $out/remote-control-api.ts
-    substituteInPlace $out/liveview.ts --replace-fail '"../image-view/kitty.ts"' '"./kitty.ts"'
-    substituteInPlace $out/index.ts --replace-fail '"../remote-control/api.ts"' '"./remote-control-api.ts"'
+    substituteInPlace $out/index.ts \
+      --replace-fail '"../image-view/kitty.ts"' '"./kitty.ts"' \
+      --replace-fail '"../remote-control/api.ts"' '"./remote-control-api.ts"'
   '';
   imageView = pkgs.runCommand "pi-extension-image-view" { } ''
     cp -R ${./extensions/image-view} $out
@@ -284,8 +285,8 @@ let
     footer = ./extensions/footer;
     # web_search and web_fetch through TinyFish, and view_image to look at a URL's image.
     web = ./extensions/web;
-    # Claude Code's Claude in Chrome tools, through the extension's native host, with the
-    # tab live in the tool's row.
+    # Claude Code's Claude in Chrome tools, through the Claude in Chrome bridge, with the
+    # tab playing as a video in a picture-in-picture view while Pi uses the browser.
     browser = browserExtension;
     # Commands run in the environment of an interactive shell in the session's folder,
     # direnv's included, however Pi was started (Herdr, `hc run`).
@@ -315,8 +316,6 @@ let
     "bash-changes"
     "syntax-highlighting"
     "image-view"
-    # Its live view goes under compact-tools' row, as image-view's tiles do.
-    "browser"
     "compact-tools"
   ];
   extensionsManifest = (pkgs.formats.json { }).generate "pi-extensions-package.json" {

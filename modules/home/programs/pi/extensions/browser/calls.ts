@@ -58,6 +58,27 @@ export function tabContext(content: PiContent[]): { tabId?: number; tabGroupId?:
 	return undefined;
 }
 
+export type TabInfo = { title?: string; url?: string };
+
+/**
+ * The tabs a result names, with their titles and URLs: tabs_context_mcp's JSON, or the
+ * "Tab Context" the extension appends to a result (`• tabId 7: "Title" ("https://…")`).
+ * These are the session's own group's tabs.
+ */
+export function tabsIn(content: PiContent[]): Map<number, TabInfo> {
+	const tabs = new Map<number, TabInfo>();
+	for (const block of content) {
+		if (block.type !== "text") continue;
+		for (const m of block.text.matchAll(/tabId (\d+): "((?:[^"\\]|\\.)*)" \("((?:[^"\\]|\\.)*)"\)/g)) tabs.set(Number(m[1]), { title: m[2], url: m[3] });
+		try {
+			const parsed = JSON.parse(block.text) as { availableTabs?: { tabId?: unknown; title?: unknown; url?: unknown }[] };
+			for (const t of parsed.availableTabs ?? [])
+				if (typeof t?.tabId === "number") tabs.set(t.tabId, { title: typeof t.title === "string" ? t.title : undefined, url: typeof t.url === "string" ? t.url : undefined });
+		} catch {}
+	}
+	return tabs;
+}
+
 const MIME: Record<string, string> = {
 	".png": "image/png",
 	".jpg": "image/jpeg",

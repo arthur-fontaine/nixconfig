@@ -1,24 +1,23 @@
 // Browser use for Pi through Claude in Chrome, as Claude Code does it: Claude
 // Code's 20 browser tools, run by the extension in the person's browser through
-// Anthropic's Claude in Chrome bridge, with the tab's screen live in the tool's
-// row. See README.md.
+// Anthropic's Claude in Chrome bridge. While Pi uses the browser, the tab plays
+// as a video in a picture-in-picture view at the top right; the chat keeps text
+// rows. See README.md.
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { convertToPng, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, getCapabilities, getCellDimensions, getImageDimensions, renderImage, type TUI, Text } from "@earendil-works/pi-tui";
-import { callBrowserTool, type PiContent, ToolError, toPiContent } from "./calls.ts";
+import { getCapabilities, getCellDimensions, getImageDimensions, renderImage, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { loadCredentials } from "../remote-control/api.ts";
-import { BridgeWsClient, claudeAccountUuid } from "./bridge.ts";
+import { BridgeWsClient, claudeAccountUuid, type Extension } from "./bridge.ts";
+import { callBrowserTool, type PiContent, type TabInfo, ToolError, tabsIn, toPiContent } from "./calls.ts";
 import { BrowserNotConnectedError, DisconnectedMidCallError, ToolTimeoutError } from "./client.ts";
-import { type Frame, FramePump, LiveView } from "./liveview.ts";
-import { type CallPermissions, callPermissions } from "./permissions.ts";
+import { allocateKittyId, kittyDelete } from "../image-view/kitty.ts";
+import { compositeOverImages, OverlayState, VideoOverlay } from "./overlay.ts";
+import { type CallPermissions, callPermissions, hostOf } from "./permissions.ts";
 import { claudeToolName, piToolDefinitions, SERVER } from "./tools.ts";
+import { type Frame, FrameScheduler } from "./video.ts";
+import type { BrowserTransport } from "./bridge.ts";
 
-const WIDGET = "claude-in-chrome-tui";
-const FRAMES_DIR = join(tmpdir(), "pi-browser-frames");
-// Tools that act on one tab's page, whose row shows it.
+// Tools that act on one tab's page: while one runs, the video plays.
 const VIEWED = new Set([
 	"navigate",
 	"computer",
@@ -31,16 +30,17 @@ const VIEWED = new Set([
 	"resize_window",
 	"upload_image",
 	"file_upload",
+	"scroll",
 ]);
-// The still is taken once the page has painted what the tool did.
-const SETTLE_MS = 300;
-// Kitty scales the frame to the row; this is enough pixels for any terminal width.
-const MAX_FRAME_PX = 1280;
+// Checked free in Pi's keybindings, the other extensions' (background-tools has
+// ctrl+b) and Herdr's keys.
+export const VIDEO_KEY = "ctrl+alt+b";
+const LINGER_MS = 4000;
+// The extension runs screenshots concurrently; three in flight gave ~6 fps here.
+const IN_FLIGHT = 3;
+const MIN_GAP_MS = 110;
 
-type FrameRef = { path: string; width: number; height: number };
-type Details = { tabId?: number; frame?: FrameRef } | undefined;
-
-type Live = { view: LiveView; pump?: FramePump; invalidate?: () => void; tabId?: number };
+type Client = BrowserTransport & { listExtensions(): Promise<Extension[]>; select(deviceId: string): void };
 
 const GUIDANCE = `You have Claude in Chrome's browser tools (mcp__claude-in-chrome__*), which act in the person's own browser. They are deferred: load the ones a task needs with a single tool_search call (e.g. "claude-in-chrome tabs_context_mcp navigate computer read_page tabs_create_mcp tabs_close_mcp browser_batch"), not one at a time.
 - Start with tabs_context_mcp to learn this session's tabs. Work in a tab of your own (tabs_create_mcp, or navigate without a tabId); reuse one of the person's tabs only when they ask. Close the tabs you opened with tabs_close_mcp when done, unless asked to keep them.
@@ -50,15 +50,13 @@ const GUIDANCE = `You have Claude in Chrome's browser tools (mcp__claude-in-chro
 - Use read_console_messages with a pattern to filter console output.
 - If browser calls keep failing (2–3 tries), the extension doesn't answer, or the page doesn't respond, stop and ask the person how to go on.`;
 
-export default function browser(pi: ExtensionAPI) {
-	let client: BridgeWsClient | undefined;
+export default function browser(pi: ExtensionAPI, deps: { client?: Client } = {}) {
+	let client: Client | undefined = deps.client;
 	let sessionId: string | undefined;
 	let tabGroupId: number | undefined;
-	let tui: TUI | undefined;
-	const lives = new Map<string, Live>();
 	// Claude Code's login, read-only through remote-control's loader (keychain item
 	// "Claude Code-credentials", else ~/.claude/.credentials.json); never logged or kept.
-	const getClient = () =>
+	const getClient = (): Client =>
 		(client ??= new BridgeWsClient({
 			credentials: async () => {
 				const [{ accessToken }, accountUuid] = await Promise.all([loadCredentials(), claudeAccountUuid()]);
@@ -67,24 +65,6 @@ export default function browser(pi: ExtensionAPI) {
 		}));
 
 	const isKitty = () => getCapabilities().images === "kitty" && pi.getSettings().terminal?.showImages !== false;
-	const write = (sequence: string) => (tui ? tui.terminal.write(sequence) : process.stdout.write(sequence));
-
-	function liveFor(toolCallId: string): Live {
-		let live = lives.get(toolCallId);
-		if (!live) {
-			live = {
-				view: new LiveView({
-					kitty: isKitty,
-					write,
-					cell: () => getCellDimensions(),
-					maxRows: () => Math.max(6, Math.floor((tui?.terminal.rows ?? 40) * 0.6)),
-					renderImage: (png, dims, options) => renderImage(png, dims, options),
-				}),
-			};
-			lives.set(toolCallId, live);
-		}
-		return live;
-	}
 
 	// The calls' scope: this session's own tab group, as each Claude Code session has.
 	const callOptions = () => ({
@@ -100,32 +80,155 @@ export default function browser(pi: ExtensionAPI) {
 		return typeof check === "function" && (check as (id: string) => boolean)(toolCallId) === true;
 	};
 
-	/** One screenshot of the tab, as a PNG frame sized for the terminal. */
-	function frameSource(tabId: number, permissions: () => CallPermissions | undefined) {
+	// --- the video ---
+	const state = new OverlayState(LINGER_MS);
+	let video: Video | undefined;
+	// The tab the video shows: the one the last call acted on, once the extension has
+	// listed it among this session's tabs. Never another tab.
+	let tabId: number | undefined;
+	const ownTabs = new Map<number, TabInfo>();
+	// The screenshots carry the permissions of the call they watch.
+	let lastPermissions: CallPermissions | undefined;
+
+	type Video = {
+		tui: TUI;
+		overlay: VideoOverlay;
+		scheduler: FrameScheduler;
+		close: () => void;
+		setHidden: (hidden: boolean) => void;
+		imageId: number;
+		timer?: ReturnType<typeof setTimeout>;
+		frame?: Frame;
+	};
+
+	/** Shows, hides, starts and pauses what the state says, and sets the timer for its next change. */
+	function update() {
+		const v = video;
+		if (!v) return;
+		const now = Date.now();
+		v.setHidden(state.mode(now) === "hidden");
+		v.scheduler.setActive(state.capturing(now) && tabId !== undefined && ownTabs.has(tabId));
+		if (v.timer) clearTimeout(v.timer);
+		v.timer = undefined;
+		const next = state.nextChange(now);
+		if (next !== undefined) v.timer = setTimeout(update, Math.max(0, next - now) + 5);
+		v.tui.requestRender();
+	}
+
+	/** One screenshot of the tab, sized for the video, as a PNG frame; the same picture is not converted again. */
+	function captureSource() {
 		let fullWidth: number | undefined;
 		let last: Frame | undefined;
-		return async (): Promise<Frame | null> => {
-			const target = Math.min(MAX_FRAME_PX, (tui?.terminal.columns ?? 120) * getCellDimensions().widthPx);
-			const scale = fullWidth ? Math.min(1, Math.max(0.1, target / fullWidth)) : 0.5;
-			const response = await getClient().callTool("computer", { action: "screenshot", tabId, scale }, { ...callOptions(), ...permissions(), timeoutMs: 15_000 });
+		let lastHash: string | undefined;
+		return async (signal: AbortSignal): Promise<Frame | null> => {
+			const tab = tabId;
+			if (tab === undefined || !ownTabs.has(tab) || !video) return null;
+			const view = video.overlay.view();
+			const target = view.mode === "full" ? view.layout.pixelWidth : 640;
+			const scale = fullWidth ? Math.min(1, Math.max(0.1, target / fullWidth)) : 0.4;
+			const rounded = Math.round(scale * 100) / 100;
+			const response = await getClient().callTool("computer", { action: "screenshot", tabId: tab, scale: rounded }, { ...callOptions(), ...lastPermissions, timeoutMs: 10_000, signal });
 			const image = toPiContent(response.result?.content).find((c): c is Extract<PiContent, { type: "image" }> => c.type === "image");
 			if (!image) return null;
-			const key = createHash("sha1").update(image.data).digest("hex");
-			if (key === last?.key) return last;
+			const hash = createHash("sha1").update(image.data).digest("hex");
+			if (hash === lastHash && last) return last;
 			const png = image.mimeType === "image/png" ? image.data : (await convertToPng(image.data, image.mimeType))?.data;
 			const dims = png ? getImageDimensions(png, "image/png") : null;
 			if (!png || !dims) return null;
-			fullWidth = Math.round(dims.widthPx / scale);
-			last = { png, width: dims.widthPx, height: dims.heightPx, key };
+			fullWidth = Math.round(dims.widthPx / rounded);
+			lastHash = hash;
+			last = { png, width: dims.widthPx, height: dims.heightPx, key: hash };
 			return last;
 		};
 	}
 
-	function saveFrame(frame: Frame): FrameRef {
-		mkdirSync(FRAMES_DIR, { recursive: true });
-		const path = join(FRAMES_DIR, `${frame.key}.png`);
-		if (!existsSync(path)) writeFileSync(path, Buffer.from(frame.png, "base64"));
-		return { path, width: frame.width, height: frame.height };
+	function toggle(ctx?: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } }) {
+		if (!video) return;
+		if (tabId === undefined) {
+			ctx?.ui.notify("The browser video shows once Pi uses the browser.", "info");
+			return;
+		}
+		state.toggle(Date.now());
+		update();
+	}
+
+	function openVideo(ctx: Parameters<Parameters<ExtensionAPI["on"]>[1]>[1] & { ui: any }) {
+		if (video || ctx.mode !== "tui" || !isKitty()) return;
+		const imageId = allocateKittyId();
+		let handle: { setHidden(hidden: boolean): void; unfocus(o?: { target: null }): void } | undefined;
+		let close: () => void = () => {};
+		void ctx.ui.custom(
+			(tui: TUI, theme: any, _keybindings: unknown, done: () => void) => {
+				close = done;
+				// Over a chat image row, the video's row is drawn rather than dropped (overlay.ts).
+				const t = tui as unknown as { compositeLineAt?: (...a: [string, string, number, number, number]) => string };
+				if (typeof t.compositeLineAt === "function") t.compositeLineAt = compositeOverImages(t.compositeLineAt.bind(tui));
+				const overlay = new VideoOverlay({
+					state,
+					frame: () => video?.frame,
+					tab: () => {
+						const info = tabId !== undefined ? ownTabs.get(tabId) : undefined;
+						return { host: hostOf(info?.url) ?? info?.url, title: info?.title };
+					},
+					terminal: () => ({ columns: tui.terminal.columns, rows: tui.terminal.rows }),
+					cell: () => getCellDimensions(),
+					theme: { fg: (c, s) => theme.fg(c, s), bg: (c, s) => theme.bg(c, s) },
+					keyHint: VIDEO_KEY,
+					imageId,
+					renderImage: (png, dims, options) => renderImage(png, dims, options),
+					visibleWidth,
+					truncate: (s, w) => truncateToWidth(s, w, "…"),
+					onToggle: () => toggle(),
+				});
+				const scheduler = new FrameScheduler({
+					capture: captureSource(),
+					onFrame: (frame) => {
+						if (!video) return;
+						video.frame = frame;
+						tui.requestRender();
+					},
+					maxInFlight: IN_FLIGHT,
+					minGapMs: MIN_GAP_MS,
+				});
+				video = {
+					tui,
+					overlay,
+					scheduler,
+					imageId,
+					close: () => close(),
+					setHidden: (hidden) => handle?.setHidden(hidden),
+				};
+				return overlay;
+			},
+			{
+				overlay: true,
+				// Read on every render (Pi keeps this object): the width follows the video's layout.
+				overlayOptions: {
+					anchor: "top-right",
+					margin: { top: 1, right: 2 },
+					// Typing stays in the editor: the overlay never takes focus.
+					nonCapturing: true,
+					get width() {
+						return video?.overlay.width() ?? 1;
+					},
+				},
+				onHandle: (h: typeof handle) => {
+					handle = h;
+					h?.setHidden(true);
+					h?.unfocus({ target: null });
+				},
+			},
+		);
+	}
+
+	function closeVideo() {
+		const v = video;
+		if (!v) return;
+		video = undefined;
+		v.scheduler.stop();
+		if (v.timer) clearTimeout(v.timer);
+		v.close();
+		v.tui.terminal.write(kittyDelete(v.imageId));
 	}
 
 	for (const def of piToolDefinitions()) {
@@ -137,39 +240,36 @@ export default function browser(pi: ExtensionAPI) {
 			parameters: def.parameters as never,
 			exposure: "deferred",
 			namespace: { name: `mcp__${SERVER}`, aliases: [SERVER], description: "Claude in Chrome: act in the person's browser (open pages, read, click, type, screenshots, tabs)." },
-			async execute(toolCallId, params, signal, onUpdate, ctx) {
-				const live = VIEWED.has(tool) && ctx.hasUI && isKitty() ? liveFor(toolCallId) : undefined;
-				let tabId: number | undefined;
-				// This call's own permission mode (permissions.ts), also used by its live view.
-				let permissions: CallPermissions | undefined;
-				const update = () =>
-					onUpdate?.({ content: [{ type: "text", text: `Browser: tab ${tabId ?? "?"}` }], details: { tabId } satisfies Details });
-				const startView = (id: number) => {
-					tabId = id;
-					if (!live || live.pump) return;
-					live.tabId = id;
-					live.pump = new FramePump({
-						capture: frameSource(id, () => permissions),
-						onFrame: (frame) => {
-							live.view.setFrame(frame);
-							live.invalidate?.();
-							update();
-						},
-					});
-					live.pump.start();
+			async execute(toolCallId, params, signal, _onUpdate, ctx) {
+				const watched = VIEWED.has(tool) && ctx.hasUI;
+				const onAbort = () => {
+					state.abort();
+					update();
 				};
+				if (watched) {
+					state.callStarted(toolCallId, Date.now());
+					signal?.addEventListener("abort", onAbort, { once: true });
+					update();
+				}
+				let callTab: number | undefined;
 				try {
 					const content = await callBrowserTool(tool, (params ?? {}) as Record<string, unknown>, {
 						client: getClient(),
 						options: callOptions,
 						signal,
-						onTab: startView,
+						onTab: (id) => {
+							callTab = id;
+							if (!watched) return;
+							tabId = id;
+							if (!ownTabs.has(id)) void confirmOwnTab(id);
+							update();
+						},
 						onTabGroup: (id) => {
 							tabGroupId = id;
 						},
 						browsers: { list: () => getClient().listExtensions(), select: (id) => getClient().select(id) },
 						permissionsFor: (host) => {
-							permissions = callPermissions({
+							const permissions = callPermissions({
 								classifierAllowed: classifierAllowed(toolCallId),
 								host,
 								deniedHosts: [],
@@ -177,95 +277,63 @@ export default function browser(pi: ExtensionAPI) {
 								onPermissionRequest: () => true,
 							});
 							if (host) allowedHosts.add(host);
+							if (watched) lastPermissions = permissions;
 							return permissions;
 						},
 					});
-					let frame: FrameRef | undefined;
-					if (live?.pump) {
-						await live.pump.stop();
-						await new Promise((r) => setTimeout(r, SETTLE_MS));
-						const still = await live.pump.captureOnce();
-						if (still) {
-							live.view.setFrame(still);
-							frame = saveFrame(still);
-						}
-					}
-					return { content, details: { tabId, frame } satisfies Details };
+					for (const [id, info] of tabsIn(content)) ownTabs.set(id, info);
+					if (tool === "tabs_close_mcp" && typeof (params as { tabId?: unknown })?.tabId === "number") ownTabs.delete((params as { tabId: number }).tabId);
+					return { content, details: { tabId: callTab } };
 				} catch (error) {
-					await live?.pump?.stop();
 					throw asToolError(error);
+				} finally {
+					if (watched) {
+						signal?.removeEventListener("abort", onAbort);
+						state.callEnded(toolCallId, Date.now());
+						update();
+					}
 				}
 			},
 		});
 	}
 
-	// The live view goes under the row, around whatever draws it (compact-tools'
-	// Claude-style row), as image-view adds its tiles.
-	pi.registerToolRenderer((toolName, next) => {
-		const base = next();
-		if (!claudeToolName(toolName)) return base;
-		return {
-			...base,
-			renderResult(result, options, theme, context) {
-				const inner = base?.renderResult?.(result, options, theme, context) ?? new Text(textOf(result.content), 0, 0);
-				const details = result.details as Details;
-				let live = lives.get(context.toolCallId);
-				if (!live && details?.frame && isKitty() && existsSync(details.frame.path)) {
-					// A resumed session: the still from the file.
-					live = liveFor(context.toolCallId);
-					const png = readFileSync(details.frame.path).toString("base64");
-					live.view.setFrame({ png, width: details.frame.width, height: details.frame.height, key: details.frame.path });
-				}
-				if (!live || !context.showImages) return inner;
-				live.invalidate = context.invalidate;
-				live.view.setCaption(theme.fg("dim", `tab ${details?.tabId ?? live.tabId ?? "?"}`));
-				const container = new Container();
-				container.addChild(inner);
-				const view = live.view;
-				const component: Component = { render: (width) => view.render(width), invalidate: () => view.invalidate() };
-				container.addChild(component);
-				return container;
-			},
-		};
+	/** The video shows a tab only once the extension lists it among this session's own. */
+	async function confirmOwnTab(id: number) {
+		const { onPermissionRequest: _drop, ...scope } = callOptions();
+		const response = await getClient()
+			.callTool("tabs_context_mcp", {}, { ...scope, permissionMode: "ask", timeoutMs: 8_000 })
+			.catch(() => undefined);
+		if (!response?.result) return;
+		for (const [tab, info] of tabsIn(toPiContent(response.result.content))) ownTabs.set(tab, info);
+		if (ownTabs.has(id)) update();
+	}
+
+	pi.registerShortcut(VIDEO_KEY, {
+		description: "Collapse or expand the browser video",
+		handler: async (ctx) => toggle(ctx),
 	});
 
 	pi.on("session_start", (_event, ctx) => {
 		sessionId = ctx.sessionManager.getSessionId();
 		tabGroupId = undefined;
+		tabId = undefined;
+		ownTabs.clear();
 		allowedHosts.clear();
-		if (ctx.mode !== "tui") return;
-		// The TUI, for writing the frames' uploads; the widget itself draws nothing.
-		ctx.ui.setWidget(
-			WIDGET,
-			(t) => {
-				tui = t;
-				return { render: () => [], invalidate: () => {} };
-			},
-			{ placement: "aboveEditor" },
-		);
+		state.reset();
+		closeVideo();
+		openVideo(ctx as never);
 	});
 
 	pi.on("before_agent_start", (event) => {
 		event.systemPromptOptions.sections[SERVER] = GUIDANCE;
 	});
 
-	pi.on("session_shutdown", async (_event, ctx) => {
-		for (const live of lives.values()) {
-			await live.pump?.stop();
-			live.view.dispose();
-		}
-		lives.clear();
+	pi.on("session_shutdown", async () => {
+		closeVideo();
+		state.reset();
 		client?.close();
-		client = undefined;
-		if (ctx.mode === "tui") ctx.ui.setWidget(WIDGET, undefined);
+		client = deps.client;
 	});
-}
-
-function textOf(content: { type: string; text?: string }[]): string {
-	return content
-		.filter((c) => c.type === "text")
-		.map((c) => c.text)
-		.join("\n");
 }
 
 function asToolError(error: unknown): Error {
