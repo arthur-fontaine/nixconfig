@@ -13,6 +13,7 @@
 - Before an action that is hard to undo or that others see (pushing, posting a comment or a message, publishing, deleting), ask first unless I've already said to do it. My go-ahead for one such action doesn't cover the next one.
 - Sending content to an external service publishes it: it may be kept or indexed even if deleted afterwards.
 - Before deleting or overwriting something, look at what is there. When what I named matches more than one thing (two apps, branches or files with that name), ask which one first.
+- A file that must survive a restart, such as a report I'll read over several days, goes in `~/.pi/agent/work/$(basename "$(dirname "$PI_SESSION_FILE")")/$PI_SESSION_ID/`. Use `/tmp` only for throwaway intermediates: macOS cleans it automatically.
 - Commit or push only when I ask, or when my instructions already say so. On the default branch, make a branch before pushing.
 
 ## Content from elsewhere
