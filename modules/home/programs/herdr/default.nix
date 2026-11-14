@@ -124,6 +124,7 @@ let
   # so only these keys are merged in.
   settings = {
     font_size = 12;
+    font_ligatures = false;
     minimum_contrast = 1;
     sounds.enabled = true;
   };
@@ -162,7 +163,7 @@ in
       live = "~/.config/herdr-app/keys.json";
       repo = "modules/home/programs/herdr/default.nix (keys)";
       # Herdr's own defaults, written on first start.
-      ignore = [ "^global\\." "^terminal\\." ];
+      ignore = [ "^global\\." "^terminal(\\.|$)" ];
     };
     herdr-shared = {
       method = "json-merge";
@@ -170,7 +171,9 @@ in
       live = "~/.config/herdr-app/shared.json";
       repo = "modules/home/programs/herdr/default.nix (shared)";
       # Mods' own state: onboarding, colors, sidebar width, list sorting.
-      ignore = [ "^frame\\." "^space\\.colors" "^sidebar\\." "^agents\\." "^nix-spaces\\." "^nix\\." "^nix-kanban\\." ];
+      ignore = [ "^frame\\." "^space\\.colors" "^sidebar\\." "^agents\\." "^nix-spaces\\." "^nix\\." "^nix-kanban\\."
+        # nix-diff, nix-editor and nix-sidebar: open file, focus, forgotten repos.
+        "^nix-diff\\." "^nix-editor\\." "^nix-sidebar\\." ];
     };
   };
 

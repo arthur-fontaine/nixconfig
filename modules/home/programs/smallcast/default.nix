@@ -100,6 +100,7 @@ in
 
     dictationEnabled = true;
     dictationModel = "ultra";
+    dictationLiveInsertion = true;
     "hotkey.dictation" = builtins.toJSON { combo._0 = { carbonKeyCode = 96; carbonModifiers = 4096; }; };
 
     aiEnabled = true;

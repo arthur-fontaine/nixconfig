@@ -336,7 +336,7 @@ in
     managed = settings;
     live = "~/.pi/agent/settings.json";
     repo = "modules/home/programs/pi/default.nix";
-    ignore = [ "^lastChangelogVersion$" ];
+    ignore = [ "^lastChangelogVersion$" "^extensionChangelogVersions$" ];
   };
 
   nixconfig.sync.pi-mcp-servers = {
