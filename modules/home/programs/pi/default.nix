@@ -273,6 +273,8 @@ let
     compact-tools = piCompactTools;
     # Pi's startup header without its "Pi can explain its own features" line.
     startup-header = ./extensions/startup-header;
+    # The .agents/skills of the folders above a worktree, e.g. a bare-repo folder holding many.
+    ancestor-skills = ./extensions/ancestor-skills;
     # Claude Code's /rewind (Esc twice), and /restore to bring rewound prompts back.
     rewind = ./extensions/rewind;
     # Herdr's Info panel: labels the terminal with its session file, keeps the Claude usage.
