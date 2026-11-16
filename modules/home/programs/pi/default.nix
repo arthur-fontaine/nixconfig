@@ -125,7 +125,12 @@ let
   # toward the plan's weekly limit, while Fable's own weekly limit and usage credits stayed at 0
   # (tests/advisor-check, tests/claude-usage). Pi's tools no longer replace Claude Code's
   # advisor tool, and the advisor's blocks are replayed on later turns. Its transcript row opens
-  # like a tool row (click, Ctrl+O) on the advice, or says it's encrypted (Fable's is). No runtime dependencies:
+  # like a tool row (click, Ctrl+O) on the advice, or says it's encrypted (Fable's is). With
+  # patches/pi-claude-code-relay-failure.patch, a 200 stream that breaks mid-answer says who broke
+  # it (the upstream's reset, or Claude Code hanging up) where it only said "relay failure Error",
+  # and reads "stream was interrupted", which Pi's retry pattern knows: Pi retries the turn rather
+  # than ending it. A cut turn returns no message, so its half-sent tool call never runs; a
+  # 4xx, refusal or usage limit keeps the wording it had. No runtime dependencies:
   # its imports are Pi's own packages.
   piClaudeCode = pkgs.runCommand "pi-claude-code-70abb65-patched" { } ''
     cp -r ${
@@ -143,6 +148,7 @@ let
     patch -d $out -p1 < ${./patches/pi-claude-code-thinking-summary.patch}
     patch -d $out -p1 < ${./patches/pi-claude-code-raw-tool-results.patch}
     patch -d $out -p1 < ${./patches/pi-claude-code-advisor.patch}
+    patch -d $out -p1 < ${./patches/pi-claude-code-relay-failure.patch}
   '';
   # nedleeds/pi-compact-tools 0.16.7 with patches/pi-compact-tools-claude-bash.patch: bash
   # titles leave the folding of long commands to syntax-highlighting, and an opened command
