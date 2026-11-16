@@ -9,6 +9,7 @@
 #   sandbox do <cmd> ...  herdr-app do on the sandbox window; spaces/tabs it creates are recorded
 #   sandbox shot <file>   screenshot of the sandbox window
 #   sandbox appearance light|dark   the sandbox's appearance (its settings.json, applied live)
+#   sandbox variant nix|<name>      show layouts/nix.json or layouts/nix-islands-<name>.json
 #   sandbox down          close what `do` created, kill only the recorded PID, remove the home
 set -euo pipefail
 
@@ -61,7 +62,8 @@ deploy() {
   mkdir -p "$home/mods/nix-head/icons" "$home/themes" "$home/layouts" "$home/nix-editor"
   cp "$herdr"/mods/nix-head/icons/*.svg "$home/mods/nix-head/icons/"
   cp "$herdr"/themes/nix-*.json "$home/themes/"
-  cp "$herdr/layouts/nix.json" "$home/layouts/nix.json"
+  # nix.json and any variant beside it (nix-*.json), not deployed by nix until one is picked.
+  cp "$herdr"/layouts/nix*.json "$home/layouts/"
   cp "$herdr/nix-editor/init.lua" "$herdr/nix-editor/diff.lua" "$home/nix-editor/"
   # The Ayu colors are a nixpkgs plugin, not in the repo: the deployed one.
   [ -e "$home/nix-editor/ayu" ] || ln -s "$(readlink -f "$deployed/nix-editor/ayu")" "$home/nix-editor/ayu"
@@ -102,6 +104,16 @@ case $cmd in
     esac
     ;;
   shot) app shot "${1:?shot <file.png>}" ;;
+  variant)
+    name=${1:?variant nix|<name>}; [ "$name" = nix ] || name=nix-islands-$name
+    [ -f "$home/layouts/$name.json" ] || { echo "no layouts/$name.json in the sandbox" >&2; exit 1; }
+    app do layout.switch --name "$name" >/dev/null
+    sleep 1
+    # An invalid layout keeps the last good one: say so rather than shoot the wrong window.
+    shown=$(app status | jq -r .layout)
+    [ "$shown" = "$name" ] || { echo "still showing $shown" >&2; cat "$home/layouts/$name.error" 2>/dev/null >&2; exit 1; }
+    echo "showing $name"
+    ;;
   appearance)
     case ${1:-} in light|dark) ;; *) echo "appearance light|dark" >&2; exit 1 ;; esac
     tmp=$(mktemp) && jq --arg a "$1" '.appearance = $a' "$home/settings.json" >"$tmp" && mv "$tmp" "$home/settings.json"
@@ -123,5 +135,5 @@ case $cmd in
     rm -rf "$root"
     echo "down"
     ;;
-  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
