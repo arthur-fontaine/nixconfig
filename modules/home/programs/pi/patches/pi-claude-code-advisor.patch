@@ -1,0 +1,376 @@
+diff --git a/src/advisor.ts b/src/advisor.ts
+new file mode 100644
+index 0000000..f2f32c3
+--- /dev/null
++++ b/src/advisor.ts
+@@ -0,0 +1,105 @@
++/**
++ * Claude Code's advisor: a stronger model (Fable, say) that the main model consults through
++ * Anthropic's server-side `advisor_20260301` tool, inside the main request. Claude Code
++ * attaches the tool itself from its `advisorModel` setting, so the request is the one Claude
++ * Code would send and is billed as Claude Code's advisor is; Pi only keeps that tool when it
++ * swaps in its own tools, and keeps the advisor's blocks in the replayed history.
++ */
++import type { NativeContentBlock } from "./native-types.ts";
++
++export const ADVISOR_BETA = "advisor-tool-2026-03-01";
++
++let source: () => unknown = () => undefined;
++
++/** Where the advisor model comes from: Pi's `advisorModel` setting (index.ts). */
++export function setAdvisorSource(get: () => unknown): void {
++  source = get;
++}
++
++/** The configured advisor model ("fable", "opus", a full id), or undefined when off. */
++export function advisorModel(): string | undefined {
++  let value: unknown;
++  try {
++    value = source();
++  } catch {
++    return undefined;
++  }
++  if (typeof value !== "string") return undefined;
++  const model = value.trim();
++  return model && model.toLowerCase() !== "off" ? model : undefined;
++}
++
++type Tool = Record<string, unknown>;
++
++const isAdvisorTool = (tool: unknown): tool is Tool =>
++  !!tool && typeof tool === "object" && /^advisor_\d+$/u.test(String((tool as Tool).type));
++
++/**
++ * Pi's tools in place of Claude Code's (its MCP stand-ins), with Claude Code's advisor tool
++ * kept as Claude Code built it, last, where Claude Code puts it. Claude Code leaves it out
++ * when it won't apply the advisor (unsupported pairing, no Fable consent), and so does this.
++ */
++export function withPiTools(body: Buffer, piTools: unknown): Buffer {
++  const payload = JSON.parse(body.toString("utf8")) as { tools?: unknown[] };
++  const advisor = (payload.tools ?? []).filter(isAdvisorTool);
++  payload.tools = [...(Array.isArray(piTools) ? structuredClone(piTools) : []), ...advisor];
++  return Buffer.from(JSON.stringify(payload));
++}
++
++/** Whether replayed history holds advisor blocks, which the API only takes with the beta. */
++export function historyHasAdvisor(frames: Array<{ message: { content: unknown[] } }>): boolean {
++  return frames.some((frame) =>
++    frame.message.content.some((block) => {
++      const type = (block as { type?: unknown } | null)?.type;
++      return type === "advisor_tool_result" || (type === "server_tool_use" && (block as Tool).name === "advisor");
++    }),
++  );
++}
++
++export type AdvisorEvent =
++  | { phase: "start"; id: string }
++  | { phase: "end"; id: string; outcome: AdvisorOutcome };
++
++export type AdvisorOutcome = { kind: "reviewed" } | { kind: "unavailable"; errorCode: string };
++
++const listeners = new Set<(event: AdvisorEvent) => void>();
++
++export function onAdvisor(listener: (event: AdvisorEvent) => void): () => void {
++  listeners.add(listener);
++  return () => listeners.delete(listener);
++}
++
++/** Tells the UI about an advisor block as it starts streaming; true if it was one. */
++export function advisorBlock(block: NativeContentBlock): boolean {
++  const raw = block as Tool;
++  let event: AdvisorEvent | undefined;
++  if (raw.type === "server_tool_use" && raw.name === "advisor") {
++    event = { phase: "start", id: String(raw.id) };
++  } else if (raw.type === "advisor_tool_result") {
++    const content = raw.content as Tool | undefined;
++    event = {
++      phase: "end",
++      id: String(raw.tool_use_id),
++      outcome:
++        content?.type === "advisor_tool_result_error"
++          ? { kind: "unavailable", errorCode: String(content.error_code ?? "unknown") }
++          : { kind: "reviewed" },
++    };
++  } else {
++    return false;
++  }
++  for (const listener of listeners) {
++    try {
++      listener(event);
++    } catch {}
++  }
++  return true;
++}
++
++/** "fable" → "Fable", "claude-fable-5-2" → "Fable 5.2". */
++export function advisorLabel(model: string): string {
++  const match = /^(?:claude-)?([a-z]+)(?:-(\d+(?:-\d+)?))?/iu.exec(model.trim());
++  if (!match) return model;
++  const family = match[1]!.charAt(0).toUpperCase() + match[1]!.slice(1).toLowerCase();
++  return match[2] ? `${family} ${match[2].replace("-", ".")}` : family;
++}
+diff --git a/src/claude-cli.ts b/src/claude-cli.ts
+index 869c1d1..21384f1 100644
+--- a/src/claude-cli.ts
++++ b/src/claude-cli.ts
+@@ -10,6 +10,7 @@ import { registerSessionResourceCleanup } from "@earendil-works/pi-ai";
+ import { TurnRelay } from "./turn-relay.ts";
+ import { usageCreditsAllowed, usageCreditsChargeError, type RateLimitInfo } from "./billing.ts";
+ import { envFlagEnabled } from "./env.ts";
++import { withPiTools } from "./advisor.ts";
+ import type { DiscoveredClaudeModel } from "./model-catalog.ts";
+ import type {
+   AnthropicStreamEvent,
+@@ -58,6 +59,8 @@ export interface RunClaudeInput {
+   nativeSystemInjections?: NativeSystemInjection[];
+   /** Beta features appended to Claude Code's own request header by the turn relay. */
+   betas?: string[];
++  /** Claude Code's `advisorModel` ("fable"): it attaches its server-side advisor tool. */
++  advisorModel?: string;
+   onEvent?: (event: AnthropicStreamEvent) => void;
+   /** Pi session whose linear continuation may reuse a warm Claude process. */
+   sessionId?: string;
+@@ -930,9 +933,33 @@ function frameHistoryHash(frames: NativeFrame[]): string {
+   );
+ }
+ 
++/**
++ * The settings file Claude Code runs with. With an advisor, Pi's tools stay out of
++ * CLAUDE_CODE_EXTRA_BODY, whose `tools` would replace Claude Code's whole list, the advisor
++ * tool included; the relay puts them in instead, beside Claude Code's advisor (withPiTools).
++ * advisorModel goes in as the setting, not `--advisor`: Claude Code then sends without the
++ * advisor when it can't apply it (a main model it doesn't pair with, Fable without the
++ * usage-credits consent), where `--advisor` would exit.
++ */
++function claudeSettings(input: RunClaudeInput): Record<string, unknown> {
++  if (!input.advisorModel) return { env: { CLAUDE_CODE_EXTRA_BODY: JSON.stringify(input.extraBody) } };
++  const { tools: _tools, ...extraBody } = input.extraBody;
++  return { advisorModel: input.advisorModel, env: { CLAUDE_CODE_EXTRA_BODY: JSON.stringify(extraBody) } };
++}
++
++// PI_CLAUDE_CODE_UPSTREAM_URL points the relay at a loopback recorder (tests/advisor-check);
++// TurnRelay refuses anything but HTTPS or loopback HTTP.
++function upstreamUrl(input: RunClaudeInput): string {
++  return input.upstreamUrl ?? input.env?.PI_CLAUDE_CODE_UPSTREAM_URL ?? process.env.PI_CLAUDE_CODE_UPSTREAM_URL ?? "https://api.anthropic.com";
++}
++
+ function launchPlan(input: RunClaudeInput): ClaudeLaunchPlan {
+   const timeoutMs = input.timeoutMs ?? 180_000;
+   const env = processEnvironment(input.env, input.extraBody);
++  // Claude Code reads the advisor's feature flag from Anthropic, a fetch that
++  // DISABLE_TELEMETRY and CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC turn off; this variable
++  // stands in for the flag and only matters once an advisorModel is set.
++  if (input.advisorModel) env.CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL = "1";
+   return {
+     env,
+     timeoutMs,
+@@ -945,7 +972,8 @@ function launchPlan(input: RunClaudeInput): ClaudeLaunchPlan {
+       model: input.model,
+       systemPrompt: input.systemPrompt,
+       timeoutMs,
+-      upstreamUrl: input.upstreamUrl ?? "https://api.anthropic.com",
++      upstreamUrl: upstreamUrl(input),
++      advisorModel: input.advisorModel ?? null,
+     }),
+   };
+ }
+@@ -989,11 +1017,11 @@ class ClaudeProcess {
+     try {
+       await Promise.all([
+         writeFile(toolsPath, JSON.stringify(input.manifest), "utf8"),
+-        writeFile(settingsPath, JSON.stringify({ env: { CLAUDE_CODE_EXTRA_BODY: JSON.stringify(input.extraBody) } }), "utf8"),
++        writeFile(settingsPath, JSON.stringify(claudeSettings(input)), "utf8"),
+         writeFile(systemPath, input.systemPrompt, "utf8"),
+       ]);
+ 
+-      relay = new TurnRelay(input.upstreamUrl ?? "https://api.anthropic.com", plan.timeoutMs);
++      relay = new TurnRelay(upstreamUrl(input), plan.timeoutMs);
+       const env = { ...plan.env, ANTHROPIC_BASE_URL: await relay.start() };
+       const mcp = {
+         mcpServers: {
+@@ -1138,7 +1166,8 @@ class ClaudeProcess {
+     this.relay.beginTurn(
+       deliver,
+       (body) => {
+-        let out = restoreToolResults(restoreThinking(body, history), history);
++        let out = input.advisorModel ? withPiTools(body, input.extraBody.tools) : body;
++        out = restoreToolResults(restoreThinking(out, history), history);
+         if (rewrite) out = rewrite(out);
+         return callerCache ? keepCallerCacheBreakpoints(out, canonicalInitialUser) : out;
+       },
+diff --git a/src/index.ts b/src/index.ts
+index 2fb5537..0de3c08 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,10 +1,40 @@
+-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
++import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
++import { Text } from "@earendil-works/pi-tui";
++import { advisorLabel, advisorModel, onAdvisor, setAdvisorSource, type AdvisorOutcome } from "./advisor.ts";
+ import { getClaudeStatus } from "./claude-cli.ts";
+ import { claudeCodeEnv, createClaudeCodeProvider } from "./provider.ts";
+ 
++const ADVISOR_ENTRY = "claude-code-advisor";
++
+ export default function claudeCodeExtension(pi: ExtensionAPI): void {
+   pi.registerProvider(createClaudeCodeProvider());
+ 
++  // As Claude Code's `advisorModel` setting: unset (or "off") means no advisor.
++  setAdvisorSource(() => (pi.getSettings() as { advisorModel?: unknown }).advisorModel);
++
++  // Claude Code's "Advising" line while the advisor reads the conversation, then what came of it.
++  let ui: ExtensionContext["ui"] | undefined;
++  pi.on("turn_start", (_event, ctx) => {
++    ui = ctx.hasUI ? ctx.ui : undefined;
++  });
++  onAdvisor((event) => {
++    const label = advisorLabel(advisorModel() ?? "advisor");
++    if (event.phase === "start") {
++      ui?.setWorkingMessage(`Advising (${label})…`);
++      return;
++    }
++    ui?.setWorkingMessage();
++    pi.appendEntry(ADVISOR_ENTRY, { label, outcome: event.outcome });
++  });
++  pi.registerEntryRenderer(ADVISOR_ENTRY, (entry, _options, theme) => {
++    const { label, outcome } = (entry.data ?? {}) as { label?: string; outcome?: AdvisorOutcome };
++    const text =
++      outcome?.kind === "unavailable"
++        ? `Advisor unavailable (${outcome.errorCode})`
++        : `Advisor (${label ?? "?"}) reviewed the conversation`;
++    return new Text(theme.fg("dim", `⦁ ${text}`), 0, 0);
++  });
++
+   pi.registerCommand("claude-code-status", {
+     description: "Check the Claude Code executable and subscription login",
+     handler: async (_args, ctx) => {
+diff --git a/src/native-types.ts b/src/native-types.ts
+index bcf0c91..f47bc62 100644
+--- a/src/native-types.ts
++++ b/src/native-types.ts
+@@ -30,7 +30,9 @@ export type NativeContentBlock =
+   | { type: "text"; text: string; [key: string]: unknown }
+   | { type: "thinking"; thinking: string; signature?: string; [key: string]: unknown }
+   | { type: "redacted_thinking"; data: string; [key: string]: unknown }
+-  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown>; [key: string]: unknown };
++  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown>; [key: string]: unknown }
++  | { type: "server_tool_use"; id: string; name: string; input: Record<string, unknown>; [key: string]: unknown }
++  | { type: "advisor_tool_result"; tool_use_id: string; content: Record<string, unknown>; [key: string]: unknown };
+ 
+ export interface NativeFrame {
+   type: "user" | "assistant";
+diff --git a/src/stream.ts b/src/stream.ts
+index b516241..6e6dd2b 100644
+--- a/src/stream.ts
++++ b/src/stream.ts
+@@ -15,6 +15,7 @@ import {
+   type ToolCall,
+   type TranscriptContext,
+ } from "@earendil-works/pi-ai";
++import { ADVISOR_BETA, advisorBlock, advisorModel, historyHasAdvisor } from "./advisor.ts";
+ import { describeUsageCreditsRejection } from "./billing.ts";
+ import { runClaudeRequest } from "./claude-cli.ts";
+ import { nativeModel, supportsNativeToolChanges } from "./model-catalog.ts";
+@@ -216,6 +217,10 @@ class EventTranslator {
+ 
+   private startBlock(nativeIndex: number, native: NativeContentBlock): void {
+     this.sawContentEvent = true;
++    // The advisor's server_tool_use and advisor_tool_result have no Pi content block: they
++    // stay in the native message Pi replays, and only tell the UI. Mapping them to a content
++    // index would hand that index to the next block's deltas.
++    if (advisorBlock(native)) return;
+     const contentIndex = this.output.content.length;
+     this.nativeToContent.set(nativeIndex, contentIndex);
+     if (native.type === "text") {
+@@ -318,6 +323,13 @@ class EventTranslator {
+   }
+ }
+ 
++// Claude Code sends the advisor beta only while it applies the advisor; a history with
++// advisor blocks needs it after the advisor is turned off too.
++function requestBetas(nativeTranscript: boolean, advisorHistory: boolean): string[] | undefined {
++  const betas = [...(nativeTranscript ? [NATIVE_TOOL_CHANGES_BETA] : []), ...(advisorHistory ? [ADVISOR_BETA] : [])];
++  return betas.length ? betas : undefined;
++}
++
+ export function normalizeError(error: unknown): string {
+   const message = error instanceof Error ? error.message : String(error);
+   const usageCredits = describeUsageCreditsRejection(message);
+@@ -385,7 +397,8 @@ export function streamClaudeCode(
+         initialUserPrefix,
+         initialSystemMessages,
+         nativeSystemInjections: nativeTranscript?.systemInjections,
+-        betas: nativeTranscript ? [NATIVE_TOOL_CHANGES_BETA] : undefined,
++        betas: requestBetas(!!nativeTranscript, historyHasAdvisor(frames)),
++        advisorModel: advisorModel(),
+         sessionId: options?.cacheRetention === "none" ? undefined : options?.sessionId,
+         onEvent: (event) => translator.event(event),
+       });
+diff --git a/tests/advisor.test.ts b/tests/advisor.test.ts
+new file mode 100644
+index 0000000..8d669a8
+--- /dev/null
++++ b/tests/advisor.test.ts
+@@ -0,0 +1,62 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import {
++  advisorBlock,
++  advisorLabel,
++  advisorModel,
++  historyHasAdvisor,
++  onAdvisor,
++  setAdvisorSource,
++  withPiTools,
++  type AdvisorEvent,
++} from "../src/advisor.ts";
++
++const advisor = { type: "advisor_20260301", name: "advisor", model: "claude-fable-5-2" };
++const piTools = [{ name: "mcp__pi__bash", description: "b", input_schema: { type: "object", properties: {} } }];
++
++test("Pi's tools replace Claude Code's, and Claude Code's advisor tool stays last, as built", () => {
++  const body = Buffer.from(JSON.stringify({ tools: [{ name: "mcp__pi__bash", description: "stand-in" }, advisor] }));
++  assert.deepEqual(JSON.parse(withPiTools(body, piTools).toString()).tools, [...piTools, advisor]);
++  // Claude Code declined the advisor: none is added.
++  const without = Buffer.from(JSON.stringify({ tools: [{ name: "mcp__pi__bash" }] }));
++  assert.deepEqual(JSON.parse(withPiTools(without, piTools).toString()).tools, piTools);
++});
++
++test("advisorModel follows the setting; unset, empty or off is no advisor", () => {
++  for (const [value, expected] of [["fable", "fable"], [" opus ", "opus"], ["off", undefined], ["", undefined], [undefined, undefined], [3, undefined]] as const) {
++    setAdvisorSource(() => value);
++    assert.equal(advisorModel(), expected);
++  }
++  setAdvisorSource(() => {
++    throw new Error("settings unreadable");
++  });
++  assert.equal(advisorModel(), undefined);
++  setAdvisorSource(() => undefined);
++});
++
++test("advisor blocks in history are found, and announced as they stream", () => {
++  const use = { type: "server_tool_use", id: "srvtoolu_1", name: "advisor", input: {} };
++  const result = { type: "advisor_tool_result", tool_use_id: "srvtoolu_1", content: { type: "advisor_redacted_result", encrypted_content: "x" } };
++  const failed = { type: "advisor_tool_result", tool_use_id: "srvtoolu_2", content: { type: "advisor_tool_result_error", error_code: "overloaded" } };
++  assert.equal(historyHasAdvisor([{ message: { content: [{ type: "text", text: "hi" }] } }]), false);
++  assert.equal(historyHasAdvisor([{ message: { content: [use, result] } }]), true);
++
++  const events: AdvisorEvent[] = [];
++  const off = onAdvisor((event) => events.push(event));
++  assert.equal(advisorBlock({ type: "text", text: "" }), false);
++  assert.equal(advisorBlock(use as never), true);
++  assert.equal(advisorBlock(result as never), true);
++  assert.equal(advisorBlock(failed as never), true);
++  off();
++  assert.deepEqual(events, [
++    { phase: "start", id: "srvtoolu_1" },
++    { phase: "end", id: "srvtoolu_1", outcome: { kind: "reviewed" } },
++    { phase: "end", id: "srvtoolu_2", outcome: { kind: "unavailable", errorCode: "overloaded" } },
++  ]);
++});
++
++test("advisor labels read like Claude Code's model names", () => {
++  assert.equal(advisorLabel("fable"), "Fable");
++  assert.equal(advisorLabel("claude-fable-5-2"), "Fable 5.2");
++  assert.equal(advisorLabel("claude-opus-5"), "Opus 5");
++});

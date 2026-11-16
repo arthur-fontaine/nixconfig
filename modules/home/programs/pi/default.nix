@@ -7,6 +7,10 @@ let
     defaultProvider = "claude-code";
     defaultModel = "claude-opus-5-5";
     defaultThinkingLevel = "high";
+    # Fable as the advisor, as Claude Code's advisorModel (../claude): Claude Code attaches
+    # its server-side advisor tool to the claude-code provider's requests, so it bills as
+    # in Claude Code (see patches/pi-claude-code-advisor.patch). Unset or "off": no advisor.
+    advisorModel = "fable";
 
     # Pi's light theme or its dark one, switched live as the terminal reports
     # its appearance. Ghostty and Zed follow macOS, so Pi does too, like
@@ -107,7 +111,11 @@ let
   # default is now omitted, an empty text) for thinking-rows to show. With
   # patches/pi-claude-code-raw-tool-results.patch, tool results go out as Pi has them: Claude Code
   # trimmed the newest one and the next request replayed it untrimmed, which voided the prompt
-  # cache from it on (from the system prompt on, past the API's 20-block lookback). No runtime dependencies:
+  # cache from it on (from the system prompt on, past the API's 20-block lookback). With
+  # patches/pi-claude-code-advisor.patch, the advisorModel setting reaches Claude Code, which
+  # attaches Anthropic's server-side advisor tool to the main request, as it does for itself:
+  # a separate Fable call would bill to Fable's usage, not the plan's. Pi's tools no longer
+  # replace Claude Code's advisor tool, and the advisor's blocks are replayed. No runtime dependencies:
   # its imports are Pi's own packages.
   piClaudeCode = pkgs.runCommand "pi-claude-code-70abb65-patched" { } ''
     cp -r ${
@@ -124,6 +132,7 @@ let
     patch -d $out -p1 < ${./patches/pi-claude-code-keep-thinking.patch}
     patch -d $out -p1 < ${./patches/pi-claude-code-thinking-summary.patch}
     patch -d $out -p1 < ${./patches/pi-claude-code-raw-tool-results.patch}
+    patch -d $out -p1 < ${./patches/pi-claude-code-advisor.patch}
   '';
   # nedleeds/pi-compact-tools 0.16.7 with patches/pi-compact-tools-claude-bash.patch: bash
   # titles leave the folding of long commands to syntax-highlighting, and an opened command
