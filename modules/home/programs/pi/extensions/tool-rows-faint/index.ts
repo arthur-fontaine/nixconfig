@@ -1,12 +1,9 @@
 // Tool rows drawn fainter, their colors kept, so they read apart from the agent's own words. Wraps every tool's
 // renderers, compact-tools' included (loaded before it, see extensionsManifest), and keeps
 // clicks and the inner renderer's reuse of its own component working.
-import { type ExtensionAPI, type Theme, type ToolRenderers } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { type Component } from "@earendil-works/pi-tui";
-import { type Fade, fadeOf, faint } from "./faint.ts";
-
-// How far toward the background the rows go.
-const AMOUNT = 0.3;
+import { type Fade, fadeFor, faint, share } from "./faint.ts";
 
 type RenderCall = NonNullable<ToolRenderers["renderCall"]>;
 type RenderResult = NonNullable<ToolRenderers["renderResult"]>;
@@ -53,15 +50,8 @@ function innerContext(context: RenderContext): RenderContext {
 	return { ...context, lastComponent: last instanceof Faint ? last.inner : last };
 }
 
-// One fade per palette, a theme switch (light to dark) included.
-let last: { key: string; fade?: Fade } | undefined;
-function fadeFor(theme: Theme): Fade | undefined {
-	const key = `${theme.getFgAnsi("text")}\0${(theme as { appearance?: string }).appearance ?? ""}`;
-	if (last?.key !== key) last = { key, fade: fadeOf(theme as never, AMOUNT) };
-	return last.fade;
-}
-
 export default function (pi: ExtensionAPI) {
+	share();
 	pi.registerToolRenderer((_toolName, next) => {
 		const renderers = next();
 		if (!renderers) return renderers;
@@ -69,9 +59,9 @@ export default function (pi: ExtensionAPI) {
 		const result = renderers.renderResult;
 		return {
 			...renderers,
-			...(call && { renderCall: ((args, theme, context) => new Faint(call(args, theme, innerContext(context)), () => fadeFor(theme))) as RenderCall }),
+			...(call && { renderCall: ((args, theme, context) => new Faint(call(args, theme, innerContext(context)), () => fadeFor(theme as never))) as RenderCall }),
 			...(result && {
-				renderResult: ((res, options, theme, context) => new Faint(result(res, options, theme, innerContext(context)), () => fadeFor(theme))) as RenderResult,
+				renderResult: ((res, options, theme, context) => new Faint(result(res, options, theme, innerContext(context)), () => fadeFor(theme as never))) as RenderResult,
 			}),
 		};
 	});

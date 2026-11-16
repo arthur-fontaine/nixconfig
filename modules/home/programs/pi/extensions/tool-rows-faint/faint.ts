@@ -64,3 +64,34 @@ export function fadeOf(theme: { getFgAnsi(token: string): string; appearance?: s
 	const background = dark ? { r: 31, g: 36, b: 48 } : { r: 248, g: 249, b: 250 };
 	return { text, background, amount };
 }
+
+// How far toward the background the rows go.
+export const AMOUNT = 0.3;
+
+type ThemeLike = { getFgAnsi(token: string): string; appearance?: string };
+
+// One fade per palette, a theme switch (light to dark) included.
+let last: { key: string; fade?: Fade } | undefined;
+export function fadeFor(theme: ThemeLike): Fade | undefined {
+	const key = `${theme.getFgAnsi("text")}\0${theme.appearance ?? ""}`;
+	if (last?.key !== key) last = { key, fade: fadeOf(theme, AMOUNT) };
+	return last.fade;
+}
+
+/**
+ * What a row Pi draws outside the tool renderers (an extension's own session entry, such as the
+ * advisor's) calls to fade a line as the tool rows are: `globalThis[Symbol.for(SHARED)].line`.
+ */
+export const SHARED = "pi-extension-tool-rows-faint";
+export interface SharedFade {
+	line(theme: ThemeLike, text: string): string;
+}
+
+export function share(): void {
+	(globalThis as Record<symbol, SharedFade>)[Symbol.for(SHARED)] = {
+		line: (theme, text) => {
+			const fade = fadeFor(theme);
+			return fade ? faint(text, fade) : text;
+		},
+	};
+}
