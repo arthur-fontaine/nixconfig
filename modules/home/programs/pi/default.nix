@@ -314,7 +314,7 @@ let
     shell-env = ./extensions/shell-env;
     # Thinking as a tool-like row: "⦁ Thinking (3.2k tokens · 12s)", not nothing.
     thinking-rows = ./extensions/thinking-rows;
-    # Long bash commands named in plain words by Claude Haiku, cached by command.
+    # Long bash commands and codemode scripts named in plain words by Claude Haiku, cached.
     bash-titles = ./extensions/bash-titles;
     # Tool rows drawn faint, apart from the agent's own words.
     tool-rows-faint = ./extensions/tool-rows-faint;

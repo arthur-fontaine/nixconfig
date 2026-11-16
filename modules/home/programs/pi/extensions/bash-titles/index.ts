@@ -1,13 +1,15 @@
-// Bash commands named in plain words: a long command's collapsed row reads
-// `Bash(Lists the largest session files)` instead of the command, which shows when the row
+// Bash commands and codemode scripts named in plain words: a long command's collapsed row reads
+// `Bash(Lists the largest session files)` instead of the command, a script's
+// `Codemode(Counts lines of every text file)`, and the command or script shows when the row
 // opens (syntax-highlighting draws it). As pi-harness's pi-thinking-summary, with token cost
-// kept low: only commands too long or tangled to read at a glance, Claude Haiku through the
-// subscription, the command alone sent (no conversation), one request at a time, and every
-// title kept on disk by command, so none is asked for twice, across sessions too.
+// kept low: only commands too long or tangled to read at a glance and scripts making several
+// tool calls, Claude Haiku through the subscription, the command or script alone sent (no
+// conversation), one request at a time, and every title kept on disk by command or script, so
+// none is asked for twice, across sessions too.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { request, SYSTEM, TitleCache, titleOf, wantsTitle } from "./titles.ts";
+import { request, SCRIPT_SYSTEM, scriptKey, scriptRequest, SYSTEM, TitleCache, titleOf, wantsScriptTitle, wantsTitle } from "./titles.ts";
 
 const PROVIDER = "claude-code";
 const MODEL = "claude-haiku-5-5";
@@ -17,9 +19,11 @@ const TIMEOUT_MS = 20_000;
 // After a failure, no request for this long (the provider down, the quota out).
 const PAUSE_MS = 60_000;
 
-// What syntax-highlighting reads: the title of a command, and who to tell when one arrives.
+// What syntax-highlighting reads: the title of a command or a codemode script, and who to tell
+// when one arrives.
 export interface BashTitles {
 	get(command: string): string | undefined;
+	script(code: string): string | undefined;
 	listeners: Set<() => void>;
 }
 const KEY = Symbol.for("pi-extension-bash-titles");
@@ -37,16 +41,19 @@ export default function (pi: ExtensionAPI) {
 	try {
 		cache = new TitleCache(JSON.parse(readFileSync(file, "utf8")));
 	} catch {}
-	const registry: BashTitles = (shared[KEY] ??= { get: () => undefined, listeners: new Set() });
+	const registry: BashTitles = (shared[KEY] ??= { get: () => undefined, script: () => undefined, listeners: new Set() });
 	registry.get = (command) => {
 		const title = cache.get(command);
 		// A title cut by the old limit is asked for again as its row shows: once per command and
 		// process (`asked`), and only for rows drawn again.
-		if (!title && cache.stale(command)) enqueue(command);
+		if (!title && cache.stale(command)) enqueue({ key: command, text: command, script: false });
 		return title;
 	};
+	registry.script = (code) => cache.get(scriptKey(code));
 
-	const queue: string[] = [];
+	// `key` is what the title is cached under: the command, or the script's scriptKey.
+	type Item = { key: string; text: string; script: boolean };
+	const queue: Item[] = [];
 	const asked = new Set<string>();
 	let busy = false;
 	let pausedUntil = 0;
@@ -60,13 +67,16 @@ export default function (pi: ExtensionAPI) {
 		} catch {}
 	};
 
-	async function ask(command: string): Promise<string | null> {
+	async function ask({ text, script }: Item): Promise<string | null> {
 		const model = ctx?.modelRegistry.find(PROVIDER, MODEL);
 		if (!ctx || !model || !ctx.modelRegistry.hasConfiguredAuth(model)) { log(`no model: ${PROVIDER}/${MODEL}`); return null; }
 		const reply = await ctx.modelRegistry
 			.streamSimple(
 				model,
-				{ systemPrompt: SYSTEM, messages: [{ role: "user", content: [{ type: "text", text: request(command) }], timestamp: Date.now() }] },
+				{
+					systemPrompt: script ? SCRIPT_SYSTEM : SYSTEM,
+					messages: [{ role: "user", content: [{ type: "text", text: script ? scriptRequest(text) : request(text) }], timestamp: Date.now() }],
+				},
 				{ maxTokens: MAX_TOKENS, signal: AbortSignal.timeout(TIMEOUT_MS) },
 			)
 			.result();
@@ -75,11 +85,11 @@ export default function (pi: ExtensionAPI) {
 		return titleOf(reply.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join(""));
 	}
 
-	function enqueue(command: string) {
-		if (asked.has(command)) return;
+	function enqueue(item: Item) {
+		if (asked.has(item.key)) return;
 		if (asked.size > 2000) asked.clear();
-		asked.add(command);
-		queue.push(command);
+		asked.add(item.key);
+		queue.push(item);
 		void drain();
 	}
 
@@ -89,20 +99,20 @@ export default function (pi: ExtensionAPI) {
 		try {
 			// Rows of a resumed session can be drawn before the session starts: they wait for it.
 			while (ctx && queue.length && Date.now() >= pausedUntil) {
-				const command = queue.shift()!;
-				if (cache.get(command)) continue;
+				const item = queue.shift()!;
+				if (cache.get(item.key)) continue;
 				try {
 					// A reply that isn't a title is dropped, not asked again: a token spent once.
-					const title = await ask(command);
-					log(`title ${JSON.stringify(title)} for ${JSON.stringify(command.slice(0, 80))}`);
+					const title = await ask(item);
+					log(`title ${JSON.stringify(title)} for ${JSON.stringify(item.text.slice(0, 80))}`);
 					if (!title) continue;
-					cache.set(command, title);
+					cache.set(item.key, title);
 					save();
 					for (const tell of registry.listeners) tell();
 				} catch (error) {
 					log(`failed: ${(error as Error).message}`);
 					// Asked again after the pause, by the next call that drains the queue.
-					queue.unshift(command);
+					queue.unshift(item);
 					pausedUntil = Date.now() + PAUSE_MS;
 				}
 			}
@@ -120,9 +130,16 @@ export default function (pi: ExtensionAPI) {
 	pi.on("tool_call", async (event, current) => {
 		ctx = current;
 		log(`tool_call ${event.toolName}`);
+		if (event.toolName === "codemode") {
+			const code = (event.input as { code?: unknown }).code;
+			if (typeof code !== "string" || !wantsScriptTitle(code) || cache.get(scriptKey(code))) return;
+			enqueue({ key: scriptKey(code), text: code, script: true });
+			return;
+		}
+		// A codemode script's bash calls too: they are listed under its row by their titles.
 		if (event.toolName !== "bash") return;
 		const command = (event.input as { command?: unknown }).command;
 		if (typeof command !== "string" || !wantsTitle(command) || cache.get(command)) return;
-		enqueue(command);
+		enqueue({ key: command, text: command, script: false });
 	});
 }

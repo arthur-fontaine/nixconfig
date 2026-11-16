@@ -24,6 +24,35 @@ export function request(command: string, max = 1500): string {
 	return `${text.slice(0, max * 0.7)}\n…\n${text.slice(-max * 0.3)}`;
 }
 
+export const SCRIPT_SYSTEM = [
+	"You name the JavaScript scripts an agent runs to call its tools (tools.bash runs a shell command,",
+	"tools.read, tools.edit and tools.write handle files), for a person scanning the agent's activity.",
+	"Reply with one short phrase of 3 to 8 words saying what the script does, starting with a verb in the",
+	"third person (\"Counts lines of every text file\", \"Updates the README's install steps\").",
+	"Name its purpose, not the calls it makes; never say whether it worked. No quotes, no final period.",
+].join(" ");
+
+const OPTIONS_LINE = /^\/\/ @options:.*(\n|$)/;
+const TOOL_CALL = /\btools\s*(\.\s*[A-Za-z_$][\w$]*|\[)\s*\(?/g;
+
+/**
+ * Whether a codemode script is named by Haiku. Nearly every call is a script now, so one that makes
+ * a single tool call isn't: the call's own line under the row names it. A script making several,
+ * or computing over a few lines without any, is.
+ */
+export function wantsScriptTitle(code: string): boolean {
+	const text = code.replace(OPTIONS_LINE, "").trim();
+	const calls = (text.match(TOOL_CALL) ?? []).length;
+	if (calls > 1) return true;
+	if (calls === 1) return false;
+	return text.split("\n").filter((line) => line.trim()).length > 3;
+}
+
+export const scriptRequest = (code: string) => request(code.replace(OPTIONS_LINE, ""));
+
+// Kept apart from a command with the same text.
+export const scriptKey = (code: string) => `codemode\0${code.trim()}`;
+
 // Only against a runaway answer: a title is shown whole, the terminal's width alone cuts its
 // row. Kept under compact-tools' 160 characters for a one-line command, which it would cut.
 const MAX_CHARS = 150;

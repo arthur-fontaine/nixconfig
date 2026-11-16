@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { request, TitleCache, titleOf, wantsTitle } from "../titles.ts";
+import { request, SCRIPT_SYSTEM, scriptKey, scriptRequest, TitleCache, titleOf, wantsScriptTitle, wantsTitle } from "../titles.ts";
 
 test("short, simple commands are read as they are", () => {
 	assert.equal(wantsTitle("ls -la"), false);
@@ -50,4 +50,21 @@ test("a title cut by the old word limit is asked for again", () => {
 	assert.equal(cache.get("make all"), "Commits the Apple bootstrap script fix");
 	assert.equal(cache.stale("make all"), false);
 	assert.equal(cache.stale("unknown"), false);
+});
+
+test("a codemode script gets a title when it makes several calls or does more than one", () => {
+	const one = 'return await tools.bash({ command: "wc -l a.txt b.txt" });';
+	assert.equal(wantsScriptTitle(one), false);
+	// One call is named by the call's own line under the row, however long its arguments.
+	assert.equal(wantsScriptTitle(`// @options: {"timeout_ms": 1000}\nawait tools.write({ path: "x", content: \`${"line\n".repeat(30)}\` });`), false);
+	assert.equal(wantsScriptTitle('const a = await tools.read({ path: "a" });\nawait tools.edit({ path: "a", edits: [] });'), true);
+	assert.equal(wantsScriptTitle("const xs = [1, 2, 3];\nconst ys = xs.map((x) => x * 2);\nconst s = ys.reduce((a, b) => a + b);\nreturn s;"), true);
+	assert.equal(wantsScriptTitle("return 1 + 1;"), false);
+});
+
+test("scripts and commands have their own cache keys and requests", () => {
+	assert.notEqual(scriptKey("ls"), "ls");
+	const sent = scriptRequest('// @options: {"timeout_ms": 1000}\nreturn await tools.bash({ command: "ls" });');
+	assert.ok(!sent.includes("@options"));
+	assert.ok(SCRIPT_SYSTEM.includes("JavaScript"));
 });
