@@ -137,8 +137,10 @@ const CALLS_TOOLS = /\btools\s*(\.|\[)/;
  * What a script's row is titled until bash-titles names it, or when it won't (a script making one
  * call): its one call's own title, the tools its calls used, or "…" until they start. The script's
  * first line, often a variable it sets, only for a script calling no tool. Undefined: that line.
+ * While the script is still being written (`complete` false), "…": its first line is all there is.
  */
-export function scriptTitle(code: string, calls: readonly NestedCall[], title: (command: string) => string | undefined, cwd: string): string | undefined {
+export function scriptTitle(code: string, calls: readonly NestedCall[], title: (command: string) => string | undefined, cwd: string, complete = true): string | undefined {
+	if (!complete) return "…";
 	if (calls.length === 1) return callText(calls[0]!, title, cwd);
 	if (calls.length > 1) return [...new Set(calls.map((call) => LABELS[call.name] ?? call.name))].join(", ");
 	return CALLS_TOOLS.test(code) ? "…" : undefined;

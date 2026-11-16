@@ -235,7 +235,7 @@ export default function (pi: ExtensionAPI) {
 			remember(context);
 			const code = (args as { code?: unknown } | undefined)?.code;
 			if (typeof code !== "string") return new Recolored(inner(args, theme, innerContext(context)), theme, (lines) => lines);
-			const title = titles.script?.(code) ?? scriptTitle(code, nested.of(context.toolCallId), (command) => titles.get(command), context.cwd);
+			const title = titles.script?.(code) ?? scriptTitle(code, nested.of(context.toolCallId), (command) => titles.get(command), context.cwd, Boolean(context.argsComplete || context.executionStarted || !context.isPartial));
 			const component = inner(title ? { ...(args as object), code: title } : args, theme, innerContext(context));
 			if (!context.expanded || !code.trim()) return new Recolored(component, theme, (drawn) => drawn);
 			const styled = memo(() => scriptLines(paintFor(theme), code));

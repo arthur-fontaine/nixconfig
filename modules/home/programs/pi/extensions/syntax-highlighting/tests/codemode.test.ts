@@ -140,4 +140,6 @@ test("a script bash-titles doesn't name is titled by its calls, never by a varia
 	assert.equal(scriptTitle("x", read.of("toolu_2"), noTitle, "/repo"), "Read, Update");
 	// A script calling no tool is short and plain: its line is the title.
 	assert.equal(scriptTitle("return 6 * 7;", [], noTitle, "/repo"), undefined);
+	// While it is being written, nothing of it: its first line would flash by.
+	assert.equal(scriptTitle("const S = '/opt';", [], noTitle, "/repo", false), "…");
 });
