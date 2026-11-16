@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { displayMessage, duration, renderMarkdown, rowText, tokens } from "../row.ts";
+import { displayMessage, duration, paintRow, renderMarkdown, rowText, tokens } from "../row.ts";
 
 const sig = { thinkingSignature: "x".repeat(10) };
 
@@ -78,4 +78,10 @@ test("an opened run's thinking gets past compact-tools' summary, after the row's
 	assert.equal(renderMarkdown(summarized(shown.content[0]!.thinking!)), `\x1b[1m⦁ Thinking (2s)\x1b[22m\n\n${thinking}`);
 	const closed = displayMessage({ role: "assistant", content: [{ type: "thinking", thinking, durationMs: 2000 }] }, false);
 	assert.equal(renderMarkdown(summarized(closed.content[0]!.thinking!)), "\x1b[1m⦁ Thinking (2s)\x1b[22m");
+});
+
+test("the row is painted in a tool row's colors, its figures as a tool row's details", () => {
+	const tags = { fg: (token: string, text: string) => `<${token}>${text}</>`, bold: (text: string) => `<b>${text}</b>` };
+	assert.equal(paintRow({ running: false, tokens: 86, ms: 2000 }, tags), "\x1b[22;23m<success>⦁</> <toolTitle><b>Thinking</b></><toolOutput> (86 tokens · 2s)</>");
+	assert.equal(paintRow({ running: true }, tags, (text) => `~${text}~`), "\x1b[22;23m~<muted>⦁</> <toolTitle><b>Thinking</b></><toolOutput>…</>~");
 });

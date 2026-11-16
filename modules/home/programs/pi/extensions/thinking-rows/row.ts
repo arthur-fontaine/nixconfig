@@ -94,6 +94,22 @@ export function displayMessage<M extends Message>(message: M, streaming: boolean
 	return { ...message, content };
 }
 
+// Pi draws thinking italic and compact-tools bolds its first line: both ended for the row.
+const PLAIN = "\x1b[22;23m";
+
+/**
+ * The row in a tool row's colors: compact-tools' " ⦁ Bash(ls)" has its dot in success once done,
+ * the name bold in toolTitle and what follows in toolOutput. `fade` is tool-rows-faint's.
+ */
+export function paintRow(
+	row: Row,
+	theme: { fg(token: string, text: string): string; bold(text: string): string },
+	fade: (text: string) => string = (text) => text,
+): string {
+	const dot = theme.fg(row.running ? "muted" : "success", "⦁");
+	return PLAIN + fade(`${dot} ${theme.fg("toolTitle", theme.bold("Thinking"))}${theme.fg("toolOutput", rowDetail(row))}`);
+}
+
 /** How the row is painted: as a tool row is, when the theme is known. */
 export type Style = (row: Row) => string;
 

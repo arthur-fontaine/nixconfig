@@ -6,10 +6,7 @@
 // comes, unless a click said otherwise.
 import { AssistantMessageComponent, type ExtensionAPI, type Theme } from "@earendil-works/pi-coding-agent";
 import { type Fade, fadeOf, faint } from "./faint.ts";
-import { displayMessage, isDisplayed, renderMarkdown, rowDetail, rowText, type Message, type Row } from "./row.ts";
-
-// Pi draws thinking italic and compact-tools bolds its first line: both ended for the row.
-const PLAIN = "\x1b[22;23m";
+import { displayMessage, isDisplayed, paintRow, renderMarkdown, rowText, type Message, type Row } from "./row.ts";
 
 // Pi's own method, kept globally from the first load: a reload (/reload, a rebuild picked up
 // without restarting) wraps it again with its own code, rather than keeping the first load's.
@@ -86,8 +83,7 @@ export default function (pi: ExtensionAPI) {
 		const key = t.getFgAnsi("text");
 		if (fade?.key !== key) fade = { key, value: fadeOf(t as never, 0.3) };
 		const dim = (text: string) => (fade?.value ? faint(text, fade.value) : text);
-		const dot = row.running ? t.fg("muted", "⦁") : t.fg("success", "⦁");
-		return PLAIN + dim(`${dot} ${t.fg("toolTitle", t.bold("Thinking"))}${t.fg("toolOutput", rowDetail(row))}`);
+		return paintRow(row, t, dim);
 	};
 	pi.registerMarkdownTransformer((markdown, { messageType }) =>
 		messageType === "assistant-thinking" ? renderMarkdown(markdown, style) : markdown,
