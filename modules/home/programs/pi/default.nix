@@ -124,8 +124,9 @@ let
   # rather than Pi calling Fable on its own: the advisor's reads then count as Claude Code's do,
   # toward the plan's weekly limit, while Fable's own weekly limit and usage credits stayed at 0
   # (tests/advisor-check, tests/claude-usage). Pi's tools no longer replace Claude Code's
-  # advisor tool, and the advisor's blocks are replayed on later turns. Its transcript row opens
-  # like a tool row (click, Ctrl+O) on the advice, or says it's encrypted (Fable's is). With
+  # advisor tool, and the advisor's blocks are replayed on later turns. Its transcript row is drawn
+  # in the tool rows' column and opens like one (click, Ctrl+O) on the advice, or says it's
+  # encrypted (Fable's is). With
   # patches/pi-claude-code-relay-failure.patch, a 200 stream that breaks mid-answer says who broke
   # it (the upstream's reset, or Claude Code hanging up) where it only said "relay failure Error",
   # and reads "stream was interrupted", which Pi's retry pattern knows: Pi retries the turn rather

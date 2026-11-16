@@ -1,9 +1,9 @@
 diff --git a/src/advisor-row.ts b/src/advisor-row.ts
 new file mode 100644
-index 0000000..34eb7bb
+index 0000000..ac01a88
 --- /dev/null
 +++ b/src/advisor-row.ts
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,58 @@
 +/**
 + * The advisor's row in Pi's transcript: one line, as Claude Code's, which opens on what the
 + * advisor said as a tool row opens on its output: a click toggles this row, Ctrl+O (Pi's
@@ -23,30 +23,38 @@ index 0000000..34eb7bb
 +  fg(color: string, text: string): string;
 +}
 +
-+/** The row's lines at a width: the title, and when open the advice under "⎿", indented. */
-+export function advisorLines(data: AdvisorEntryData, expanded: boolean, theme: Paint, width = 80): string[] {
++// compact-tools' Claude-style rail under a row's title, and the column its text continues at.
++const RAIL = "   ⎿  ";
++const BODY = "      ";
++
++/**
++ * The row's lines at a width: the title, and when open the advice under "⎿", indented. `pad` is
++ * Pi's outputPad, which it gives tool and thinking rows but not an extension's own entry.
++ */
++export function advisorLines(data: AdvisorEntryData, expanded: boolean, theme: Paint, width = 80, pad = 1): string[] {
 +  const { label, outcome } = data;
 +  const title =
 +    outcome?.kind === "unavailable"
 +      ? `Advisor unavailable (${outcome.errorCode})`
 +      : `Advisor (${label ?? "?"}) reviewed the conversation`;
-+  const head = theme.fg("dim", `⦁ ${title}`);
++  const indent = " ".repeat(pad);
++  const head = indent + theme.fg("dim", `⦁ ${title}`);
 +  if (!expanded || outcome?.kind !== "reviewed") return [head];
 +  const body = "text" in outcome ? outcome.text.trim() : theme.fg("dim", "Guidance is encrypted, not readable");
-+  const lines = body.split("\n").flatMap((line) => (line ? wrapTextWithAnsi(line, Math.max(10, width - 5)) : [""]));
-+  return [head, ...lines.map((line, index) => `${index === 0 ? "  ⎿  " : "     "}${line}`)];
++  const lines = body.split("\n").flatMap((line) => (line ? wrapTextWithAnsi(line, Math.max(10, width - pad - BODY.length)) : [""]));
++  return [head, ...lines.map((line, index) => `${indent}${index === 0 ? RAIL : BODY}${line}`)];
 +}
 +
 +// A click's choice per entry, kept while Ctrl+O's state is the one it was made under: Pi draws
 +// the row anew on Ctrl+O and on theme or width changes, and only Ctrl+O should undo a click.
 +const clicked = new Map<string, { under: boolean; open: boolean }>();
 +
-+export function advisorRow(entry: { id: string; data?: unknown }, expanded: boolean, theme: Paint): Component {
++export function advisorRow(entry: { id: string; data?: unknown }, expanded: boolean, theme: Paint, pad = 1): Component {
 +  const data = (entry.data ?? {}) as AdvisorEntryData;
 +  const choice = clicked.get(entry.id);
 +  if (choice && choice.under !== expanded) clicked.delete(entry.id);
 +  let open = clicked.get(entry.id)?.open ?? expanded;
-+  const view: Component = { render: (width) => advisorLines(data, open, theme, width), invalidate() {} };
++  const view: Component = { render: (width) => advisorLines(data, open, theme, width, pad), invalidate() {} };
 +  return new MouseRegion(view, (event) => {
 +    if (event.type !== "click" || event.button !== "left") return undefined;
 +    open = !open;
@@ -308,10 +316,10 @@ index 869c1d1..a8010ef 100644
          return callerCache ? keepCallerCacheBreakpoints(out, canonicalInitialUser) : out;
        },
 diff --git a/src/index.ts b/src/index.ts
-index 2fb5537..adf4437 100644
+index 2fb5537..3e4d6a5 100644
 --- a/src/index.ts
 +++ b/src/index.ts
-@@ -1,10 +1,31 @@
+@@ -1,10 +1,33 @@
 -import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 +import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 +import { advisorLabel, advisorModel, onAdvisor, setAdvisorSource } from "./advisor.ts";
@@ -339,7 +347,9 @@ index 2fb5537..adf4437 100644
 +    ui?.setWorkingMessage();
 +    pi.appendEntry(ADVISOR_ENTRY, { label, outcome: event.outcome });
 +  });
-+  pi.registerEntryRenderer(ADVISOR_ENTRY, (entry, { expanded }, theme) => advisorRow(entry, expanded, theme));
++  // In the column of the tool and thinking rows, which Pi pads by its outputPad setting (0 or 1).
++  const pad = () => ((pi.getSettings() as { outputPad?: unknown }).outputPad === 0 ? 0 : 1);
++  pi.registerEntryRenderer(ADVISOR_ENTRY, (entry, { expanded }, theme) => advisorRow(entry, expanded, theme, pad()));
 +
    pi.registerCommand("claude-code-status", {
      description: "Check the Claude Code executable and subscription login",
@@ -408,10 +418,10 @@ index b516241..6e6dd2b 100644
        });
 diff --git a/tests/advisor.test.ts b/tests/advisor.test.ts
 new file mode 100644
-index 0000000..a0924d7
+index 0000000..06514f4
 --- /dev/null
 +++ b/tests/advisor.test.ts
-@@ -0,0 +1,107 @@
+@@ -0,0 +1,119 @@
 +import assert from "node:assert/strict";
 +import test from "node:test";
 +import {
@@ -492,16 +502,28 @@ index 0000000..a0924d7
 +
 +test("the advisor row is one line, and opens on the advice or on why there is none", () => {
 +  const readable = { label: "Opus 4.8", outcome: { kind: "reviewed" as const, text: "Use a WaitGroup.\nDrain first." } };
-+  assert.deepEqual(advisorLines(readable, false, plain), ["⦁ Advisor (Opus 4.8) reviewed the conversation"]);
-+  assert.deepEqual(advisorLines(readable, true, plain), ["⦁ Advisor (Opus 4.8) reviewed the conversation", "  ⎿  Use a WaitGroup.", "     Drain first."]);
++  assert.deepEqual(advisorLines(readable, false, plain), [" ⦁ Advisor (Opus 4.8) reviewed the conversation"]);
++  assert.deepEqual(advisorLines(readable, true, plain), [" ⦁ Advisor (Opus 4.8) reviewed the conversation", "    ⎿  Use a WaitGroup.", "       Drain first."]);
 +  // Long advice wraps under its indent.
 +  const long = { label: "Opus 4.8", outcome: { kind: "reviewed" as const, text: "word ".repeat(30).trim() } };
 +  const wrapped = advisorLines(long, true, plain, 40).slice(1);
-+  assert.ok(wrapped.length > 1 && wrapped.every((line, i) => line.startsWith(i ? "     " : "  ⎿  ") && line.length <= 40));
++  assert.ok(wrapped.length > 1 && wrapped.every((line, i) => line.startsWith(i ? "       " : "    ⎿  ") && line.length <= 40));
 +  const encrypted = { label: "Fable", outcome: { kind: "reviewed" as const, encrypted: true as const } };
-+  assert.deepEqual(advisorLines(encrypted, true, plain), ["⦁ Advisor (Fable) reviewed the conversation", "  ⎿  Guidance is encrypted, not readable"]);
++  assert.deepEqual(advisorLines(encrypted, true, plain), [" ⦁ Advisor (Fable) reviewed the conversation", "    ⎿  Guidance is encrypted, not readable"]);
 +  const failed = { label: "Fable", outcome: { kind: "unavailable" as const, errorCode: "overloaded" } };
-+  assert.deepEqual(advisorLines(failed, true, plain), ["⦁ Advisor unavailable (overloaded)"]);
++  assert.deepEqual(advisorLines(failed, true, plain), [" ⦁ Advisor unavailable (overloaded)"]);
++});
++
++test("the advisor row lines up with tool rows: Pi's outputPad, then compact-tools' dot and rail", () => {
++  // compact-tools' Claude rows, as Pi pads them: " ⦁ Bash(ls)", "    ⎿  a.txt", "       b.txt".
++  const toolRow = [" ⦁ Bash(ls)", "    ⎿  a.txt", "       b.txt"];
++  const row = advisorLines({ label: "Opus", outcome: { kind: "reviewed", text: "a.txt\nb.txt" } }, true, plain);
++  assert.equal(row[0]!.indexOf("⦁"), toolRow[0]!.indexOf("⦁"));
++  assert.equal(row[1]!.indexOf("⎿"), toolRow[1]!.indexOf("⎿"));
++  assert.equal(row[1]!.indexOf("a.txt"), toolRow[1]!.indexOf("a.txt"));
++  assert.equal(row[2]!.indexOf("b.txt"), toolRow[2]!.indexOf("b.txt"));
++  // outputPad 0: no column before the dot, as Pi draws the other rows then.
++  assert.deepEqual(advisorLines({ label: "Opus", outcome: { kind: "reviewed", text: "x" } }, true, plain, 80, 0), ["⦁ Advisor (Opus) reviewed the conversation", "   ⎿  x"]);
 +});
 +
 +test("a click toggles the row, and Ctrl+O sets it again", () => {
