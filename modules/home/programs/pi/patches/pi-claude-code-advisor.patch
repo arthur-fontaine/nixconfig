@@ -1,9 +1,9 @@
 diff --git a/src/advisor-row.ts b/src/advisor-row.ts
 new file mode 100644
-index 0000000..ac01a88
+index 0000000..a5634a2
 --- /dev/null
 +++ b/src/advisor-row.ts
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,68 @@
 +/**
 + * The advisor's row in Pi's transcript: one line, as Claude Code's, which opens on what the
 + * advisor said as a tool row opens on its output: a click toggles this row, Ctrl+O (Pi's
@@ -21,7 +21,14 @@ index 0000000..ac01a88
 +
 +interface Paint {
 +  fg(color: string, text: string): string;
++  bold?(text: string): string;
 +}
++
++// tool-rows-faint's fade, which Pi's tool rows and the thinking rows are drawn with: an entry
++// isn't a tool row, so it is asked for here. Without that extension, lines stay as they are.
++type SharedFade = { line(theme: Paint, text: string): string };
++const fade = (theme: Paint, line: string) =>
++  (globalThis as Record<symbol, SharedFade | undefined>)[Symbol.for("pi-extension-tool-rows-faint")]?.line(theme, line) ?? line;
 +
 +// compact-tools' Claude-style rail under a row's title, and the column its text continues at.
 +const RAIL = "   ⎿  ";
@@ -33,16 +40,19 @@ index 0000000..ac01a88
 + */
 +export function advisorLines(data: AdvisorEntryData, expanded: boolean, theme: Paint, width = 80, pad = 1): string[] {
 +  const { label, outcome } = data;
-+  const title =
-+    outcome?.kind === "unavailable"
-+      ? `Advisor unavailable (${outcome.errorCode})`
-+      : `Advisor (${label ?? "?"}) reviewed the conversation`;
++  const failed = outcome?.kind === "unavailable";
++  const detail = failed ? ` unavailable (${outcome.errorCode})` : ` (${label ?? "?"}) reviewed the conversation`;
 +  const indent = " ".repeat(pad);
-+  const head = indent + theme.fg("dim", `⦁ ${title}`);
-+  if (!expanded || outcome?.kind !== "reviewed") return [head];
-+  const body = "text" in outcome ? outcome.text.trim() : theme.fg("dim", "Guidance is encrypted, not readable");
-+  const lines = body.split("\n").flatMap((line) => (line ? wrapTextWithAnsi(line, Math.max(10, width - pad - BODY.length)) : [""]));
-+  return [head, ...lines.map((line, index) => `${indent}${index === 0 ? RAIL : BODY}${line}`)];
++  // As compact-tools paints a finished tool row and thinking-rows a thinking one.
++  const bold = theme.bold ?? ((text: string) => text);
++  const head = `${indent}${theme.fg(failed ? "error" : "success", "⦁")} ${theme.fg("toolTitle", bold("Advisor"))}${theme.fg("toolOutput", detail)}`;
++  if (!expanded || outcome?.kind !== "reviewed") return [fade(theme, head)];
++  const body = "text" in outcome ? outcome.text.trim() : "";
++  const lines = body
++    ? body.split("\n").flatMap((line) => (line ? wrapTextWithAnsi(line, Math.max(10, width - pad - BODY.length)) : [""])).map((line) => theme.fg("toolOutput", line))
++    : [theme.fg("dim", "Guidance is encrypted, not readable")];
++  const rail = (index: number) => (index === 0 ? theme.fg("dim", RAIL) : BODY);
++  return [head, ...lines.map((line, index) => indent + rail(index) + line)].map((line) => fade(theme, line));
 +}
 +
 +// A click's choice per entry, kept while Ctrl+O's state is the one it was made under: Pi draws
@@ -418,10 +428,10 @@ index b516241..6e6dd2b 100644
        });
 diff --git a/tests/advisor.test.ts b/tests/advisor.test.ts
 new file mode 100644
-index 0000000..06514f4
+index 0000000..fc98db4
 --- /dev/null
 +++ b/tests/advisor.test.ts
-@@ -0,0 +1,119 @@
+@@ -0,0 +1,140 @@
 +import assert from "node:assert/strict";
 +import test from "node:test";
 +import {
@@ -540,6 +550,27 @@ index 0000000..06514f4
 +  // Ctrl+O opens every row, then closes every row, this one included.
 +  assert.equal(lines(advisorRow(entry, true, plain)).length, 2);
 +  assert.equal(lines(advisorRow(entry, false, plain)).length, 1);
++});
++
++test("the advisor row is painted as a tool row: its dot, title and details, faded as tool rows are", () => {
++  const tags = { fg: (color: string, text: string) => `<${color}>${text}</>`, bold: (text: string) => `<b>${text}</b>` };
++  const reviewed = { label: "Fable", outcome: { kind: "reviewed" as const, text: "Drain first." } };
++  // compact-tools' " ⦁ Bash(ls)": a success dot, the name bold in toolTitle, the rest in toolOutput.
++  assert.deepEqual(advisorLines(reviewed, true, tags), [
++    " <success>⦁</> <toolTitle><b>Advisor</b></><toolOutput> (Fable) reviewed the conversation</>",
++    " <dim>   ⎿  </><toolOutput>Drain first.</>",
++  ]);
++  const failed = { label: "Fable", outcome: { kind: "unavailable" as const, errorCode: "overloaded" } };
++  assert.equal(advisorLines(failed, false, tags)[0], " <error>⦁</> <toolTitle><b>Advisor</b></><toolOutput> unavailable (overloaded)</>");
++  // With tool-rows-faint loaded, each line goes through its fade.
++  const key = Symbol.for("pi-extension-tool-rows-faint");
++  const shared = globalThis as Record<symbol, unknown>;
++  shared[key] = { line: (_theme: unknown, text: string) => `~${text}~` };
++  try {
++    assert.ok(advisorLines(reviewed, true, tags).every((line) => line.startsWith("~") && line.endsWith("~")));
++  } finally {
++    delete shared[key];
++  }
 +});
 diff --git a/tests/claude-cli.test.ts b/tests/claude-cli.test.ts
 index ba90666..bda0c8a 100644
