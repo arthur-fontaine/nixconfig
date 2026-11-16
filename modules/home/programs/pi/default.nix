@@ -394,7 +394,10 @@ in
       (builtins.readFile ../claude/CLAUDE.md)
       (builtins.readFile ../claude/rules/context7.md)
       (builtins.readFile ./AGENTS.pi.md)
-    ];
+    ]
+    # Anthropic's suggested executor prompt for the advisor tool, verbatim: without it the
+    # model under-calls the advisor on coding tasks. Only when Pi has an advisor.
+    + lib.optionalString (settings ? advisorModel) (builtins.readFile ./advisor.md);
     ".pi/agent/extensions".source = pkgs.linkFarm "pi-extensions" (
       extensions // { "package.json" = extensionsManifest; }
     );
