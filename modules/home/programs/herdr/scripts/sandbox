@@ -105,7 +105,7 @@ case $cmd in
   down)
     if running; then
       # What `do` made, newest first: tabs, then spaces. Nothing else is touched.
-      tail -r "$created" 2>/dev/null | while read -r kind id; do
+      awk '!seen[$0]++' "$created" | tail -r | while read -r kind id; do
         app do "$kind.close" --id "$id" --confirmed true >/dev/null || true
       done
       kill "$(cat "$pidfile")"
