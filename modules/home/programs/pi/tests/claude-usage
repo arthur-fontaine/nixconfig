@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# The subscription usage Claude Code's /usage shows (GET /api/oauth/usage with its OAuth
+# login), raw. advisor-check reads it before and after to see which bucket the advisor moved.
+set -euo pipefail
+creds=$(security find-generic-password -s "Claude Code-credentials" -w)
+token=$(printf '%s' "$creds" | python3 -c 'import json,sys; print(json.load(sys.stdin)["claudeAiOauth"]["accessToken"])')
+curl -fsS https://api.anthropic.com/api/oauth/usage \
+  -H "Authorization: Bearer $token" -H "anthropic-beta: oauth-2025-04-20" -H "User-Agent: pi-advisor-check"

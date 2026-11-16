@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Real Pi turns on the claude-code provider with advisorModel = "fable" (default.nix), through
+# a recorder standing in for api.anthropic.com (PI_CLAUDE_CODE_UPSTREAM_URL). Passes when the
+# first turn's request carries Claude Code's advisor tool with a Fable model and its response
+# an advisor_tool_result, and a second turn replays those blocks without an API error.
+#
+#   advisor-check [pi-claude-code package]   default: the one ~/.pi/agent/settings.json installs
+#
+# Costs two small Opus turns and one Fable advisor read (~20k tokens).
+set -euo pipefail
+here=$(cd "$(dirname "$0")" && pwd)
+pkg=${1:-$(python3 -c '
+import json, os
+packages = json.load(open(os.path.expanduser("~/.pi/agent/settings.json")))["packages"]
+print(next(p for p in packages if isinstance(p, str) and "pi-claude-code" in p))')}
+work=$(mktemp -d /tmp/advisor-check.XXXXXX)
+port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+node "$here/record-upstream.mjs" "$port" "$work/requests" >"$work/recorder.log" 2>&1 &
+recorder=$!
+trap 'kill $recorder 2>/dev/null || true' EXIT
+mkdir -p "$work/project/.pi"
+echo '{"advisorModel": "fable"}' >"$work/project/.pi/settings.json"
+cd "$work/project"
+echo "package: $pkg"
+echo "work:    $work"
+
+pi_turn() {
+  PI_CLAUDE_CODE_UPSTREAM_URL="http://127.0.0.1:$port" timeout 600 pi -p --approve \
+    --no-extensions --no-mcp --no-skills --no-context-files --no-prompt-templates --no-tools \
+    -e "$pkg/src/index.ts" --provider claude-code --model claude-opus-5-5 --thinking low \
+    --session-dir "$work/sessions" "$@"
+}
+status=0
+pi_turn "Call the advisor tool once before you answer (it takes no input). Then reply with one word: DONE." \
+  >"$work/turn1.txt" 2>&1 || status=$?
+echo "turn 1 (exit $status): $(tail -c 300 "$work/turn1.txt")"
+if [ "$status" -eq 0 ]; then
+  pi_turn -c "Reply with one word: OK." >"$work/turn2.txt" 2>&1 || status=$?
+  echo "turn 2 (exit $status): $(tail -c 300 "$work/turn2.txt")"
+fi
+
+python3 - "$work" "$status" <<'EOF'
+import json, os, sys
+work, status = sys.argv[1], int(sys.argv[2])
+root = os.path.join(work, "requests")
+requests = []
+for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+    d = os.path.join(root, name)
+    meta = json.load(open(os.path.join(d, "request.json")))
+    if meta["method"] != "POST" or not meta["url"].startswith("/v1/messages"):
+        continue
+    body = json.load(open(os.path.join(d, "request-body")))
+    response = json.load(open(os.path.join(d, "response.json"))) if os.path.exists(os.path.join(d, "response.json")) else {}
+    raw = open(os.path.join(d, "response-body"), errors="replace").read() if os.path.exists(os.path.join(d, "response-body")) else ""
+    events = [json.loads(line[5:]) for line in raw.splitlines() if line.startswith("data:")]
+    requests.append({"name": name, "meta": meta, "body": body, "status": response.get("status"), "headers": response.get("headers", {}), "events": events})
+
+failures = []
+def check(ok, what):
+    print(("PASS " if ok else "FAIL ") + what)
+    if not ok:
+        failures.append(what)
+
+check(status == 0, "both Pi turns exit 0")
+check(len(requests) >= 2, f"upstream saw two Messages requests through the relay (saw {len(requests)})")
+if requests:
+    first, last = requests[0], requests[-1]
+    advisor_tools = [t for t in first["body"].get("tools", []) if str(t.get("type", "")).startswith("advisor_")]
+    print("  turn 1 advisor tool:", json.dumps(advisor_tools))
+    print("  turn 1 beta:", first["meta"]["headers"].get("anthropic-beta"))
+    check(any(t.get("type") == "advisor_20260301" and t.get("name") == "advisor" and "fable" in str(t.get("model")) for t in advisor_tools),
+          "turn 1 request carries the advisor_20260301 tool with a Fable model")
+    check("advisor-tool-2026-03-01" in first["meta"]["headers"].get("anthropic-beta", ""), "turn 1 request carries the advisor-tool-2026-03-01 beta")
+    results = [e["content_block"] for e in first["events"] if e.get("type") == "content_block_start" and e["content_block"].get("type") == "advisor_tool_result"]
+    check(first["status"] == 200 and bool(results), f"turn 1 response (HTTP {first['status']}) includes an advisor_tool_result")
+    for e in first["events"]:
+        if e.get("type") == "message_delta":
+            for it in e.get("usage", {}).get("iterations", []):
+                print("  turn 1 iteration:", json.dumps(it))
+    if len(requests) >= 2 and results:
+        replayed = [b for m in last["body"]["messages"] if m["role"] == "assistant" and isinstance(m["content"], list) for b in m["content"]]
+        check(any(b.get("type") == "server_tool_use" and b.get("name") == "advisor" for b in replayed), "turn 2 request replays the advisor's server_tool_use")
+        check(any(b == results[0] for b in replayed), "turn 2 request replays the advisor_tool_result verbatim")
+        errors = [e for e in last["events"] if e.get("type") == "error"]
+        check(last["status"] == 200 and not errors, f"turn 2 response is HTTP {last['status']} without an API error {errors[:1]}")
+    for r in requests:
+        print(f"  {r['name']} rate limits:", {k.replace("anthropic-ratelimit-unified-", ""): v for k, v in r["headers"].items() if k.startswith("anthropic-ratelimit-unified")})
+print("advisor-check:", "FAILED" if failures else "passed")
+sys.exit(1 if failures else 0)
+EOF
