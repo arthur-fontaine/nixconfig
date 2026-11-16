@@ -8,6 +8,7 @@
 #   sandbox app <args>    herdr-app on the sandbox window (ls, status, check, commands)
 #   sandbox do <cmd> ...  herdr-app do on the sandbox window; spaces/tabs it creates are recorded
 #   sandbox shot <file>   screenshot of the sandbox window
+#   sandbox appearance light|dark   the sandbox's appearance (its settings.json, applied live)
 #   sandbox down          close what `do` created, kill only the recorded PID, remove the home
 set -euo pipefail
 
@@ -71,7 +72,8 @@ deploy() {
 settings() {
   local cfg="#darwinConfigurations.Arthur-Mac.config.home-manager.users.$USER.nixconfig.sync"
   nix eval --json "$repo$cfg.herdr-settings.managed" >"$home/settings.json"
-  nix eval --json "$repo$cfg.herdr-shared.managed" >"$home/shared.json"
+  # Welcomed already: the welcome would cover every shot.
+  nix eval --json "$repo$cfg.herdr-shared.managed" | jq '. + {"frame.welcomed": "finished"}' >"$home/shared.json"
 }
 
 cmd=${1:-}; shift || true
@@ -96,6 +98,10 @@ case $cmd in
     jq -r 'to_entries[] | select(.key == "space" or .key == "tab") | "\(.key) \(.value)"' <<<"$out" 2>/dev/null >>"$created" || true
     ;;
   shot) app shot "${1:?shot <file.png>}" ;;
+  appearance)
+    case ${1:-} in light|dark) ;; *) echo "appearance light|dark" >&2; exit 1 ;; esac
+    tmp=$(mktemp) && jq --arg a "$1" '.appearance = $a' "$home/settings.json" >"$tmp" && mv "$tmp" "$home/settings.json"
+    ;;
   down)
     if running; then
       # What `do` made, newest first: tabs, then spaces. Nothing else is touched.
@@ -107,5 +113,5 @@ case $cmd in
     rm -rf "$root"
     echo "down"
     ;;
-  *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
