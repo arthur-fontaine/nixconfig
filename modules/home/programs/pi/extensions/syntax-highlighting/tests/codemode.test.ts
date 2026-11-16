@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { callLines, forInner, NestedCalls, underRail } from "../codemode.ts";
+import { callLines, forInner, NestedCalls, scriptLines, underRail } from "../codemode.ts";
 import { fakePaint, markup, stripAnsi } from "./paint.ts";
 
 const paint = fakePaint();
@@ -86,4 +86,33 @@ test("the renderers after this one get the output without Pi's header and calls,
 	assert.equal(again.details, inner.details);
 	// A failed script before it ran has no header to drop.
 	assert.equal(forInner({ content: [{ type: "text", text: "Invalid options" }] }).content.length, 1);
+});
+
+test("an opened row's script is drawn in JavaScript colors, tabs as Pi draws them", () => {
+	const paint = fakePaint();
+	const lines = scriptLines(paint, "const a = 1;\n\treturn a;\n");
+	assert.deepEqual(paint.calls, ["javascript:const a = 1;\n   return a;"]);
+	assert.equal(markup(lines[0]!), "[keyword:const] a = 1;");
+	assert.deepEqual(scriptLines(fakePaint({ javascript: false }), "x\ny").map(stripAnsi), ["x", "y"]);
+});
+
+test("saved results count toward the bound on scripts kept", () => {
+	const calls = new NestedCalls();
+	for (let n = 0; n < 600; n++) calls.restore({ role: "toolResult", toolCallId: `t${n}`, nestedCalls: { calls: [{ id: `t${n}/1`, name: "read", status: "ok" }] } });
+	assert.equal(calls.of("t0").length, 0);
+	assert.equal(calls.of("t599").length, 1);
+});
+
+test("a failed script leads with its error, which compact-tools makes the row's headline", () => {
+	const inner = forInner({
+		content: [
+			{ type: "text", text: "Script failed\nWall time 3.1 seconds\nOutput:\n" },
+			{ type: "text", text: "partial" },
+			{ type: "text", text: "Script error:\nError: boom on purpose\n    at <anonymous> (codemode.js:4:11)" },
+		],
+	});
+	assert.deepEqual(inner.content, [
+		{ type: "text", text: "Error: boom on purpose\n    at <anonymous> (codemode.js:4:11)" },
+		{ type: "text", text: "partial" },
+	]);
 });

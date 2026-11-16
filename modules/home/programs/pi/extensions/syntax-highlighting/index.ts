@@ -6,7 +6,7 @@
 import { type ExtensionAPI, getLanguageFromPath, highlightCode, type Theme, type ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { escapes, FG_RESET, railOf, stripAnsi } from "./ansi.ts";
-import { callLines, forInner, NestedCalls, underRail } from "./codemode.ts";
+import { callLines, forInner, NestedCalls, scriptLines, underRail } from "./codemode.ts";
 import { displayedCommand, fold, normalizeCommand, type Preview, readPreview } from "./command.ts";
 import { highlightShell, type Paint } from "./highlight.ts";
 import { type Document, overlay } from "./overlay.ts";
@@ -238,10 +238,7 @@ export default function (pi: ExtensionAPI) {
 			const title = titles.script?.(code);
 			const component = inner(title ? { ...(args as object), code: title } : args, theme, innerContext(context));
 			if (!context.expanded || !code.trim()) return new Recolored(component, theme, (drawn) => drawn);
-			const styled = memo(() => {
-				const script = normalizeCommand(code).trimEnd();
-				return paintFor(theme).code(script, "javascript") ?? script.split("\n");
-			});
+			const styled = memo(() => scriptLines(paintFor(theme), code));
 			return new Recolored(component, theme, (drawn, width) => {
 				const indent = CLAUDE_CODEMODE_TITLE.test(stripAnsi(drawn[0] ?? "")) ? CLAUDE_BODY : "";
 				const room = Math.max(10, width - indent.length);

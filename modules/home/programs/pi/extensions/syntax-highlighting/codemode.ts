@@ -64,7 +64,7 @@ export class NestedCalls {
 		if (!entry?.live) {
 			entry = { live: true, calls: new Map() };
 			this.#parents.set(root, entry);
-			if (this.#parents.size > MAX_PARENTS) this.#parents.delete(this.#parents.keys().next().value!);
+			this.#trim();
 		}
 		if (entry.calls.has(id) || entry.calls.size >= MAX_CALLS) return;
 		entry.calls.set(id, { name, ...targetOf(name, args), status: "running" });
@@ -90,6 +90,7 @@ export class NestedCalls {
 			calls.set(call.id, { name: call.name, ...targetOf(call.name, call.arguments), status });
 		}
 		this.#parents.set(value.toolCallId, { live: false, calls });
+		this.#trim();
 		return true;
 	}
 
@@ -100,6 +101,16 @@ export class NestedCalls {
 	clear(): void {
 		this.#parents.clear();
 	}
+
+	#trim(): void {
+		while (this.#parents.size > MAX_PARENTS) this.#parents.delete(this.#parents.keys().next().value!);
+	}
+}
+
+/** The script as an opened row shows it, in JavaScript colors. */
+export function scriptLines(paint: Paint, code: string): string[] {
+	const script = normalizeCommand(code).trimEnd();
+	return paint.code(script, "javascript") ?? script.split("\n");
 }
 
 /** One call as its own row's title: `Update(src/a.ts)`, `Bash(Runs the unit tests)`. */
@@ -153,6 +164,7 @@ export function underRail(drawn: readonly string[], lines: readonly string[], in
 }
 
 const SCRIPT_HEADER = /^Script (completed|failed)\nWall time [\d.]+ seconds\nOutput:\n$/;
+const SCRIPT_ERROR = "Script error:\n";
 const contents = new WeakMap<object, unknown[]>();
 const details = new WeakMap<object, unknown>();
 
@@ -160,7 +172,8 @@ type Result = { content: readonly unknown[]; details?: unknown };
 
 /**
  * The result as the renderers after this one get it: without Pi's "Script completed / Wall time /
- * Output:" header, which Pi's own codemode row leaves out too, and without the calls in `details`,
+ * Output:" header, which Pi's own codemode row leaves out too, its error first when it failed, and
+ * without the calls in `details`,
  * which Pi's row would list again as JSON once opened. The same input gives the same objects, so
  * compact-tools still reuses what it drew.
  */
@@ -169,6 +182,15 @@ export function forInner<T extends Result>(result: T): T {
 	if (!content) {
 		const [first, ...rest] = result.content as { type?: string; text?: string }[];
 		content = first?.type === "text" && SCRIPT_HEADER.test(first.text ?? "") ? rest : [...result.content];
+		// compact-tools heads a failed row with its first line: the error, not the output before it.
+		const failure = content.findIndex((item) => {
+			const text = (item as { text?: unknown }).text;
+			return typeof text === "string" && text.startsWith(SCRIPT_ERROR);
+		});
+		if (failure >= 0) {
+			const item = content[failure] as { text: string };
+			content = [{ ...item, text: item.text.slice(SCRIPT_ERROR.length) }, ...content.filter((_, i) => i !== failure)];
+		}
 		contents.set(result.content, content);
 	}
 	let own = result.details;
