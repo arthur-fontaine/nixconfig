@@ -1,10 +1,12 @@
 // Syntax highlighting for Pi's bash tool: the command in its language (and the
-// Python, SQL, JavaScript… it embeds), and its output's telling parts. It
+// Python, SQL, JavaScript… it embeds), and its output's telling parts. Codemode rows
+// get the same: a title, the script once opened, and the calls it made (codemode.ts). It
 // recolors whatever the bash renderers before it drew, so other extensions'
 // additions to the row stay as they are, and every color is a theme token.
 import { type ExtensionAPI, getLanguageFromPath, highlightCode, type Theme, type ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { escapes, FG_RESET, railOf, stripAnsi } from "./ansi.ts";
+import { callLines, forInner, NestedCalls, underRail } from "./codemode.ts";
 import { displayedCommand, fold, normalizeCommand, type Preview, readPreview } from "./command.ts";
 import { highlightShell, type Paint } from "./highlight.ts";
 import { type Document, overlay } from "./overlay.ts";
@@ -19,6 +21,7 @@ type ToolResult = Parameters<RenderResult>[0];
 const SHORTCUT = "ctrl+shift+o";
 // compact-tools' Claude-style call line, and the column its rows' text starts at.
 const CLAUDE_TITLE = /^ *\S+ Bash\(/;
+const CLAUDE_CODEMODE_TITLE = /^ *\S+ Codemode\(/;
 const CLAUDE_BODY = "      ";
 // Rows the shortcut redraws; older ones redraw on their next render.
 const MAX_ROWS = 200;
@@ -147,7 +150,12 @@ export default function (pi: ExtensionAPI) {
 	// shows the command. Rows are drawn again when a name arrives.
 	// Made here or there, whichever extension loads first (this one does, bash-titles fills it).
 	const holder = globalThis as unknown as Record<symbol, { get(command: string): string | undefined; listeners: Set<() => void> } | undefined>;
-	const titles = (holder[Symbol.for("pi-extension-bash-titles")] ??= { get: () => undefined, listeners: new Set() });
+	const titles = (holder[Symbol.for("pi-extension-bash-titles")] ??= { get: () => undefined, script: () => undefined, listeners: new Set() }) as {
+		get(command: string): string | undefined;
+		script?(code: string): string | undefined;
+		listeners: Set<() => void>;
+	};
+	const nested = new NestedCalls();
 	titles.listeners.add(() => rows.redrawAll());
 
 	const renderCall =
@@ -220,8 +228,67 @@ export default function (pi: ExtensionAPI) {
 			);
 		};
 
+	// A script's row as a bash row: its title (bash-titles), and the script once opened.
+	const codemodeCall =
+		(inner: RenderCall): RenderCall =>
+		(args, theme, context) => {
+			remember(context);
+			const code = (args as { code?: unknown } | undefined)?.code;
+			if (typeof code !== "string") return new Recolored(inner(args, theme, innerContext(context)), theme, (lines) => lines);
+			const title = titles.script?.(code);
+			const component = inner(title ? { ...(args as object), code: title } : args, theme, innerContext(context));
+			if (!context.expanded || !code.trim()) return new Recolored(component, theme, (drawn) => drawn);
+			const styled = memo(() => {
+				const script = normalizeCommand(code).trimEnd();
+				return paintFor(theme).code(script, "javascript") ?? script.split("\n");
+			});
+			return new Recolored(component, theme, (drawn, width) => {
+				const indent = CLAUDE_CODEMODE_TITLE.test(stripAnsi(drawn[0] ?? "")) ? CLAUDE_BODY : "";
+				const room = Math.max(10, width - indent.length);
+				const body = styled(themeKey(theme)).flatMap((line) => wrapTextWithAnsi(line, room).map((part) => indent + part));
+				return [drawn[0] ?? "", ...body.map((line) => truncateToWidth(line, width)), ...drawn.slice(1)];
+			});
+		};
+
+	// Its result with the calls it made on top, each as its own row's title.
+	const codemodeResult =
+		(inner: RenderResult): RenderResult =>
+		(result, options, theme, context) => {
+			remember(context);
+			const component = inner(forInner(result), options, theme, innerContext(context));
+			const calls = nested.of(context.toolCallId);
+			if (!calls.length) return new Recolored(component, theme, (drawn) => drawn);
+			return new Recolored(component, theme, (drawn, width) => {
+				const lines = callLines(paintFor(theme), calls, (command) => titles.get(command), context.cwd, options.expanded);
+				const room = Math.max(10, width - CLAUDE_BODY.length);
+				return underRail(drawn, lines.map((line) => truncateToWidth(line, room)), CLAUDE_BODY).map((line) => truncateToWidth(line, width));
+			});
+		};
+
+	pi.on("tool_execution_start", async (event) => {
+		if (event.parentToolCallId) nested.start(event.parentToolCallId, event.toolCallId, event.toolName, event.args);
+	});
+
+	pi.on("tool_execution_end", async (event) => {
+		if (!event.parentToolCallId) return;
+		const text = (event.result as { content?: { type?: string; text?: string }[] } | undefined)?.content?.find((block) => block.type === "text")?.text;
+		nested.end(event.parentToolCallId, event.toolCallId, event.isError, text);
+	});
+
+	const restore = (entries: readonly unknown[]) => {
+		for (const entry of entries) nested.restore((entry as { message?: unknown }).message);
+		rows.redrawAll();
+	};
+
 	pi.registerToolRenderer((toolName, next) => {
 		const renderers = next();
+		if (toolName === "codemode" && renderers) {
+			return {
+				...renderers,
+				...(renderers.renderCall && { renderCall: codemodeCall(renderers.renderCall) }),
+				...(renderers.renderResult && { renderResult: codemodeResult(renderers.renderResult) }),
+			};
+		}
 		if (toolName !== "bash" || !renderers) return renderers;
 		return {
 			...renderers,
@@ -230,12 +297,21 @@ export default function (pi: ExtensionAPI) {
 		};
 	});
 
-	pi.on("session_start", async () => {
+	pi.on("session_start", async (_event, ctx) => {
+		restore(ctx.sessionManager.getBranch());
 		const own = (pi.getSettings() as { syntaxHighlighting?: Record<string, unknown> }).syntaxHighlighting ?? {};
 		settings = {
 			commandPreview: readPreview(own.commandPreview, 2),
 			expandWhileWriting: own.expandWhileWriting !== false,
 		};
+	});
+
+	pi.on("session_tree", async (_event, ctx) => {
+		restore(ctx.sessionManager.getBranch());
+	});
+
+	pi.on("session_shutdown", async () => {
+		nested.clear();
 	});
 
 	pi.registerShortcut(SHORTCUT, {

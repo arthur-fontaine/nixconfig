@@ -83,6 +83,16 @@ appends a line under bash results, loaded before and after it.
 - Prefixes before the interpreter are skipped: `sudo`, `env X=1`,
   `timeout 10`, `uv run`, `npx`, `pnpm exec`…
 
+- `codemode` rows, as the model's only tool makes every call a script, read
+  like bash rows: `Codemode(<bash-titles' name for the script>)`, or its
+  first line for a script making a single call; the script in JavaScript
+  colors once opened; and under "⎿" the calls it made, each as its own row
+  would title it (`Read(a.txt)`, `Update(a.txt)`, `Bash(<the command's
+  title>)`), failed ones marked, before the script's output. The calls come
+  from Pi's `tool_execution_*` events, and from the result's `nestedCalls`
+  in a resumed session. Pi's "Script completed" header and its JSON list of
+  the calls are left out. bash-changes adds the files the script changed.
+
 ### Not exact
 
 - The lexer reads commands for display; it is not a shell parser. Some
@@ -126,5 +136,6 @@ Read when a session starts.
 - `output.ts`: output kinds (JSON, diff, log) and their colors
 - `overlay.ts`, `ansi.ts`: recoloring lines another renderer drew
 - `command.ts`: the `cd` shortening and folding
+- `codemode.ts`: a script's calls, how they are named, and where they go
 - `tests/`: `node --test 'tests/*.test.ts'` (Node 24 runs the TypeScript
   directly; no Pi install needed)

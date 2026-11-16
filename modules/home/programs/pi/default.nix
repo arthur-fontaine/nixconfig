@@ -289,7 +289,8 @@ let
     input-autocomplete = ./extensions/input-autocomplete;
     # The files each bash call or codemode script changed, as a diff under its output.
     bash-changes = ./extensions/bash-changes;
-    # Bash commands and their output in the theme's colours, embedded code included.
+    # Bash commands and their output in the theme's colours, embedded code included, and
+    # codemode scripts drawn like them, with the calls each made.
     syntax-highlighting = ./extensions/syntax-highlighting;
     # Tool rows as Claude Code draws them: "⦁ Bash(ls)", then "⎿ " and the output.
     compact-tools = piCompactTools;
