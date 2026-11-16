@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { request, SCRIPT_SYSTEM, scriptKey, scriptRequest, TitleCache, titleOf, wantsScriptTitle, wantsTitle } from "../titles.ts";
+import { request, SCRIPT_SYSTEM, scriptKey, scriptRequest, TitleCache, titleOf, wantsScriptTitle, wantsTitle, RunningScripts } from "../titles.ts";
 
 test("short, simple commands are read as they are", () => {
 	assert.equal(wantsTitle("ls -la"), false);
@@ -84,4 +84,18 @@ test("a reply that talks about the task is cleaned up or dropped", () => {
 	assert.equal(titleOf("Your task here is only to name the command for a person scanning activity: one short phrase"), null);
 	assert.equal(titleOf("Lists root disk space, then builds the Darwin system configuration"), "Lists root disk space, then builds the Darwin system configuration");
 	assert.equal(titleOf("Checks the version: prints node -v"), "Checks the version: prints node -v");
+});
+
+test("a script with one tools call that makes a second at runtime (a loop) is named then, once", () => {
+	const running = new RunningScripts();
+	const loop = "for (const f of ['a', 'b', 'c'])\n  await tools.bash({ command: `wc -l ${f}` });";
+	running.started("toolu_1", loop);
+	assert.equal(running.called("toolu_1/1"), undefined);
+	assert.equal(running.called("toolu_1/2"), loop);
+	assert.equal(running.called("toolu_1/3"), undefined);
+	// A script already named for its calls isn't asked again; a top-level call isn't a script's.
+	running.started("toolu_2", "await tools.read({ path: 'a' });\nawait tools.read({ path: 'b' });");
+	running.called("toolu_2/1");
+	assert.equal(running.called("toolu_2/2"), undefined);
+	assert.equal(running.called("toolu_3"), undefined);
 });

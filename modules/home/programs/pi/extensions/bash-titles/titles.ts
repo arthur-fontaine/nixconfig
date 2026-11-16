@@ -50,6 +50,28 @@ export function wantsScriptTitle(code: string): boolean {
 	return text.split("\n").filter((line) => line.trim()).length > 3;
 }
 
+/**
+ * The scripts running now, by call id, to name the one whose code looked like one call (a loop's
+ * single `tools.bash(`) once it makes a second: `called` hands its code back then, once.
+ */
+export class RunningScripts {
+	readonly #scripts = new Map<string, { code: string; calls: number }>();
+	readonly max: number;
+	constructor(max = 100) {
+		this.max = max;
+	}
+	started(id: string, code: string): void {
+		this.#scripts.set(id, { code, calls: 0 });
+		while (this.#scripts.size > this.max) this.#scripts.delete(this.#scripts.keys().next().value!);
+	}
+	// Pi gives a script's calls the ids `<script id>/<n>`, and their own calls `<script id>/<n>/<m>`.
+	called(callId: string): string | undefined {
+		const script = this.#scripts.get(callId.split("/", 1)[0]!);
+		if (!callId.includes("/") || !script) return undefined;
+		return ++script.calls === 2 && !wantsScriptTitle(script.code) ? script.code : undefined;
+	}
+}
+
 export const scriptRequest = (code: string) => request(code.replace(OPTIONS_LINE, ""));
 
 // Kept apart from a command with the same text.

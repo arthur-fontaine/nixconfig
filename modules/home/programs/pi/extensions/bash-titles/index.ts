@@ -9,7 +9,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { request, SCRIPT_SYSTEM, scriptKey, scriptRequest, SYSTEM, TitleCache, titleOf, wantsScriptTitle, wantsTitle } from "./titles.ts";
+import { request, RunningScripts, SCRIPT_SYSTEM, scriptKey, scriptRequest, SYSTEM, TitleCache, titleOf, wantsScriptTitle, wantsTitle } from "./titles.ts";
 
 const PROVIDER = "claude-code";
 const MODEL = "claude-haiku-5-5";
@@ -55,6 +55,7 @@ export default function (pi: ExtensionAPI) {
 	type Item = { key: string; text: string; script: boolean };
 	const queue: Item[] = [];
 	const asked = new Set<string>();
+	const running = new RunningScripts();
 	let busy = false;
 	let pausedUntil = 0;
 	let ctx: ExtensionContext | undefined;
@@ -132,10 +133,15 @@ export default function (pi: ExtensionAPI) {
 		log(`tool_call ${event.toolName}`);
 		if (event.toolName === "codemode") {
 			const code = (event.input as { code?: unknown }).code;
-			if (typeof code !== "string" || !wantsScriptTitle(code) || cache.get(scriptKey(code))) return;
+			if (typeof code !== "string") return;
+			running.started(event.toolCallId, code);
+			if (!wantsScriptTitle(code) || cache.get(scriptKey(code))) return;
 			enqueue({ key: scriptKey(code), text: code, script: true });
 			return;
 		}
+		// A script that looked like one call (a loop) and makes several is named too.
+		const looped = running.called(event.toolCallId);
+		if (looped && !cache.get(scriptKey(looped))) enqueue({ key: scriptKey(looped), text: looped, script: true });
 		// A codemode script's bash calls too: they are listed under its row by their titles.
 		if (event.toolName !== "bash") return;
 		const command = (event.input as { command?: unknown }).command;
