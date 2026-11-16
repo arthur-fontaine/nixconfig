@@ -156,7 +156,8 @@ let
   # titles leave the folding of long commands to syntax-highlighting, and an opened command
   # ends with Pi's "Took 4.2s", which auto-mode's note goes beside. With
   # patches/pi-compact-tools-claude-codemode.patch, a codemode row reads `Codemode(…)` with the
-  # script's first line, or the title syntax-highlighting hands it. Loaded
+  # title syntax-highlighting hands it, and its output sits apart from the calls listed above
+  # it: dim behind its own "│", two lines cut to the row, then "… +N lines", then the stats. Loaded
   # from the extensions folder, not as a package, for its place among them (see
   # extensionsManifest). Its imports are Pi's own packages; its theme isn't loaded.
   piCompactTools = pkgs.runCommand "pi-compact-tools-0.16.7-patched" { } ''

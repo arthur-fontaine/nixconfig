@@ -2,10 +2,25 @@ Claude-style codemode rows: `Codemode(…)` rather than `codemode(code: "…")`,
 argument the script's first line below an options line. syntax-highlighting hands a
 script's title in its place and draws the whole script once the row opens.
 
-diff -ru a/extensions/compact-tools-claude.ts b/extensions/compact-tools-claude.ts
+Under the calls syntax-highlighting lists at the rail, the script's output is set apart:
+dim behind a "│" of its own, two lines each cut to the row (minified code wrapped over
+three), then "… +N lines", then the "Done in … · bash 1" line. A row's completion line
+now always follows the output's hidden count rather than sitting between output and count.
+
+diff --git a/extensions/compact-tools-claude.ts b/extensions/compact-tools-claude.ts
+index ecccb64..843d324 100644
 --- a/extensions/compact-tools-claude.ts
 +++ b/extensions/compact-tools-claude.ts
-@@ -44,6 +44,7 @@
+@@ -17,6 +17,8 @@ import type { ToolArgs } from "./compact-tools-types.ts";
+ export const CLAUDE_OUTPUT_ROWS = 3;
+ /** While Bash runs, Claude follows the last four output rows rather than the head. */
+ export const CLAUDE_RUNNING_OUTPUT_ROWS = 4;
++/** Lines of a codemode script's output under its calls: a glance, the calls tell what it did. */
++export const CLAUDE_SCRIPT_OUTPUT_LINES = 2;
+ /** Rows Claude Code shows of what a write put in the file. */
+ export const CLAUDE_WRITE_ROWS = 10;
+ /** Lines of context Claude Code keeps around each change in an edit's diff. */
+@@ -44,6 +46,7 @@ const LABELS: Readonly<Record<string, string>> = {
  	powershell: "PowerShell",
  	edit: "Update",
  	write: "Write",
@@ -13,7 +28,7 @@ diff -ru a/extensions/compact-tools-claude.ts b/extensions/compact-tools-claude.
  };
  
  export function claudeLabel(name: string): string {
-@@ -104,6 +105,9 @@
+@@ -104,6 +107,9 @@ export function claudeArgument(name: string, args: ToolArgs, expanded = false):
  		if (validLine(args.offset)) return `${path} · from line ${start}`;
  	}
  	if (name === "read" || name === "edit" || name === "write") return path;
@@ -23,3 +38,136 @@ diff -ru a/extensions/compact-tools-claude.ts b/extensions/compact-tools-claude.
  	return formatArguments(args);
  }
  
+diff --git a/extensions/compact-tools-layout.ts b/extensions/compact-tools-layout.ts
+index 0e49017..cc91e6e 100644
+--- a/extensions/compact-tools-layout.ts
++++ b/extensions/compact-tools-layout.ts
+@@ -244,8 +244,48 @@ export function claudeRows(
+ 		const hidden = maxRows !== undefined && rows.length > maxRows + (fromEnd ? 0 : 1) ? rows.length - maxRows : 0;
+ 		if (hidden && maxRows !== undefined) rows = fromEnd ? rows.slice(-maxRows) : rows.slice(0, maxRows);
+ 		const rendered = rows.map((row, index) => `${index === 0 ? firstPrefix : continuationPrefix}${row}`);
+-		if (completion) rendered.push(...completion.render(width));
+ 		if (hidden) rendered.push((rendered.length ? continuationPrefix : firstPrefix) + truncateToWidth(more(hidden), available, "…"));
++		// After the hidden count, which belongs to the output: the row's last word on it.
++		if (completion) rendered.push(...completion.render(width));
++		return rendered;
++	}, () => completion?.invalidate());
++}
++
++export interface ScriptOutputPaint {
++	/** The mark before each output row, setting it apart from the calls listed above it. */
++	gutter: string;
++	line(text: string): string;
++	more(hidden: number): string;
++	empty: string;
++}
++
++/**
++ * A codemode script's output under the calls it made: each row behind `paint.gutter`, at most
++ * `maxLines` lines each cut to the row (a minified line would wrap over several), then how many
++ * lines are left, then `completion`. Opened (`maxLines` undefined): every line, wrapped.
++ */
++export function claudeScriptOutput(
++	output: string,
++	firstPrefix: string,
++	continuationPrefix: string,
++	maxLines: number | undefined,
++	paint: ScriptOutputPaint,
++	completion?: Component,
++): Component {
++	const normalized = normalizeLineEndings(output).trimEnd();
++	const lines = !normalized || normalized === "(no output)" ? [] : normalized.split("\n");
++	const prefixWidth = Math.max(visibleWidth(firstPrefix), visibleWidth(continuationPrefix));
++	return new CachedComponent((width) => {
++		const room = Math.max(1, width - prefixWidth - visibleWidth(paint.gutter));
++		const shown = maxLines === undefined ? lines : lines.slice(0, maxLines);
++		const rows = maxLines === undefined
++			? shown.flatMap((line) => hardWrapTextWithAnsi(line, room).map((row) => paint.gutter + paint.line(row.trimEnd())))
++			: shown.map((line) => paint.gutter + paint.line(truncateToWidth(line.replace(/\t/g, "   "), room, "…")));
++		const hidden = lines.length - shown.length;
++		if (hidden > 0) rows.push(paint.gutter + truncateToWidth(paint.more(hidden), room, "…"));
++		if (!lines.length) rows.push(paint.empty);
++		const rendered = rows.map((row, index) => `${index === 0 ? firstPrefix : continuationPrefix}${row}`);
++		if (completion) rendered.push(...completion.render(width));
+ 		return rendered;
+ 	}, () => completion?.invalidate());
+ }
+diff --git a/extensions/compact-tools.ts b/extensions/compact-tools.ts
+index 7275c9c..782013c 100644
+--- a/extensions/compact-tools.ts
++++ b/extensions/compact-tools.ts
+@@ -33,6 +33,7 @@ import {
+ import {
+ 	CachedContainer,
+ 	claudeRows,
++	claudeScriptOutput,
+ 	LiveCallContainer,
+ 	limitComponentLines,
+ 	prefixedSentence,
+@@ -47,7 +48,7 @@ import {
+ 	styleMultiline,
+ 	WithinWidth,
+ } from "./compact-tools-layout.ts";
+-import { CLAUDE_DIFF_CONTEXT_LINES, CLAUDE_INDENT, CLAUDE_OUTPUT_ROWS, CLAUDE_RESULT_PREFIX, CLAUDE_RUNNING_OUTPUT_ROWS, CLAUDE_TITLE_INDENT, CLAUDE_WRITE_ROWS, claudeFailure, claudeOutcome, claudeTitle } from "./compact-tools-claude.ts";
++import { CLAUDE_DIFF_CONTEXT_LINES, CLAUDE_INDENT, CLAUDE_OUTPUT_ROWS, CLAUDE_RESULT_PREFIX, CLAUDE_RUNNING_OUTPUT_ROWS, CLAUDE_SCRIPT_OUTPUT_LINES, CLAUDE_TITLE_INDENT, CLAUDE_WRITE_ROWS, claudeFailure, claudeOutcome, claudeTitle } from "./compact-tools-claude.ts";
+ import { CODEX_BULLET, CODEX_INDENT } from "./compact-tools-codex.ts";
+ import { NestedCallSummaries } from "./compact-tools-nested.ts";
+ import { renderCodexCall, renderCodexResult } from "./compact-tools-codex-rows.ts";
+@@ -416,7 +417,16 @@ function renderClaudeResult(
+ 		? formatResultLineSummary(name, args, result, output) ?? "Done"
+ 		: claudeOutcome(name, args, result, output, (value) => theme.bold(value));
+ 	if (outcome !== undefined) container.addChild(line(theme.fg("toolOutput", outcome)));
+-	else container.addChild(claudeOutput(output, expanded, theme, false, rowKind(name) === "shell" ? "(No output)" : "(No content)", chrome(CLAUDE_RESULT_PREFIX), completion));
++	// A script's output, below the calls syntax-highlighting lists under the rail: dim behind a
++	// rail of its own, as the toolOutput of those calls' arguments would otherwise run into it.
++	else if (name === "codemode") {
++		container.addChild(claudeScriptOutput(output, chrome(CLAUDE_RESULT_PREFIX), CLAUDE_INDENT, expanded ? undefined : CLAUDE_SCRIPT_OUTPUT_LINES, {
++			gutter: chrome("│ "),
++			line: (row) => theme.fg("dim", row),
++			more: (hidden) => claudeMoreLines(theme, hidden),
++			empty: chrome("(No output)"),
++		}, completion));
++	} else container.addChild(claudeOutput(output, expanded, theme, false, rowKind(name) === "shell" ? "(No output)" : "(No content)", chrome(CLAUDE_RESULT_PREFIX), completion));
+ 	if (body) container.addChild(body);
+ 	if (completion && outcome !== undefined) container.addChild(completion);
+ 	return container;
+diff --git a/tests/claude-codemode.test.ts b/tests/claude-codemode.test.ts
+new file mode 100644
+index 0000000..44d3a9d
+--- /dev/null
++++ b/tests/claude-codemode.test.ts
+@@ -0,0 +1,34 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { claudeRows, claudeScriptOutput } from "../extensions/compact-tools-layout.ts";
++
++const paint = { gutter: "│ ", line: (row: string) => row, more: (hidden: number) => `… +${hidden} lines`, empty: "(No output)" };
++const plain = (row: string) => row.replace(/\x1b\[[\d;]*m/g, "");
++const done = { render: () => ["      Done in 1.8s (9 lines) · bash 1"], invalidate() {} };
++
++test("a script's output: two lines each cut to the row, then how many more, then the stats", () => {
++	const minified = "function f0(a,b){return a._isRetryableError(b)}".repeat(20);
++	const output = ["core/agent-session.js", minified, "871-        return false;", "a", "b"].join("\n");
++	const rows = claudeScriptOutput(output, "   ⎿  ", "      ", 2, paint, done).render(60).map(plain);
++	assert.deepEqual(rows, [
++		"   ⎿  │ core/agent-session.js",
++		`      │ ${minified.slice(0, 51)}…`,
++		"      │ … +3 lines",
++		"      Done in 1.8s (9 lines) · bash 1",
++	]);
++	assert.ok(rows.every((row) => row.length <= 60));
++});
++
++test("opened, a script's output is whole, wrapped behind its rail", () => {
++	const rows = claudeScriptOutput("x".repeat(70) + "\nend", "   ⎿  ", "      ", undefined, paint).render(60);
++	assert.deepEqual(rows, ["   ⎿  │ " + "x".repeat(52), "      │ " + "x".repeat(18), "      │ end"]);
++});
++
++test("a script without output says so on the rail", () => {
++	assert.deepEqual(claudeScriptOutput("", "   ⎿  ", "      ", 2, paint, done).render(60), ["   ⎿  (No output)", "      Done in 1.8s (9 lines) · bash 1"]);
++});
++
++test("a row's completion comes after the output's hidden count, not between output and count", () => {
++	const rows = claudeRows(["1", "2", "3", "4", "5"], "   ⎿  ", "      ", 3, (hidden) => `… +${hidden} lines`, done).render(60);
++	assert.deepEqual(rows.slice(-2), ["      … +2 lines", "      Done in 1.8s (9 lines) · bash 1"]);
++});
