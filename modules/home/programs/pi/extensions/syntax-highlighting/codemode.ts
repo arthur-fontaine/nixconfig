@@ -185,11 +185,18 @@ export function forInner<T extends Result>(result: T): T {
 		// compact-tools heads a failed row with its first line: the error, not the output before it.
 		const failure = content.findIndex((item) => {
 			const text = (item as { text?: unknown }).text;
-			return typeof text === "string" && text.startsWith(SCRIPT_ERROR);
+			return typeof text === "string" && (text.startsWith(SCRIPT_ERROR) || text.includes(`\n${SCRIPT_ERROR}`));
 		});
 		if (failure >= 0) {
-			const item = content[failure] as { text: string };
-			content = [{ ...item, text: item.text.slice(SCRIPT_ERROR.length) }, ...content.filter((_, i) => i !== failure)];
+			const item = content[failure] as { type: string; text: string };
+			const at = item.text.startsWith(SCRIPT_ERROR) ? 0 : item.text.indexOf(`\n${SCRIPT_ERROR}`) + 1;
+			const before = item.text.slice(0, at).replace(/\n$/, "");
+			content = [
+				{ ...item, text: item.text.slice(at + SCRIPT_ERROR.length) },
+				...content.slice(0, failure),
+				...(before ? [{ ...item, text: before }] : []),
+				...content.slice(failure + 1),
+			];
 		}
 		contents.set(result.content, content);
 	}

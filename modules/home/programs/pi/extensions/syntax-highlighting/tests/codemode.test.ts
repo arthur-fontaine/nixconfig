@@ -104,15 +104,18 @@ test("saved results count toward the bound on scripts kept", () => {
 });
 
 test("a failed script leads with its error, which compact-tools makes the row's headline", () => {
+	// As Pi saves it: the output and the error in one text.
 	const inner = forInner({
 		content: [
 			{ type: "text", text: "Script failed\nWall time 3.1 seconds\nOutput:\n" },
-			{ type: "text", text: "partial" },
-			{ type: "text", text: "Script error:\nError: boom on purpose\n    at <anonymous> (codemode.js:4:11)" },
+			{ type: "text", text: "partial\n<console_output>\nno file\n</console_output>\nScript error:\nError: boom on purpose\n    at <anonymous> (codemode.js:4:11)" },
 		],
 	});
 	assert.deepEqual(inner.content, [
 		{ type: "text", text: "Error: boom on purpose\n    at <anonymous> (codemode.js:4:11)" },
-		{ type: "text", text: "partial" },
+		{ type: "text", text: "partial\n<console_output>\nno file\n</console_output>" },
 	]);
+	// Without output, the error alone.
+	const alone = forInner({ content: [{ type: "text", text: "Script failed\nWall time 0.1 seconds\nOutput:\n" }, { type: "text", text: "Script error:\nSyntaxError: x" }] });
+	assert.deepEqual(alone.content, [{ type: "text", text: "SyntaxError: x" }]);
 });
