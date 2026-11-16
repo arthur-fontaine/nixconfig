@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { callLines, forInner, NestedCalls, scriptLines, scriptTitle, underRail } from "../codemode.ts";
+import { callLines, forInner, NestedCalls, previewOf, scriptLines, scriptTitle, underRail } from "../codemode.ts";
 import { fakePaint, markup, stripAnsi } from "./paint.ts";
 
 const paint = fakePaint();
@@ -142,4 +142,39 @@ test("a script bash-titles doesn't name is titled by its calls, never by a varia
 	assert.equal(scriptTitle("return 6 * 7;", [], noTitle, "/repo"), undefined);
 	// While it is being written, nothing of it: its first line would flash by.
 	assert.equal(scriptTitle("const S = '/opt';", [], noTitle, "/repo", false), "…");
+});
+
+test("a bash call previews its output under it, unless the script's own output shows those lines", () => {
+	const calls = new NestedCalls();
+	calls.start("toolu_1", "toolu_1/1", "bash", { command: "wc -l a.txt" });
+	calls.start("toolu_1", "toolu_1/2", "bash", { command: "npm test" });
+	calls.end("toolu_1", "toolu_1/1", false, "12 a.txt");
+	calls.end("toolu_1", "toolu_1/2", false, "> test\n" + "x".repeat(900) + "\nok 1\nok 2\n");
+	// The script returned only the count: the test run gets its preview, cut and counted.
+	const lines = callLines(paint, calls.of("toolu_1"), noTitle, "/repo", false, "12 a.txt").map(stripAnsi);
+	assert.deepEqual(lines, ["Bash(wc -l a.txt)", "Bash(npm test)", "  │ > test", `  │ ${"x".repeat(300)}`, "  │ … +2 lines"]);
+	// A call printing nothing has no preview; one whose output the script returned neither.
+	assert.equal(previewOf("(no output)"), undefined);
+	assert.equal(previewOf("\n \n"), undefined);
+});
+
+test("the previews are kept in the result's details, restored from them, and hidden from the inner renderers", () => {
+	const live = new NestedCalls();
+	live.start("toolu_1", "toolu_1/1", "bash", { command: "npm test" });
+	live.end("toolu_1", "toolu_1/1", false, "ok 1\nok 2\nok 3");
+	const callOutputs = live.outputs("toolu_1");
+	assert.deepEqual(callOutputs, { "toolu_1/1": { lines: ["ok 1", "ok 2"], total: 3 } });
+	const saved = {
+		role: "toolResult",
+		toolCallId: "toolu_1",
+		nestedCalls: { calls: [{ id: "toolu_1/1", name: "bash", arguments: { command: "npm test" }, status: "ok" }] },
+		details: { callOutputs, fileChanges: [] },
+	};
+	const resumed = new NestedCalls();
+	assert.equal(resumed.restore(saved), true);
+	assert.deepEqual(callLines(paint, resumed.of("toolu_1"), noTitle, "/repo", false).map(stripAnsi), ["Bash(npm test)", "  │ ok 1", "  │ ok 2", "  │ … +1 line"]);
+	const result = { content: [{ type: "text", text: "done" }], details: saved.details };
+	const inner = forInner(result);
+	assert.deepEqual(inner.details, { fileChanges: [] });
+	assert.equal(forInner(result).details, inner.details);
 });

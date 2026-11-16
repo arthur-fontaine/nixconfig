@@ -252,11 +252,13 @@ export default function (pi: ExtensionAPI) {
 		(inner: RenderResult): RenderResult =>
 		(result, options, theme, context) => {
 			remember(context);
-			const component = inner(forInner(result), options, theme, innerContext(context));
+			const own = forInner(result);
+			const component = inner(own, options, theme, innerContext(context));
 			const calls = nested.of(context.toolCallId);
 			if (!calls.length) return new Recolored(component, theme, (drawn) => drawn);
+			const output = outputText(own as ToolResult);
 			return new Recolored(component, theme, (drawn, width) => {
-				const lines = callLines(paintFor(theme), calls, (command) => titles.get(command), context.cwd, options.expanded);
+				const lines = callLines(paintFor(theme), calls, (command) => titles.get(command), context.cwd, options.expanded, output);
 				const room = Math.max(10, width - CLAUDE_BODY.length);
 				return underRail(drawn, lines.map((line) => truncateToWidth(line, room)), CLAUDE_BODY).map((line) => truncateToWidth(line, width));
 			});
@@ -274,6 +276,17 @@ export default function (pi: ExtensionAPI) {
 		const text = (event.result as { content?: { type?: string; text?: string }[] } | undefined)?.content?.find((block) => block.type === "text")?.text;
 		nested.end(event.parentToolCallId, event.toolCallId, event.isError, text);
 		rows.redraw(event.parentToolCallId.split("/", 1)[0]!);
+	});
+
+	// The calls' previews go in the script's result details, as bash-changes' diff does: a resumed
+	// session draws the row as it was. Details aren't sent to the model.
+	pi.on("tool_result", async (event) => {
+		if (event.toolName !== "codemode") return;
+		const outputs = nested.outputs(event.toolCallId);
+		if (!Object.keys(outputs).length) return;
+		const details = event.details as unknown;
+		if (details !== undefined && (typeof details !== "object" || details === null || Array.isArray(details))) return;
+		return { details: { ...(details as object | undefined), callOutputs: outputs } };
 	});
 
 	const restore = (entries: readonly unknown[]) => {

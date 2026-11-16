@@ -13,6 +13,13 @@ export interface NestedCall {
 	command?: string;
 	status: Status;
 	error?: string;
+	/** A bash call's first output lines and how many it printed, for its preview under the call. */
+	output?: Preview;
+}
+
+export interface Preview {
+	lines: string[];
+	total: number;
 }
 
 // Claude Code's names, as compact-tools gives the rows of these tools.
@@ -32,6 +39,22 @@ const MAX_TARGET = 200;
 // Above any command bash-titles names; a longer one is shown by its first line only.
 const MAX_COMMAND = 20_000;
 export const COLLAPSED_CALLS = 5;
+// A bash call's preview, as kept in the session: its first lines, each cut, for this many calls.
+export const PREVIEW_LINES = 2;
+const PREVIEW_CHARS = 300;
+const MAX_PREVIEWS = 32;
+
+/** What a command printed, as its preview keeps it; nothing for no output. */
+export function previewOf(text: string): Preview | undefined {
+	const lines = stripAnsi(text).replace(/\r\n?/g, "\n").trimEnd().split("\n");
+	if (!lines.join("").trim() || (lines.length === 1 && lines[0] === "(no output)")) return undefined;
+	return { lines: lines.slice(0, PREVIEW_LINES).map((line) => line.slice(0, PREVIEW_CHARS).trimEnd()), total: lines.length };
+}
+
+function isPreview(value: unknown): value is Preview {
+	const preview = value as Preview | undefined;
+	return Array.isArray(preview?.lines) && preview.lines.every((line) => typeof line === "string") && typeof preview.total === "number";
+}
 
 function firstLine(text: string): string {
 	const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
@@ -70,16 +93,26 @@ export class NestedCalls {
 		entry.calls.set(id, { name, ...targetOf(name, args), status: "running" });
 	}
 
-	end(parent: string, id: string, isError: boolean, errorText?: string): void {
+	end(parent: string, id: string, isError: boolean, text?: string): void {
 		const call = this.#parents.get(rootOf(parent))?.calls.get(id);
 		if (!call) return;
 		call.status = isError ? "error" : "ok";
-		if (isError && errorText) call.error = firstLine(errorText);
+		if (isError && text) call.error = firstLine(text);
+		if (!isError && text && call.name === "bash") call.output = previewOf(text);
 	}
 
-	/** A saved result's `nestedCalls` (`{ calls: [{ id, name, arguments?, status }] }`), unless the calls were seen live. */
+	/** The previews of a script's calls by call id, for its result's details: a resumed row shows them too. */
+	outputs(id: string): Record<string, Preview> {
+		const entries = [...(this.#parents.get(id)?.calls ?? [])].filter(([, call]) => call.output).slice(0, MAX_PREVIEWS);
+		return Object.fromEntries(entries.map(([callId, call]) => [callId, call.output!]));
+	}
+
+	/**
+	 * A saved result's `nestedCalls` (`{ calls: [{ id, name, arguments?, status }] }`) and the previews
+	 * kept in its details (`callOutputs`), unless the calls were seen live.
+	 */
 	restore(message: unknown): boolean {
-		const value = message as { role?: unknown; toolCallId?: unknown; nestedCalls?: { calls?: unknown } } | undefined;
+		const value = message as { role?: unknown; toolCallId?: unknown; nestedCalls?: { calls?: unknown }; details?: { callOutputs?: unknown } } | undefined;
 		if (value?.role !== "toolResult" || typeof value.toolCallId !== "string" || !Array.isArray(value.nestedCalls?.calls)) return false;
 		if (this.#parents.get(value.toolCallId)?.live) return false;
 		const calls = new Map<string, NestedCall>();
@@ -87,7 +120,8 @@ export class NestedCalls {
 			const call = item as { id?: unknown; name?: unknown; arguments?: unknown; status?: unknown };
 			if (typeof call.id !== "string" || typeof call.name !== "string") continue;
 			const status: Status = call.status === "ok" || call.status === "error" ? call.status : "cancelled";
-			calls.set(call.id, { name: call.name, ...targetOf(call.name, call.arguments), status });
+			const output = (value.details?.callOutputs as Record<string, unknown> | undefined)?.[call.id];
+			calls.set(call.id, { name: call.name, ...targetOf(call.name, call.arguments), status, ...(isPreview(output) && { output }) });
 		}
 		this.#parents.set(value.toolCallId, { live: false, calls });
 		this.#trim();
@@ -146,18 +180,39 @@ export function scriptTitle(code: string, calls: readonly NestedCall[], title: (
 	return CALLS_TOOLS.test(code) ? "…" : undefined;
 }
 
-/** The list under a script's row: every call once opened, with the reason a call failed; the first few otherwise. */
+/**
+ * A bash call's output under it, as its own row would preview it, behind the "│" the script's
+ * output has: none when the script's output (`shown`) already has those lines.
+ */
+function previewLines(paint: Paint, preview: Preview | undefined, shown: string): string[] {
+	if (!preview) return [];
+	const plain = stripAnsi(shown);
+	if (preview.lines.every((line) => !line.trim() || plain.includes(line.trim()))) return [];
+	const rail = `  ${paint.fg("dim", "│ ")}`;
+	const hidden = preview.total - preview.lines.length;
+	return [
+		...preview.lines.map((line) => rail + paint.fg("dim", line)),
+		...(hidden > 0 ? [rail + paint.fg("dim", `… +${hidden} line${hidden === 1 ? "" : "s"}`)] : []),
+	];
+}
+
+/**
+ * The list under a script's row: every call once opened, with the reason a call failed; the first
+ * few otherwise. A bash call previews its output, unless the script's own `output` shows it.
+ */
 export function callLines(
 	paint: Paint,
 	calls: readonly NestedCall[],
 	title: (command: string) => string | undefined,
 	cwd: string,
 	expanded: boolean,
+	output = "",
 ): string[] {
 	const shown = expanded || calls.length <= COLLAPSED_CALLS ? calls : calls.slice(0, COLLAPSED_CALLS - 1);
 	const lines = shown.flatMap((call) => [
 		callLine(paint, call, title, cwd),
 		...(expanded && call.error ? [`  ${paint.fg("error", call.error)}`] : []),
+		...previewLines(paint, call.output, output),
 	]);
 	const hidden = calls.length - shown.length;
 	if (hidden > 0) lines.push(paint.fg("muted", `… +${hidden} more call${hidden === 1 ? "" : "s"} (ctrl+o to expand)`));
@@ -195,7 +250,7 @@ type Result = { content: readonly unknown[]; details?: unknown };
 /**
  * The result as the renderers after this one get it: without Pi's "Script completed / Wall time /
  * Output:" header, which Pi's own codemode row leaves out too, its error first when it failed, and
- * without the calls in `details`,
+ * without the calls and their previews in `details`,
  * which Pi's row would list again as JSON once opened. The same input gives the same objects, so
  * compact-tools still reuses what it drew.
  */
@@ -223,9 +278,12 @@ export function forInner<T extends Result>(result: T): T {
 		contents.set(result.content, content);
 	}
 	let own = result.details;
-	if (typeof own === "object" && own !== null && "calls" in own) {
-		own = details.get(own) ?? { ...own, calls: [] };
-		details.set(result.details as object, own);
+	if (typeof own === "object" && own !== null && ("calls" in own || "callOutputs" in own)) {
+		if (!details.has(own)) {
+			const { callOutputs: _previews, ...rest } = own as Record<string, unknown>;
+			details.set(own, "calls" in rest ? { ...rest, calls: [] } : rest);
+		}
+		own = details.get(own);
 	}
 	return { ...result, content, details: own };
 }
