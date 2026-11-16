@@ -110,7 +110,7 @@ index 0000000..f2f32c3
 +  return match[2] ? `${family} ${match[2].replace("-", ".")}` : family;
 +}
 diff --git a/src/claude-cli.ts b/src/claude-cli.ts
-index 869c1d1..21384f1 100644
+index 869c1d1..a8010ef 100644
 --- a/src/claude-cli.ts
 +++ b/src/claude-cli.ts
 @@ -10,6 +10,7 @@ import { registerSessionResourceCleanup } from "@earendil-works/pi-ai";
@@ -130,7 +130,52 @@ index 869c1d1..21384f1 100644
    onEvent?: (event: AnthropicStreamEvent) => void;
    /** Pi session whose linear continuation may reuse a warm Claude process. */
    sessionId?: string;
-@@ -930,9 +933,33 @@ function frameHistoryHash(frames: NativeFrame[]): string {
+@@ -797,13 +800,27 @@ function turnKey(content: unknown): string | undefined {
+  * earlier reasoning and planned from scratch at every tool round. The thinking blocks Pi kept
+  * are put back at the head of their turn; the request asks the API to keep all thinking.
+  */
++// Each thinking block goes back where it was among the turn's other blocks: thinking can come
++// after an advisor call (thinking, server_tool_use, advisor_tool_result, thinking, text), and
++// the API refuses a turn whose thinking moved. Claude Code's own copies of the other blocks
++// are kept. If they don't line up with Pi's, all the thinking goes first, as before.
++function withThinkingInPlace(original: Block[], replayed: Block[]): Block[] {
++  const others = original.filter((block) => !isThinking(block));
++  const thinking = structuredClone(original.filter(isThinking));
++  const aligned =
++    others.length === replayed.length && others.every((block, index) => block?.type === replayed[index]?.type);
++  if (!aligned) return [...thinking, ...replayed];
++  let next = 0;
++  return original.map((block) => (isThinking(block) ? thinking.shift()! : replayed[next++]!));
++}
++
+ export function restoreThinking(body: Buffer, frames: NativeFrame[]): Buffer {
+-  const kept = new Map<string, unknown[]>();
++  const kept = new Map<string, Block[]>();
+   for (const frame of frames) {
+     if (frame.type !== "assistant") continue;
+-    const thinking = (frame.message.content as Block[]).filter(isThinking);
+-    const key = turnKey(frame.message.content);
+-    if (thinking.length && key) kept.set(key, thinking);
++    const content = frame.message.content as Block[];
++    const key = turnKey(content);
++    if (content.some(isThinking) && key) kept.set(key, content);
+   }
+   if (!kept.size) return body;
+   const payload = JSON.parse(body.toString("utf8")) as { messages?: NativeRequestMessage[] };
+@@ -811,9 +828,9 @@ export function restoreThinking(body: Buffer, frames: NativeFrame[]): Buffer {
+   for (const message of payload.messages ?? []) {
+     if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
+     if ((message.content as Block[]).some(isThinking)) continue;
+-    const thinking = kept.get(turnKey(message.content) ?? "");
+-    if (!thinking) continue;
+-    message.content = [...structuredClone(thinking), ...message.content];
++    const original = kept.get(turnKey(message.content) ?? "");
++    if (!original) continue;
++    message.content = withThinkingInPlace(original, message.content as Block[]);
+     changed = true;
+   }
+   return changed ? Buffer.from(JSON.stringify(payload)) : body;
+@@ -930,9 +947,33 @@ function frameHistoryHash(frames: NativeFrame[]): string {
    );
  }
  
@@ -164,7 +209,7 @@ index 869c1d1..21384f1 100644
    return {
      env,
      timeoutMs,
-@@ -945,7 +972,8 @@ function launchPlan(input: RunClaudeInput): ClaudeLaunchPlan {
+@@ -945,7 +986,8 @@ function launchPlan(input: RunClaudeInput): ClaudeLaunchPlan {
        model: input.model,
        systemPrompt: input.systemPrompt,
        timeoutMs,
@@ -174,7 +219,7 @@ index 869c1d1..21384f1 100644
      }),
    };
  }
-@@ -989,11 +1017,11 @@ class ClaudeProcess {
+@@ -989,11 +1031,11 @@ class ClaudeProcess {
      try {
        await Promise.all([
          writeFile(toolsPath, JSON.stringify(input.manifest), "utf8"),
@@ -188,7 +233,7 @@ index 869c1d1..21384f1 100644
        const env = { ...plan.env, ANTHROPIC_BASE_URL: await relay.start() };
        const mcp = {
          mcpServers: {
-@@ -1138,7 +1166,8 @@ class ClaudeProcess {
+@@ -1138,7 +1180,8 @@ class ClaudeProcess {
      this.relay.beginTurn(
        deliver,
        (body) => {
@@ -373,4 +418,33 @@ index 0000000..8d669a8
 +  assert.equal(advisorLabel("fable"), "Fable");
 +  assert.equal(advisorLabel("claude-fable-5-2"), "Fable 5.2");
 +  assert.equal(advisorLabel("claude-opus-5"), "Opus 5");
++});
+diff --git a/tests/claude-cli.test.ts b/tests/claude-cli.test.ts
+index ba90666..bda0c8a 100644
+--- a/tests/claude-cli.test.ts
++++ b/tests/claude-cli.test.ts
+@@ -429,3 +429,24 @@ test("puts back the signed thinking Claude Code leaves out of replayed turns", (
+   // Nothing to restore: the very same body.
+   assert.equal(restoreThinking(body, frames.slice(0, 1)), body);
+ });
++
++test("thinking after an advisor call goes back where it was, not to the head of the turn", () => {
++  const first = { type: "thinking", thinking: "", signature: "a" };
++  const later = { type: "thinking", thinking: "", signature: "b" };
++  const use = { type: "server_tool_use", id: "s1", name: "advisor", input: {} };
++  const result = { type: "advisor_tool_result", tool_use_id: "s1", content: { type: "advisor_result", text: "x" } };
++  const text = { type: "text", text: "DONE" };
++  const frames = [
++    { type: "user" as const, message: { role: "user" as const, content: [{ type: "text", text: "go" }] } },
++    { type: "assistant" as const, message: { role: "assistant" as const, content: [first, use, result, later, text] } },
++  ];
++  const body = Buffer.from(JSON.stringify({
++    messages: [
++      { role: "user", content: [{ type: "text", text: "go" }] },
++      { role: "assistant", content: [use, result, text] },
++      { role: "user", content: [{ type: "text", text: "again" }] },
++    ],
++  }));
++  const out = JSON.parse(restoreThinking(body, frames).toString("utf8"));
++  assert.deepEqual(out.messages[1].content, [first, use, result, later, text]);
 +});
