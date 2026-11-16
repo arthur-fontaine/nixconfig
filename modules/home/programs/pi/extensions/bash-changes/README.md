@@ -1,6 +1,6 @@
 # bash-changes for Pi
 
-Records which files a `bash` call changed, so edits made by `sed -i`,
+Records which files a `bash` call or a `codemode` script changed, so edits made by `sed -i`,
 formatters, code generators or scripts show up like the edit and write tools'
 changes: a summary and a diff under the call.
 
@@ -149,9 +149,11 @@ harness's tool decorators and feed.
 
 ### Not exact
 
-- Calls made by other tools (codemode scripts, `ctx.executeTool`) are not
-  snapshotted: their results never reach the transcript, so there is nowhere
-  to show the changes.
+- A `codemode` script is snapshotted like a bash call: what its bash, edit
+  and write calls changed shows under the script's row, in one diff, since
+  those calls have no row of their own. Calls other tools make
+  (`ctx.executeTool`) aren't, and in a folder outside a git repository a
+  script's edits show no diff at all.
 - Changes are attributed to the window between the two snapshots, not to the
   process: edits from your editor, other Pi processes or tools running at the
   same time land in it (`overlapping` flags the last). Edits outside the

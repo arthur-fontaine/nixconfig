@@ -1,5 +1,5 @@
-// bash-changes for Pi: records which files each bash call changed in its git
-// repository and shows their diff under the call, like edit and write do.
+// bash-changes for Pi: records which files each bash call or codemode script changed in its
+// git repository and shows their diff under the call, like edit and write do.
 import { type ExtensionAPI, getLanguageFromPath, highlightCode, keyHint, type Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { bashChanges } from "./extension.ts";

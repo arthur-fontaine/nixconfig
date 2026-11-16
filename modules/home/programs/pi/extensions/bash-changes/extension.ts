@@ -25,6 +25,7 @@ export function settingsFrom(raw: unknown): Settings {
 // and reports the real end on this channel; Pi runs no tool_result for it.
 const BACKGROUND_CHANNEL = "background-tools";
 const ENTRY_TYPE = "bash-changes";
+const WATCHED = new Set(["bash", "codemode"]);
 
 type Pending = { window: Promise<Window | undefined>; overlapping: boolean; detached: boolean };
 type BackgroundEvent = { type?: string; toolCallId?: string };
@@ -47,7 +48,7 @@ export function bashChanges(pi: ExtensionAPI, deps: RenderDeps, snapshots = new 
 	let settings = settingsFrom(undefined);
 	// Calls of any tool between their start and end: changes they make land in an open window too.
 	const running = new Set<string>();
-	// Bash calls snapshotted before running and not yet closed.
+	// Bash calls and scripts snapshotted before running and not yet closed.
 	const pending = new Map<string, Pending>();
 	// Changes of detached calls, saved as session entries since their result can't carry them.
 	let saved = new Map<string, FileChanges>();
@@ -93,7 +94,8 @@ export function bashChanges(pi: ExtensionAPI, deps: RenderDeps, snapshots = new 
 
 	pi.on("tool_execution_start", async (event) => {
 		running.add(event.toolCallId);
-		for (const [id, call] of pending) if (id !== event.toolCallId) call.overlapping = true;
+		// A script's own calls (`<its id>/<n>`) are what its window is for.
+		for (const [id, call] of pending) if (id !== event.toolCallId && !event.toolCallId.startsWith(`${id}/`)) call.overlapping = true;
 	});
 
 	pi.on("tool_execution_end", async (event) => {
@@ -105,8 +107,8 @@ export function bashChanges(pi: ExtensionAPI, deps: RenderDeps, snapshots = new 
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
-		// Nested calls (codemode scripts) never reach the transcript, so nothing would show their changes.
-		if (event.toolName !== "bash" || event.parentToolCallId || !settings.detect) return;
+		// A script's calls have no row: their changes go on the script's, whose window spans them.
+		if (!WATCHED.has(event.toolName) || event.parentToolCallId || !settings.detect) return;
 		const overlapping = [...running, ...pending.keys()].some((id) => id !== event.toolCallId);
 		// A tool_call handler that throws blocks the call; a failed snapshot only loses the record.
 		const window = snapshots.open(ctx.cwd).catch(() => undefined);
@@ -152,7 +154,7 @@ export function bashChanges(pi: ExtensionAPI, deps: RenderDeps, snapshots = new 
 			if (pending.get(toolCallId)?.detached) repaints.set(toolCallId, repaint);
 		},
 	};
-	pi.registerToolRenderer((toolName, next) => (toolName === "bash" ? withChanges(next(), source, deps) : next()));
+	pi.registerToolRenderer((toolName, next) => (WATCHED.has(toolName) ? withChanges(next(), source, deps) : next()));
 }
 
 // Draws the inner renderers' result (Pi's bash, or another extension's) and adds the changes below it.

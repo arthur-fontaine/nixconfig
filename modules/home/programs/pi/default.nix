@@ -287,7 +287,7 @@ let
     background-tools = ./extensions/background-tools;
     # Claude Haiku suggests how to continue the prompt, as dim text Tab inserts.
     input-autocomplete = ./extensions/input-autocomplete;
-    # The files each bash call changed, as a diff under its output.
+    # The files each bash call or codemode script changed, as a diff under its output.
     bash-changes = ./extensions/bash-changes;
     # Bash commands and their output in the theme's colours, embedded code included.
     syntax-highlighting = ./extensions/syntax-highlighting;

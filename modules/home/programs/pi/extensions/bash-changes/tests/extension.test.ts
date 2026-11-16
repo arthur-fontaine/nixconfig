@@ -151,6 +151,32 @@ test("a call detached by background-tools is recorded when it ends, as a session
 	assert.equal(lines.render(80)[1], "Changed a.txt, b.txt · Added 2 lines, removed 1 line");
 });
 
+test("a codemode script's changes, its nested edits and commands included, go on the script's result", async () => {
+	const { root, emit, copies, resolvers } = await setup();
+	await emit("tool_execution_start", { toolCallId: "cm", toolName: "codemode", args: {} });
+	await emit("tool_call", { toolCallId: "cm", toolName: "codemode", input: { code: "…" } }, root);
+	// Its own calls run while its window is open; they are not other tools changing the tree.
+	await emit("tool_execution_start", { toolCallId: "cm/1", parentToolCallId: "cm", toolName: "edit", args: {} });
+	await emit("tool_call", { toolCallId: "cm/1", parentToolCallId: "cm", toolName: "edit", input: {} }, root);
+	await writeFile(join(root, "a.txt"), "edited\n");
+	await emit("tool_execution_end", { toolCallId: "cm/1", parentToolCallId: "cm", toolName: "edit", result: {}, isError: false });
+	await emit("tool_execution_start", { toolCallId: "cm/2", parentToolCallId: "cm", toolName: "bash", args: {} });
+	await emit("tool_call", { toolCallId: "cm/2", parentToolCallId: "cm", toolName: "bash", input: { command: "x" } }, root);
+	await writeFile(join(root, "made.txt"), "new\n");
+	await emit("tool_execution_end", { toolCallId: "cm/2", parentToolCallId: "cm", toolName: "bash", result: {}, isError: false });
+	const result = (await emit("tool_result", { toolCallId: "cm", toolName: "codemode", input: {}, content: [], details: { calls: [] }, isError: false })) as {
+		details: { calls: unknown[]; fileChanges: FileChanges };
+	};
+	await emit("tool_execution_end", { toolCallId: "cm", toolName: "codemode", result: {}, isError: false });
+	assert.deepEqual(result.details.calls, []);
+	assert.deepEqual(result.details.fileChanges.files.map((file) => file.path), ["a.txt", "made.txt"]);
+	assert.equal(result.details.fileChanges.overlapping, undefined);
+	assert.deepEqual(await copies(), []);
+	const other = { renderResult: () => ({ render: () => [], invalidate() {} }) };
+	assert.notEqual(resolvers[0]!("codemode", () => other), other);
+	await emit("session_shutdown", {});
+});
+
 test("skips nested calls, other tools, repositories' outsides, foreign details and detection turned off", async () => {
 	const { root, emit, copies } = await setup();
 	await emit("tool_call", { toolCallId: "p/1", parentToolCallId: "p", toolName: "bash", input: {} }, root);
@@ -176,7 +202,7 @@ test("session shutdown removes the temp directory, pending windows included", as
 	assert.deepEqual(await readdir(tmp), []);
 });
 
-test("registers a renderer for bash only, and reads its settings from settings.json", () => {
+test("registers a renderer for bash and codemode only, and reads its settings from settings.json", () => {
 	const { pi, resolvers } = fakePi();
 	bashChanges(pi, deps);
 	const other = { renderResult: () => ({ render: () => [], invalidate() {} }) };
