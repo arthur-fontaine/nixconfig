@@ -4,11 +4,13 @@ script's title in its place and draws the whole script once the row opens.
 
 Under the calls syntax-highlighting lists at the rail, the script's output is set apart:
 dim behind a "│" of its own, two lines each cut to the row (minified code wrapped over
-three), then "… +N lines", then the "Done in … · bash 1" line. A row's completion line
-now always follows the output's hidden count rather than sitting between output and count.
+three), then "… +N lines", then the "Done in … · bash 1" line. Opened, the output is
+whole and wrapped behind the same "│", stats after it, rather than the tool's own result
+view. A row's completion line now always follows the output's hidden count rather than
+sitting between output and count.
 
 diff --git a/extensions/compact-tools-claude.ts b/extensions/compact-tools-claude.ts
-index ecccb64..843d324 100644
+index ecccb64..0211505 100644
 --- a/extensions/compact-tools-claude.ts
 +++ b/extensions/compact-tools-claude.ts
 @@ -17,6 +17,8 @@ import type { ToolArgs } from "./compact-tools-types.ts";
@@ -38,6 +40,22 @@ index ecccb64..843d324 100644
  	return formatArguments(args);
  }
  
+@@ -201,6 +207,15 @@ function countOf(summary: string | undefined): number {
+  * marks the counts and paths Claude Code sets in bold. Tools whose output is the
+  * result, commands and custom tools, return undefined and show it instead.
+  */
++/**
++ * Whether an opened row shows its tool's own result view. A codemode script's isn't: its output
++ * is drawn whole behind the rail it has collapsed (claudeScriptOutput), stats after it, so opening
++ * the row doesn't change how its parts read.
++ */
++export function claudeAuthorBody(name: string, expanded: boolean, hasAuthor: boolean): boolean {
++	return hasAuthor && expanded && name !== "codemode";
++}
++
+ export function claudeOutcome(
+ 	name: string,
+ 	args: ToolArgs,
 diff --git a/extensions/compact-tools-layout.ts b/extensions/compact-tools-layout.ts
 index 0e49017..cc91e6e 100644
 --- a/extensions/compact-tools-layout.ts
@@ -93,7 +111,7 @@ index 0e49017..cc91e6e 100644
  	}, () => completion?.invalidate());
  }
 diff --git a/extensions/compact-tools.ts b/extensions/compact-tools.ts
-index 7275c9c..782013c 100644
+index 7275c9c..40b2fa0 100644
 --- a/extensions/compact-tools.ts
 +++ b/extensions/compact-tools.ts
 @@ -33,6 +33,7 @@ import {
@@ -109,11 +127,21 @@ index 7275c9c..782013c 100644
  	WithinWidth,
  } from "./compact-tools-layout.ts";
 -import { CLAUDE_DIFF_CONTEXT_LINES, CLAUDE_INDENT, CLAUDE_OUTPUT_ROWS, CLAUDE_RESULT_PREFIX, CLAUDE_RUNNING_OUTPUT_ROWS, CLAUDE_TITLE_INDENT, CLAUDE_WRITE_ROWS, claudeFailure, claudeOutcome, claudeTitle } from "./compact-tools-claude.ts";
-+import { CLAUDE_DIFF_CONTEXT_LINES, CLAUDE_INDENT, CLAUDE_OUTPUT_ROWS, CLAUDE_RESULT_PREFIX, CLAUDE_RUNNING_OUTPUT_ROWS, CLAUDE_SCRIPT_OUTPUT_LINES, CLAUDE_TITLE_INDENT, CLAUDE_WRITE_ROWS, claudeFailure, claudeOutcome, claudeTitle } from "./compact-tools-claude.ts";
++import { CLAUDE_DIFF_CONTEXT_LINES, CLAUDE_INDENT, CLAUDE_OUTPUT_ROWS, CLAUDE_RESULT_PREFIX, CLAUDE_RUNNING_OUTPUT_ROWS, CLAUDE_SCRIPT_OUTPUT_LINES, CLAUDE_TITLE_INDENT, CLAUDE_WRITE_ROWS, claudeAuthorBody, claudeFailure, claudeOutcome, claudeTitle } from "./compact-tools-claude.ts";
  import { CODEX_BULLET, CODEX_INDENT } from "./compact-tools-codex.ts";
  import { NestedCallSummaries } from "./compact-tools-nested.ts";
  import { renderCodexCall, renderCodexResult } from "./compact-tools-codex-rows.ts";
-@@ -416,7 +417,16 @@ function renderClaudeResult(
+@@ -351,7 +352,8 @@ function claudeBody(
+ 	theme: Theme,
+ 	author: AuthorResultRenderer | undefined,
+ ): Component | undefined {
+-	if (author && expanded) return renderRowBody(name, args, result, output, true, theme, false, author, CLAUDE_INDENT);
++	if (claudeAuthorBody(name, expanded, author !== undefined)) return renderRowBody(name, args, result, output, true, theme, false, author, CLAUDE_INDENT);
++	if (name === "codemode") return undefined;
+ 	const path = pathArgument(args);
+ 	if (name === "edit") {
+ 		return renderCodeDiff(getEditPatch(result), getEditDiff(result), path, theme,
+@@ -416,7 +418,16 @@ function renderClaudeResult(
  		? formatResultLineSummary(name, args, result, output) ?? "Done"
  		: claudeOutcome(name, args, result, output, (value) => theme.bold(value));
  	if (outcome !== undefined) container.addChild(line(theme.fg("toolOutput", outcome)));
@@ -133,12 +161,13 @@ index 7275c9c..782013c 100644
  	return container;
 diff --git a/tests/claude-codemode.test.ts b/tests/claude-codemode.test.ts
 new file mode 100644
-index 0000000..44d3a9d
+index 0000000..32892d1
 --- /dev/null
 +++ b/tests/claude-codemode.test.ts
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,41 @@
 +import assert from "node:assert/strict";
 +import test from "node:test";
++import { claudeAuthorBody } from "../extensions/compact-tools-claude.ts";
 +import { claudeRows, claudeScriptOutput } from "../extensions/compact-tools-layout.ts";
 +
 +const paint = { gutter: "│ ", line: (row: string) => row, more: (hidden: number) => `… +${hidden} lines`, empty: "(No output)" };
@@ -170,4 +199,10 @@ index 0000000..44d3a9d
 +test("a row's completion comes after the output's hidden count, not between output and count", () => {
 +	const rows = claudeRows(["1", "2", "3", "4", "5"], "   ⎿  ", "      ", 3, (hidden) => `… +${hidden} lines`, done).render(60);
 +	assert.deepEqual(rows.slice(-2), ["      … +2 lines", "      Done in 1.8s (9 lines) · bash 1"]);
++});
++
++test("an opened codemode row keeps its own layout rather than the tool's result view", () => {
++	assert.equal(claudeAuthorBody("codemode", true, true), false);
++	assert.equal(claudeAuthorBody("web_search", true, true), true);
++	assert.equal(claudeAuthorBody("web_search", false, true), false);
 +});
