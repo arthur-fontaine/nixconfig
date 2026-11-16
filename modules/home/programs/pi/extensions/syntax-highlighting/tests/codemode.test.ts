@@ -138,6 +138,10 @@ test("a script bash-titles doesn't name is titled by its calls, never by a varia
 	read.start("toolu_2", "toolu_2/2", "edit", { path: "config.ts" });
 	read.start("toolu_2", "toolu_2/3", "read", { path: "b.ts" });
 	assert.equal(scriptTitle("x", read.of("toolu_2"), noTitle, "/repo"), "Read, Update");
+	// Resumed without its arguments (over Pi's 8 KB), a call still names its tool.
+	const dropped = new NestedCalls();
+	dropped.restore({ role: "toolResult", toolCallId: "toolu_3", nestedCalls: { calls: [{ id: "toolu_3/1", name: "bash", argumentsBytes: 9000, status: "ok" }] } });
+	assert.equal(scriptTitle(code, dropped.of("toolu_3"), noTitle, "/repo"), "Bash");
 	// A script calling no tool is short and plain: its line is the title.
 	assert.equal(scriptTitle("return 6 * 7;", [], noTitle, "/repo"), undefined);
 	// While it is being written, nothing of it: its first line would flash by.

@@ -160,8 +160,9 @@ export function callLine(paint: Paint, call: NestedCall, title: (command: string
 
 /** A call as its row names it, in plain words: a command's title, or the tool and what it named. */
 function callText(call: NestedCall, title: (command: string) => string | undefined, cwd: string): string {
-	if (call.command !== undefined) return title(call.command) ?? firstLine(displayedCommand(normalizeCommand(call.command), cwd));
 	const label = LABELS[call.name] ?? call.name;
+	// A resumed call can have lost its arguments (Pi drops those over 8 KB): its tool, then.
+	if (call.command !== undefined) return title(call.command) ?? (firstLine(displayedCommand(normalizeCommand(call.command), cwd)) || label);
 	return call.target ? `${label} ${call.target}` : label;
 }
 
