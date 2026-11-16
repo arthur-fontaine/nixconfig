@@ -117,7 +117,8 @@ let
   # rather than Pi calling Fable on its own: the advisor's reads then count as Claude Code's do,
   # toward the plan's weekly limit, while Fable's own weekly limit and usage credits stayed at 0
   # (tests/advisor-check, tests/claude-usage). Pi's tools no longer replace Claude Code's
-  # advisor tool, and the advisor's blocks are replayed on later turns. No runtime dependencies:
+  # advisor tool, and the advisor's blocks are replayed on later turns. Its transcript row opens
+  # like a tool row (click, Ctrl+O) on the advice, or says it's encrypted (Fable's is). No runtime dependencies:
   # its imports are Pi's own packages.
   piClaudeCode = pkgs.runCommand "pi-claude-code-70abb65-patched" { } ''
     cp -r ${
