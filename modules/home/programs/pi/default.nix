@@ -113,9 +113,11 @@ let
   # trimmed the newest one and the next request replayed it untrimmed, which voided the prompt
   # cache from it on (from the system prompt on, past the API's 20-block lookback). With
   # patches/pi-claude-code-advisor.patch, the advisorModel setting reaches Claude Code, which
-  # attaches Anthropic's server-side advisor tool to the main request, as it does for itself:
-  # a separate Fable call would bill to Fable's usage, not the plan's. Pi's tools no longer
-  # replace Claude Code's advisor tool, and the advisor's blocks are replayed. No runtime dependencies:
+  # attaches Anthropic's server-side advisor tool to the main request, as it does for itself,
+  # rather than Pi calling Fable on its own: the advisor's reads then count as Claude Code's do,
+  # toward the plan's weekly limit, while Fable's own weekly limit and usage credits stayed at 0
+  # (tests/advisor-check, tests/claude-usage). Pi's tools no longer replace Claude Code's
+  # advisor tool, and the advisor's blocks are replayed on later turns. No runtime dependencies:
   # its imports are Pi's own packages.
   piClaudeCode = pkgs.runCommand "pi-claude-code-70abb65-patched" { } ''
     cp -r ${
