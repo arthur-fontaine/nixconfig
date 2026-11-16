@@ -130,7 +130,8 @@ let
   # it (the upstream's reset, or Claude Code hanging up) where it only said "relay failure Error",
   # and reads "stream was interrupted", which Pi's retry pattern knows: Pi retries the turn rather
   # than ending it. A cut turn returns no message, so its half-sent tool call never runs; a
-  # 4xx, refusal or usage limit keeps the wording it had. No runtime dependencies:
+  # 4xx, refusal or usage limit stays as retryable as it was. A relay whose Claude Code hung up
+  # mid-stream stops there rather than waiting forever for it to drain. No runtime dependencies:
   # its imports are Pi's own packages.
   piClaudeCode = pkgs.runCommand "pi-claude-code-70abb65-patched" { } ''
     cp -r ${

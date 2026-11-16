@@ -19,7 +19,7 @@ index a8010ef..f347798 100644
          message = this.relay.capture.message;
          sawMessageStop = true;
 diff --git a/src/turn-relay.ts b/src/turn-relay.ts
-index 08ec86e..34ee875 100644
+index 08ec86e..a58f260 100644
 --- a/src/turn-relay.ts
 +++ b/src/turn-relay.ts
 @@ -95,6 +95,12 @@ export class AnthropicCapture {
@@ -79,12 +79,21 @@ index 08ec86e..34ee875 100644
        if (!response.headersSent) response.writeHead(this.cancelled ? 499 : 502).end();
        else response.destroy();
      } finally {
+@@ -335,6 +349,8 @@ export class TurnRelay {
+   }
+ 
+   private async waitForDrain(response: http.ServerResponse): Promise<void> {
++    // A response Claude Code already closed never emits "close" again: waiting would hang the turn.
++    if (response.destroyed) throw new Error("Claude Code disconnected from the turn relay");
+     await new Promise<void>((resolve, reject) => {
+       const cleanup = () => {
+         response.off("drain", onDrain);
 diff --git a/tests/relay-failure.test.ts b/tests/relay-failure.test.ts
 new file mode 100644
-index 0000000..5db600a
+index 0000000..7770d1a
 --- /dev/null
 +++ b/tests/relay-failure.test.ts
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,269 @@
 +import assert from "node:assert/strict";
 +import * as http from "node:http";
 +import { chmod, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
@@ -303,6 +312,39 @@ index 0000000..5db600a
 +  );
 +  assert.match(message, /^Claude Code billing:/);
 +  assert.equal(isRetryableAssistantError(failedMessage(message)), false);
++});
++
++test("the relay names Claude Code when it hangs up mid-stream", async () => {
++  let streaming: NodeJS.Timeout | undefined;
++  const upstream = http.createServer(async (request, response) => {
++    for await (const _chunk of request);
++    response.writeHead(200, { "content-type": "text/event-stream" });
++    response.write(sse(partialEvents.slice(0, 1)));
++    const ping = sse([{ type: "ping" }]).repeat(2_000);
++    streaming = setInterval(() => response.write(ping), 10);
++    response.on("close", () => clearInterval(streaming));
++  });
++  const port = await listen(upstream);
++  const relay = new TurnRelay("http://127.0.0.1:" + port, 5_000);
++  try {
++    const baseUrl = await relay.start();
++    const controller = new AbortController();
++    const response = await fetch(baseUrl + "/v1/messages", { method: "POST", body: "{}", signal: controller.signal });
++    const reader = response.body!.getReader();
++    await reader.read();
++    controller.abort();
++    const settled = await Promise.race([
++      relay.settled().then(() => true),
++      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2_000)),
++    ]);
++    assert.equal(settled, true, "relay still pumping after Claude Code hung up");
++    assert.match(relay.failure ?? "", /^Claude Code .*disconnected/);
++  } finally {
++    clearInterval(streaming);
++    await relay.close();
++    upstream.closeAllConnections();
++    await new Promise<void>((resolve) => upstream.close(() => resolve()));
++  }
 +});
 +
 +test("the relay records why a 200 stream broke", async () => {
