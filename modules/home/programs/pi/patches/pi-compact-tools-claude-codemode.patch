@@ -1,0 +1,25 @@
+Claude-style codemode rows: `Codemode(…)` rather than `codemode(code: "…")`, its
+argument the script's first line below an options line. syntax-highlighting hands a
+script's title in its place and draws the whole script once the row opens.
+
+diff -ru a/extensions/compact-tools-claude.ts b/extensions/compact-tools-claude.ts
+--- a/extensions/compact-tools-claude.ts
++++ b/extensions/compact-tools-claude.ts
+@@ -44,6 +44,7 @@
+ 	powershell: "PowerShell",
+ 	edit: "Update",
+ 	write: "Write",
++	codemode: "Codemode",
+ };
+ 
+ export function claudeLabel(name: string): string {
+@@ -104,6 +105,9 @@
+ 		if (validLine(args.offset)) return `${path} · from line ${start}`;
+ 	}
+ 	if (name === "read" || name === "edit" || name === "write") return path;
++	// Its first line, below an options line: syntax-highlighting hands a script's title in its
++	// place, and draws the whole script under the row once opened.
++	if (name === "codemode" && typeof args.code === "string") return oneLine(args.code.replace(/^\/\/ @options:.*\n/, ""));
+ 	return formatArguments(args);
+ }
+ 
