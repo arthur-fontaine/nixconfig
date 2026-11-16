@@ -16,8 +16,9 @@ manual) and Pi's `intercom`. Herdr's own view is `herdr-app ls`.
 - **Steer or answer** with `hc send <t> "…"`; a chat waiting for a choice takes the
   answer the same way. `hc wait <t>` instead of polling.
 - **Start a worker** only for a task that stands on its own:
-  `hc run --bg --name <short-name> --cwd "$PWD" pi "<task>. Don't start other agents.
-  Report with hc send $HC_TERMINAL_ID when done or stuck."` It shows under you in
+  `hc run --bg --name <short-name> --cwd "$PWD" pi --approve "<task>. Don't start other
+  agents. Report with hc send $HC_TERMINAL_ID when done or stuck."` (`--approve`: a
+  worker must never wait at Pi's trust prompt for the person). It shows under you in
   Herdr's sidebar. Pi only.
 - **Feedback loop**: before workers start, make sure a check exists that an agent runs
   alone and that fails until the task is done: the cheapest that catches it, on the real

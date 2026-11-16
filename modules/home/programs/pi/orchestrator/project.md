@@ -17,8 +17,10 @@ manual) and Pi's `intercom`. Herdr's own view is `herdr-app ls`.
   what you need: short reads, never whole histories.
 - **Steer or answer** with `hc send <t> "…"`; `hc wait <t>` instead of polling.
 - **Start a worker** only for a task that stands on its own, in the worktree it
-  concerns: `hc run --bg --name <short-name> --cwd <worktree> pi "<task>. Don't start
-  other agents. Report with hc send $HC_TERMINAL_ID when done or stuck."` Work that
+  concerns: `hc run --bg --name <short-name> --cwd <worktree> pi --approve "<task>. Don't
+  start other agents. Report with hc send $HC_TERMINAL_ID when done or stuck."`
+  `--approve` because a new worktree is a folder Pi has never trusted: a repo with `.pi/`
+  files would stop the worker at the trust prompt until the person clicks it. Work that
   needs its own branch gets a new worktree first, beside the others (`git worktree add`
   from origin's default branch). Pi only.
 - **Feedback loop**: before workers start, make sure a check exists that an agent runs
