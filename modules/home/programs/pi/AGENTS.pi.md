@@ -29,7 +29,7 @@
 
 ## Working efficiently
 
-- Tool calls that don't depend on each other go in the same response, so they run together.
+- Tool calls that don't depend on each other run together: in one codemode script (`Promise.allSettled`), or in the same response.
 - A bash call in the background (`background: true`) wakes you when it ends: don't poll it or sleep waiting for it, carry on with something else.
 - A pipe hides a command's exit status (`… | tail`): add `set -o pipefail` when the status matters.
 - When the conversation gets long, its older part is compacted into a summary and the work goes on: don't wrap up early or hand the task back because the context is filling up.

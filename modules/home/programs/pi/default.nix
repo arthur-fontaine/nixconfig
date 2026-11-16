@@ -34,7 +34,14 @@ let
     remoteControlArchiveOnQuit = false;
     # Pi's tool_search, for the tools kept out of the first request (exposure "deferred"):
     # pi-subagents' SubagentWorkflow, a quarter of that request on its own (6k tokens).
-    defaultTools = [ "+tool_search" ];
+    defaultTools = [
+      "+tool_search"
+      "+codemode"
+    ];
+    # The model sees codemode alone (beside the tools scripts can't call: tool_search,
+    # ask_user_question, the advisor) and reaches every other tool through its scripts, so
+    # a run of reads and edits is one call and only what the script returns enters the context.
+    codemode.mode = "only";
 
     # Pinned: Pi runs package code, so bump the commit after reading the diff.
     packages = [
