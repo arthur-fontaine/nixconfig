@@ -1,9 +1,9 @@
 diff --git a/src/advisor-row.ts b/src/advisor-row.ts
 new file mode 100644
-index 0000000..a5634a2
+index 0000000..72b46df
 --- /dev/null
 +++ b/src/advisor-row.ts
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,69 @@
 +/**
 + * The advisor's row in Pi's transcript: one line, as Claude Code's, which opens on what the
 + * advisor said as a tool row opens on its output: a click toggles this row, Ctrl+O (Pi's
@@ -30,9 +30,10 @@ index 0000000..a5634a2
 +const fade = (theme: Paint, line: string) =>
 +  (globalThis as Record<symbol, SharedFade | undefined>)[Symbol.for("pi-extension-tool-rows-faint")]?.line(theme, line) ?? line;
 +
-+// compact-tools' Claude-style rail under a row's title, and the column its text continues at.
-+const RAIL = "   ⎿  ";
-+const BODY = "      ";
++// compact-tools' Claude-style rail under a row's title ("   ⎿  ", its margin column included),
++// and the column its text continues at: here after Pi's pad.
++const RAIL = "  ⎿  ";
++const BODY = "     ";
 +
 +/**
 + * The row's lines at a width: the title, and when open the advice under "⎿", indented. `pad` is
@@ -428,10 +429,10 @@ index b516241..6e6dd2b 100644
        });
 diff --git a/tests/advisor.test.ts b/tests/advisor.test.ts
 new file mode 100644
-index 0000000..fc98db4
+index 0000000..16f0c6a
 --- /dev/null
 +++ b/tests/advisor.test.ts
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,141 @@
 +import assert from "node:assert/strict";
 +import test from "node:test";
 +import {
@@ -513,27 +514,28 @@ index 0000000..fc98db4
 +test("the advisor row is one line, and opens on the advice or on why there is none", () => {
 +  const readable = { label: "Opus 4.8", outcome: { kind: "reviewed" as const, text: "Use a WaitGroup.\nDrain first." } };
 +  assert.deepEqual(advisorLines(readable, false, plain), [" ⦁ Advisor (Opus 4.8) reviewed the conversation"]);
-+  assert.deepEqual(advisorLines(readable, true, plain), [" ⦁ Advisor (Opus 4.8) reviewed the conversation", "    ⎿  Use a WaitGroup.", "       Drain first."]);
++  assert.deepEqual(advisorLines(readable, true, plain), [" ⦁ Advisor (Opus 4.8) reviewed the conversation", "   ⎿  Use a WaitGroup.", "      Drain first."]);
 +  // Long advice wraps under its indent.
 +  const long = { label: "Opus 4.8", outcome: { kind: "reviewed" as const, text: "word ".repeat(30).trim() } };
 +  const wrapped = advisorLines(long, true, plain, 40).slice(1);
-+  assert.ok(wrapped.length > 1 && wrapped.every((line, i) => line.startsWith(i ? "       " : "    ⎿  ") && line.length <= 40));
++  assert.ok(wrapped.length > 1 && wrapped.every((line, i) => line.startsWith(i ? "      " : "   ⎿  ") && line.length <= 40));
 +  const encrypted = { label: "Fable", outcome: { kind: "reviewed" as const, encrypted: true as const } };
-+  assert.deepEqual(advisorLines(encrypted, true, plain), [" ⦁ Advisor (Fable) reviewed the conversation", "    ⎿  Guidance is encrypted, not readable"]);
++  assert.deepEqual(advisorLines(encrypted, true, plain), [" ⦁ Advisor (Fable) reviewed the conversation", "   ⎿  Guidance is encrypted, not readable"]);
 +  const failed = { label: "Fable", outcome: { kind: "unavailable" as const, errorCode: "overloaded" } };
 +  assert.deepEqual(advisorLines(failed, true, plain), [" ⦁ Advisor unavailable (overloaded)"]);
 +});
 +
 +test("the advisor row lines up with tool rows: Pi's outputPad, then compact-tools' dot and rail", () => {
-+  // compact-tools' Claude rows, as Pi pads them: " ⦁ Bash(ls)", "    ⎿  a.txt", "       b.txt".
-+  const toolRow = [" ⦁ Bash(ls)", "    ⎿  a.txt", "       b.txt"];
++  // compact-tools' Claude rows as the terminal shows them (Pi's outputPad 1): its rail's
++  // prefixes hold the pad column already.
++  const toolRow = [" ⦁ Bash(ls)", "   ⎿  a.txt", "      b.txt"];
 +  const row = advisorLines({ label: "Opus", outcome: { kind: "reviewed", text: "a.txt\nb.txt" } }, true, plain);
 +  assert.equal(row[0]!.indexOf("⦁"), toolRow[0]!.indexOf("⦁"));
 +  assert.equal(row[1]!.indexOf("⎿"), toolRow[1]!.indexOf("⎿"));
 +  assert.equal(row[1]!.indexOf("a.txt"), toolRow[1]!.indexOf("a.txt"));
 +  assert.equal(row[2]!.indexOf("b.txt"), toolRow[2]!.indexOf("b.txt"));
 +  // outputPad 0: no column before the dot, as Pi draws the other rows then.
-+  assert.deepEqual(advisorLines({ label: "Opus", outcome: { kind: "reviewed", text: "x" } }, true, plain, 80, 0), ["⦁ Advisor (Opus) reviewed the conversation", "   ⎿  x"]);
++  assert.deepEqual(advisorLines({ label: "Opus", outcome: { kind: "reviewed", text: "x" } }, true, plain, 80, 0), ["⦁ Advisor (Opus) reviewed the conversation", "  ⎿  x"]);
 +});
 +
 +test("a click toggles the row, and Ctrl+O sets it again", () => {
@@ -558,7 +560,7 @@ index 0000000..fc98db4
 +  // compact-tools' " ⦁ Bash(ls)": a success dot, the name bold in toolTitle, the rest in toolOutput.
 +  assert.deepEqual(advisorLines(reviewed, true, tags), [
 +    " <success>⦁</> <toolTitle><b>Advisor</b></><toolOutput> (Fable) reviewed the conversation</>",
-+    " <dim>   ⎿  </><toolOutput>Drain first.</>",
++    " <dim>  ⎿  </><toolOutput>Drain first.</>",
 +  ]);
 +  const failed = { label: "Fable", outcome: { kind: "unavailable" as const, errorCode: "overloaded" } };
 +  assert.equal(advisorLines(failed, false, tags)[0], " <error>⦁</> <toolTitle><b>Advisor</b></><toolOutput> unavailable (overloaded)</>");
