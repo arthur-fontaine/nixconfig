@@ -59,7 +59,7 @@ export function fileChangesOf(value: unknown): FileChanges | undefined {
 	return changes as FileChanges;
 }
 
-// Each bash call's recorded changes, by tool call id: from the tool results and
+// Each bash call's or codemode script's recorded changes, by tool call id: from the tool results and
 // from bash-changes' entries for calls detached to the background.
 export function bashChanges(entries: readonly Entry[]): Map<string, FileChanges> {
 	const out = new Map<string, FileChanges>();
@@ -122,7 +122,8 @@ export function changes(path: readonly Entry[], cwd: string, sources: Sources): 
 					const file = (block.arguments as { path?: unknown } | undefined)?.path;
 					if (typeof file === "string") out.push({ index, path: resolvePath(file, cwd), before: UNKNOWN, after: UNKNOWN });
 				}
-				const bash = block.name === "bash" ? sources.bash.get(block.id) : undefined;
+				// A codemode script's record covers its bash calls too, which have no backups.
+				const bash = block.name === "bash" || block.name === "codemode" ? sources.bash.get(block.id) : undefined;
 				if (bash) out.push(...treeChanges(bash, index));
 			}
 		}

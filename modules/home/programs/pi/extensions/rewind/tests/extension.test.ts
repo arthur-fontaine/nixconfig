@@ -113,6 +113,28 @@ test("rewinding code and conversation, then restoring the last prompt, round-tri
 	await pi.pending;
 });
 
+test("a codemode script's edits and its commands' changes rewind together", async () => {
+	const { pi, root } = await setup();
+	pi.prompt("script");
+	pi.reply([{ type: "toolCall", id: "cm", name: "codemode", arguments: { code: "…" } }]);
+	const before = snapshot(root);
+	await pi.emit("tool_call", { toolName: "edit", toolCallId: "cm/1", parentToolCallId: "cm", input: { path: "a.txt" } });
+	await writeFile(join(root, "a.txt"), "two\n");
+	await pi.emit("tool_result", { toolName: "edit", toolCallId: "cm/1", parentToolCallId: "cm", input: { path: "a.txt" }, isError: false });
+	// A bash call of the script: only bash-changes' record on the script's result knows of it.
+	await writeFile(join(root, "b.txt"), "b\n");
+	const after = snapshot(root);
+	pi.result("cm", { fileChanges: { root, before, after, files: [{ path: "a.txt", status: "M" }, { path: "b.txt", status: "A" }], patch: "" } });
+	pi.reply([{ type: "text", text: "done" }]);
+	await pi.open("rewind");
+	await pi.press(UP, ENTER);
+	assert.match(pi.text(), /The code will be restored \+1 -2 in a\.txt and b\.txt\./);
+	await pi.press(ENTER);
+	await pi.pending;
+	assert.equal(await readFile(join(root, "a.txt"), "utf8"), "one\n");
+	assert.equal(existsSync(join(root, "b.txt")), false);
+});
+
 test("restoring the first of two rewound prompts stops after its turn", async () => {
 	const { pi, root, session } = await twoPrompts();
 	await pi.open("rewind");
