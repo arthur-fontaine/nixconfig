@@ -60,6 +60,9 @@ test("a codemode script gets a title when it makes several calls or does more th
 	assert.equal(wantsScriptTitle('const a = await tools.read({ path: "a" });\nawait tools.edit({ path: "a", edits: [] });'), true);
 	assert.equal(wantsScriptTitle("const xs = [1, 2, 3];\nconst ys = xs.map((x) => x * 2);\nconst s = ys.reduce((a, b) => a + b);\nreturn s;"), true);
 	assert.equal(wantsScriptTitle("return 1 + 1;"), false);
+	// One call in a loop or among computations does more than the call says.
+	const loop = 'const files = ["a", "b", "c"];\nconst out = [];\nfor (const file of files) {\n  const r = await tools.bash({ command: `wc -l ${file}` });\n  out.push(r.output);\n}\nreturn out.join("\\n");';
+	assert.equal(wantsScriptTitle(loop), true);
 });
 
 test("scripts and commands have their own cache keys and requests", () => {
@@ -67,4 +70,17 @@ test("scripts and commands have their own cache keys and requests", () => {
 	const sent = scriptRequest('// @options: {"timeout_ms": 1000}\nreturn await tools.bash({ command: "ls" });');
 	assert.ok(!sent.includes("@options"));
 	assert.ok(SCRIPT_SYSTEM.includes("JavaScript"));
+});
+
+test("a reply that talks about the task is cleaned up or dropped", () => {
+	assert.equal(titleOf('Naming the script: "Runs a sequence of file reads and shell checks'), "Runs a sequence of file reads and shell checks");
+	assert.equal(titleOf("Summary: Runs a Python script that patches codemode.ts and runs the tests"), "Runs a Python script that patches codemode.ts and runs the tests");
+	assert.equal(titleOf("Names the bash command: Edits the bash-titles extension to title codemode scripts"), "Edits the bash-titles extension to title codemode scripts");
+	assert.equal(titleOf("Edits `titles.ts` and runs its tests. Summary phrase:"), "Edits `titles.ts` and runs its tests");
+	assert.equal(titleOf("Commit message: Summarizes the bash-changes feature. The command runs a commit, kills a session"), "Summarizes the bash-changes feature");
+	assert.equal(titleOf("Shell command summary, per the system role: this is a labeling task, so I'm just writing the phrase rather than running the command"), null);
+	assert.equal(titleOf("I'm not going to run this command: my role here is to name a shell command in one short phrase"), null);
+	assert.equal(titleOf("Your task here is only to name the command for a person scanning activity: one short phrase"), null);
+	assert.equal(titleOf("Lists root disk space, then builds the Darwin system configuration"), "Lists root disk space, then builds the Darwin system configuration");
+	assert.equal(titleOf("Checks the version: prints node -v"), "Checks the version: prints node -v");
 });

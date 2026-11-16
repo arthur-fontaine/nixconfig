@@ -35,16 +35,18 @@ export const SCRIPT_SYSTEM = [
 const OPTIONS_LINE = /^\/\/ @options:.*(\n|$)/;
 const TOOL_CALL = /\btools\s*(\.\s*[A-Za-z_$][\w$]*|\[)\s*\(?/g;
 
+const TEMPLATE = /`(?:\\[\s\S]|[^`\\])*`/g;
+
 /**
- * Whether a codemode script is named by Haiku. Nearly every call is a script now, so one that makes
- * a single tool call isn't: the call's own line under the row names it. A script making several,
- * or computing over a few lines without any, is.
+ * Whether a codemode script is named by Haiku. Nearly every call is a script now, so a short one
+ * making a single tool call isn't: the call's own line under the row names it. A script making
+ * several, or doing more than a few lines around one call or without any, is. A template
+ * literal's text (a file written whole) counts as one line.
  */
 export function wantsScriptTitle(code: string): boolean {
-	const text = code.replace(OPTIONS_LINE, "").trim();
+	const text = code.replace(OPTIONS_LINE, "").replace(TEMPLATE, "``").trim();
 	const calls = (text.match(TOOL_CALL) ?? []).length;
 	if (calls > 1) return true;
-	if (calls === 1) return false;
 	return text.split("\n").filter((line) => line.trim()).length > 3;
 }
 
@@ -57,11 +59,19 @@ export const scriptKey = (code: string) => `codemode\0${code.trim()}`;
 // row. Kept under compact-tools' 160 characters for a one-line command, which it would cut.
 const MAX_CHARS = 150;
 
-// The answer's first line. An answer dropped is a command left untitled for good, so a wordy
-// one is kept as it is.
+// Haiku, through Claude Code, sometimes answers about the task instead ("I'm not going to run this
+// command: my role…"), or wraps the title ("Summary: …", "Naming the script: \"…").
+const ABOUT_THE_TASK = /\b(system role|my (role|job)|your task|the (task|job) here|labeling task|the user wants)\b|^(I|I'm|Your|Let me)\b/i;
+const LEAD = /^[^:"]{0,40}?\b(summary|title|phrase|names?|naming|label|message)\b[^:"]{0,20}:\s*/i;
+const TRAIL = /[.;]?\s*\b(summary|title)( phrase)?:\s*$/i;
+
+// The answer's first line, its wrapping dropped and cut at its first sentence. An answer dropped
+// is a command left untitled for good, so a wordy one is kept as it is.
 export function titleOf(reply: string): string | null {
-	const line = reply.trim().split("\n")[0] ?? "";
-	let text = line.trim().replace(/^["'`]+|["'`.]+$/g, "").trim();
+	const line = (reply.trim().split("\n")[0] ?? "").trim();
+	if (ABOUT_THE_TASK.test(line)) return null;
+	let text = line.replace(TRAIL, "").replace(LEAD, "").split(/\.\s+(?=[A-Z])/)[0]!;
+	text = text.trim().replace(/^["'`]+|["'`.]+$/g, "").trim();
 	if (!text) return null;
 	// Cut at a word, without "…", which would read as a title of the old limit, asked again.
 	if (text.length > MAX_CHARS) text = text.slice(0, MAX_CHARS + 1).replace(/\s+\S*$/, "").replace(/[,;:]$/, "");
