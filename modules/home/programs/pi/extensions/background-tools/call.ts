@@ -14,6 +14,15 @@ export interface CallEvents {
 	ended(call: DetachableCall, outcome: Outcome): void;
 }
 
+/**
+ * Which calls Ctrl+B and `background: true` can detach: bash in the TUI, a codemode script's own
+ * included. The script then gets the placeholder's text instead of bash's output object, and
+ * carries on while the command runs.
+ */
+export function detachable(event: { toolName: string; parentToolCallId?: string }, mode: string): boolean {
+	return event.toolName === "bash" && mode === "tui";
+}
+
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export class DetachableCall {

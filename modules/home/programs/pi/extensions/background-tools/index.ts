@@ -5,7 +5,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import { createBashToolDefinition, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { matchesKey } from "@earendil-works/pi-tui";
-import { type CallEvents, DetachableCall, type Outcome } from "./call.ts";
+import { type CallEvents, DetachableCall, detachable, type Outcome } from "./call.ts";
 import {
 	completionNotice,
 	type DetachedRecord,
@@ -198,7 +198,7 @@ export default function (pi: ExtensionAPI) {
 	);
 
 	pi.on("tool_call", (event, eventCtx) => {
-		if (event.toolName === TOOL && !event.parentToolCallId && eventCtx.mode === "tui") eligible.add(event.toolCallId);
+		if (detachable(event, eventCtx.mode)) eligible.add(event.toolCallId);
 	});
 
 	pi.on("tool_execution_end", (event) => {

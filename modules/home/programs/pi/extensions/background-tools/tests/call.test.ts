@@ -127,3 +127,12 @@ test("a tool that throws before returning fails like it would in the foreground"
 		/bad input/,
 	);
 });
+
+test("bash calls of a codemode script can be detached too, in the TUI only", async () => {
+	const { detachable } = await import("../call.ts");
+	assert.equal(detachable({ toolName: "bash" }, "tui"), true);
+	// With codemode as the only tool, every bash call is a script's: none could go to the background otherwise.
+	assert.equal(detachable({ toolName: "bash", parentToolCallId: "toolu_1" }, "tui"), true);
+	assert.equal(detachable({ toolName: "bash" }, "print"), false);
+	assert.equal(detachable({ toolName: "read" }, "tui"), false);
+});
