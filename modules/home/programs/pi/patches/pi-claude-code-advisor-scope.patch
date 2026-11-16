@@ -1,0 +1,285 @@
+diff --git a/src/advisor.ts b/src/advisor.ts
+index 547c796..c1fea89 100644
+--- a/src/advisor.ts
++++ b/src/advisor.ts
+@@ -29,6 +29,21 @@ export function advisorModel(): string | undefined {
+   return model && model.toLowerCase() !== "off" ? model : undefined;
+ }
+ 
++/**
++ * The advisor for one request, or undefined. Claude Code attaches it to its agent loops' turns,
++ * the main thread's and its subagents', and not to its side queries (a memory line, titles).
++ * In Pi the matching signal is `onPayload`: Pi's Agent passes that hook with every turn of a
++ * session's loop (the main session's and a subagent's), while extensions' side calls through
++ * ctx.modelRegistry (auto-mode's classifier, bash-titles, auto-compact, the cache-warmer's ping)
++ * and Pi's own compaction summary don't. Guessing from the system prompt would break with any
++ * new side caller. Without it a classifier, which has no other tool, could call Fable and draw
++ * an Advisor row into the session. Dropping the tool costs no prompt-cache hits: the API keeps
++ * it out of the cache key.
++ */
++export function advisorFor(options: { onPayload?: unknown } | undefined): string | undefined {
++  return typeof options?.onPayload === "function" ? advisorModel() : undefined;
++}
++
+ type Tool = Record<string, unknown>;
+ 
+ const isAdvisorTool = (tool: unknown): tool is Tool =>
+@@ -56,9 +71,10 @@ export function historyHasAdvisor(frames: Array<{ message: { content: unknown[]
+   );
+ }
+ 
++/** `sessionId`: the Pi session whose turn made the call, when the request had one. */
+ export type AdvisorEvent =
+-  | { phase: "start"; id: string }
+-  | { phase: "end"; id: string; outcome: AdvisorOutcome };
++  | { phase: "start"; id: string; sessionId?: string }
++  | { phase: "end"; id: string; outcome: AdvisorOutcome; sessionId?: string };
+ 
+ /**
+  * What the advisor returned. Its guidance is readable text (`advisor_result`) from some
+@@ -86,13 +102,14 @@ export function onAdvisor(listener: (event: AdvisorEvent) => void): () => void {
+ }
+ 
+ /** Tells the UI about an advisor block as it starts streaming; true if it was one. */
+-export function advisorBlock(block: NativeContentBlock): boolean {
++export function advisorBlock(block: NativeContentBlock, sessionId?: string): boolean {
+   const raw = block as Tool;
++  const session = sessionId === undefined ? {} : { sessionId };
+   let event: AdvisorEvent | undefined;
+   if (raw.type === "server_tool_use" && raw.name === "advisor") {
+-    event = { phase: "start", id: String(raw.id) };
++    event = { phase: "start", id: String(raw.id), ...session };
+   } else if (raw.type === "advisor_tool_result") {
+-    event = { phase: "end", id: String(raw.tool_use_id), outcome: outcomeOf(raw.content as Tool | undefined) };
++    event = { phase: "end", id: String(raw.tool_use_id), outcome: outcomeOf(raw.content as Tool | undefined), ...session };
+   } else {
+     return false;
+   }
+@@ -104,6 +121,39 @@ export function advisorBlock(block: NativeContentBlock): boolean {
+   return true;
+ }
+ 
++// Advisor calls that already have a row. Module-wide: every extension instance (a reloaded one,
++// a subagent's) shares the listeners, and a block can be streamed to more than one of them.
++const shown = new Set<string>();
++
++export interface AdvisorRowSink {
++  /** The session this extension instance writes to. */
++  sessionId(): string | undefined;
++  label(): string;
++  setWorking(text?: string): void;
++  append(data: { id: string; label: string; outcome: AdvisorOutcome }): void;
++}
++
++/**
++ * The listener that turns advisor events into Claude Code's "Advising" line and one row per
++ * advisor call, only for calls made by this session's own turns: a subagent's go to its own
++ * session, and a request of no session (none should carry the advisor) adds none.
++ */
++export function advisorRows(sink: AdvisorRowSink): (event: AdvisorEvent) => void {
++  return (event) => {
++    if (!event.sessionId || event.sessionId !== sink.sessionId()) return;
++    const label = sink.label();
++    if (event.phase === "start") {
++      sink.setWorking(`Advising (${label})…`);
++      return;
++    }
++    sink.setWorking();
++    if (shown.has(event.id)) return;
++    shown.add(event.id);
++    if (shown.size > 1_000) shown.delete(shown.values().next().value!);
++    sink.append({ id: event.id, label, outcome: event.outcome });
++  };
++}
++
+ /** "fable" → "Fable", "claude-fable-5-2" → "Fable 5.2". */
+ export function advisorLabel(model: string): string {
+   const match = /^(?:claude-)?([a-z]+)(?:-(\d+(?:-\d+)?))?/iu.exec(model.trim());
+diff --git a/src/index.ts b/src/index.ts
+index 3e4d6a5..0342079 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,5 +1,5 @@
+ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+-import { advisorLabel, advisorModel, onAdvisor, setAdvisorSource } from "./advisor.ts";
++import { advisorLabel, advisorModel, advisorRows, onAdvisor, setAdvisorSource } from "./advisor.ts";
+ import { ADVISOR_ENTRY, advisorRow } from "./advisor-row.ts";
+ import { getClaudeStatus } from "./claude-cli.ts";
+ import { claudeCodeEnv, createClaudeCodeProvider } from "./provider.ts";
+@@ -12,18 +12,23 @@ export default function claudeCodeExtension(pi: ExtensionAPI): void {
+ 
+   // Claude Code's "Advising" line while the advisor reads the conversation, then what came of it.
+   let ui: ExtensionContext["ui"] | undefined;
+-  pi.on("turn_start", (_event, ctx) => {
++  let sessionId: string | undefined;
++  const bind = (ctx: ExtensionContext) => {
+     ui = ctx.hasUI ? ctx.ui : undefined;
+-  });
+-  onAdvisor((event) => {
+-    const label = advisorLabel(advisorModel() ?? "advisor");
+-    if (event.phase === "start") {
+-      ui?.setWorkingMessage(`Advising (${label})…`);
+-      return;
+-    }
+-    ui?.setWorkingMessage();
+-    pi.appendEntry(ADVISOR_ENTRY, { label, outcome: event.outcome });
+-  });
++    sessionId = ctx.sessionManager.getSessionId();
++  };
++  pi.on("session_start", (_event, ctx) => bind(ctx));
++  pi.on("turn_start", (_event, ctx) => bind(ctx));
++  const stopRows = onAdvisor(
++    advisorRows({
++      sessionId: () => sessionId,
++      label: () => advisorLabel(advisorModel() ?? "advisor"),
++      setWorking: (text) => ui?.setWorkingMessage(text),
++      append: (data) => pi.appendEntry(ADVISOR_ENTRY, data),
++    }),
++  );
++  // Pi binds a new instance of this extension to the next session; this one stops writing rows.
++  pi.on("session_shutdown", () => stopRows());
+   // In the column of the tool and thinking rows, which Pi pads by its outputPad setting (0 or 1).
+   const pad = () => ((pi.getSettings() as { outputPad?: unknown }).outputPad === 0 ? 0 : 1);
+   pi.registerEntryRenderer(ADVISOR_ENTRY, (entry, { expanded }, theme) => advisorRow(entry, expanded, theme, pad()));
+diff --git a/src/stream.ts b/src/stream.ts
+index 6e6dd2b..949b648 100644
+--- a/src/stream.ts
++++ b/src/stream.ts
+@@ -15,7 +15,7 @@ import {
+   type ToolCall,
+   type TranscriptContext,
+ } from "@earendil-works/pi-ai";
+-import { ADVISOR_BETA, advisorBlock, advisorModel, historyHasAdvisor } from "./advisor.ts";
++import { ADVISOR_BETA, advisorBlock, advisorFor, historyHasAdvisor } from "./advisor.ts";
+ import { describeUsageCreditsRejection } from "./billing.ts";
+ import { runClaudeRequest } from "./claude-cli.ts";
+ import { nativeModel, supportsNativeToolChanges } from "./model-catalog.ts";
+@@ -160,6 +160,8 @@ class EventTranslator {
+     private readonly output: AssistantMessage,
+     private readonly stream: AssistantMessageEventStream,
+     private readonly toolNames: Set<string>,
++    /** The Pi session an advisor call is shown in; undefined when the request had no advisor. */
++    private readonly advisorSession?: string,
+   ) {}
+ 
+   event(event: AnthropicStreamEvent): void {
+@@ -220,7 +222,7 @@ class EventTranslator {
+     // The advisor's server_tool_use and advisor_tool_result have no Pi content block: they
+     // stay in the native message Pi replays, and only tell the UI. Mapping them to a content
+     // index would hand that index to the next block's deltas.
+-    if (advisorBlock(native)) return;
++    if (advisorBlock(native, this.advisorSession)) return;
+     const contentIndex = this.output.content.length;
+     this.nativeToContent.set(nativeIndex, contentIndex);
+     if (native.type === "text") {
+@@ -380,7 +382,8 @@ export function streamClaudeCode(
+         nativeTranscript?.requestTools ?? preparedTools.nativeTools,
+         options,
+       );
+-      const translator = new EventTranslator(model, output, stream, preparedTools.names);
++      const advisor = advisorFor(options);
++      const translator = new EventTranslator(model, output, stream, preparedTools.names, advisor && options?.sessionId);
+ 
+       stream.push({ type: "start", partial: output });
+       const response = await runClaudeRequest({
+@@ -398,7 +401,7 @@ export function streamClaudeCode(
+         initialSystemMessages,
+         nativeSystemInjections: nativeTranscript?.systemInjections,
+         betas: requestBetas(!!nativeTranscript, historyHasAdvisor(frames)),
+-        advisorModel: advisorModel(),
++        advisorModel: advisor,
+         sessionId: options?.cacheRetention === "none" ? undefined : options?.sessionId,
+         onEvent: (event) => translator.event(event),
+       });
+diff --git a/tests/advisor-scope.test.ts b/tests/advisor-scope.test.ts
+new file mode 100644
+index 0000000..c372cd7
+--- /dev/null
++++ b/tests/advisor-scope.test.ts
+@@ -0,0 +1,86 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { advisorBlock, advisorFor, advisorRows, onAdvisor, setAdvisorSource, type AdvisorEvent } from "../src/advisor.ts";
++
++const use = (id: string) => ({ type: "server_tool_use", id, name: "advisor", input: {} }) as never;
++const result = (id: string) =>
++  ({ type: "advisor_tool_result", tool_use_id: id, content: { type: "advisor_redacted_result", encrypted_content: "x" } }) as never;
++
++test("only an agent loop's own request carries the advisor, not a side request", () => {
++  setAdvisorSource(() => "fable");
++  try {
++    // Pi's Agent passes its onPayload hook with every turn of a session's loop.
++    assert.equal(advisorFor({ onPayload: () => undefined, sessionId: "main" }), "fable");
++    // ctx.modelRegistry.streamSimple / completeSimple callers (classifier, titles, summaries) don't.
++    assert.equal(advisorFor({ maxTokens: 64 }), undefined);
++    assert.equal(advisorFor({ sessionId: "main", maxTokens: 1 }), undefined);
++    assert.equal(advisorFor(undefined), undefined);
++    setAdvisorSource(() => "off");
++    assert.equal(advisorFor({ onPayload: () => undefined }), undefined);
++  } finally {
++    setAdvisorSource(() => undefined);
++  }
++});
++
++function rowsFor(session: string) {
++  const appended: unknown[] = [];
++  const working: Array<string | undefined> = [];
++  const listener = advisorRows({
++    sessionId: () => session,
++    label: () => "Fable",
++    setWorking: (text) => working.push(text),
++    append: (data) => appended.push(data),
++  });
++  return { appended, working, listener };
++}
++
++test("an advisor call adds one row, in the session whose turn made it", () => {
++  const main = rowsFor("main");
++  const sub = rowsFor("sub");
++  const offs = [onAdvisor(main.listener), onAdvisor(sub.listener)];
++  try {
++    advisorBlock(use("srvtoolu_main"), "main");
++    advisorBlock(result("srvtoolu_main"), "main");
++    advisorBlock(use("srvtoolu_sub"), "sub");
++    advisorBlock(result("srvtoolu_sub"), "sub");
++  } finally {
++    offs.forEach((off) => off());
++  }
++  assert.deepEqual(main.appended, [{ id: "srvtoolu_main", label: "Fable", outcome: { kind: "reviewed", encrypted: true } }]);
++  assert.deepEqual(main.working, ["Advising (Fable)…", undefined]);
++  assert.deepEqual(sub.appended, [{ id: "srvtoolu_sub", label: "Fable", outcome: { kind: "reviewed", encrypted: true } }]);
++});
++
++test("an advisor block from a request of no session adds no row", () => {
++  const main = rowsFor("main");
++  const off = onAdvisor(main.listener);
++  try {
++    advisorBlock(use("srvtoolu_side"));
++    advisorBlock(result("srvtoolu_side"));
++  } finally {
++    off();
++  }
++  assert.deepEqual(main.appended, []);
++  assert.deepEqual(main.working, []);
++});
++
++test("the same advisor call seen twice is one row", () => {
++  const main = rowsFor("main");
++  const again = rowsFor("main"); // a second instance for the session, as after a reload
++  const offs = [onAdvisor(main.listener), onAdvisor(again.listener)];
++  try {
++    advisorBlock(result("srvtoolu_dup"), "main");
++    advisorBlock(result("srvtoolu_dup"), "main");
++  } finally {
++    offs.forEach((off) => off());
++  }
++  assert.equal(main.appended.length + again.appended.length, 1);
++});
++
++test("events carry the request's session when one is given", () => {
++  const events: AdvisorEvent[] = [];
++  const off = onAdvisor((event) => events.push(event));
++  advisorBlock(use("a"), "s1");
++  off();
++  assert.deepEqual(events, [{ phase: "start", id: "a", sessionId: "s1" }]);
++});

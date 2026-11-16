@@ -132,7 +132,11 @@ let
   # and reads "stream was interrupted", which Pi's retry pattern knows: Pi retries the turn rather
   # than ending it. A cut turn returns no message, so its half-sent tool call never runs; a
   # 4xx, refusal or usage limit stays as retryable as it was. A relay whose Claude Code hung up
-  # mid-stream stops there rather than waiting forever for it to drain. No runtime dependencies:
+  # mid-stream stops there rather than waiting forever for it to drain. With
+  # patches/pi-claude-code-advisor-scope.patch, the advisor goes only where Claude Code puts it:
+  # on an agent loop's turns (the session's own, a subagent's), not on side requests (auto-mode's
+  # classifier, titles, summaries), which all carried it and could each call Fable. An Advisor
+  # row is added only for a call made by that session's turn, once per call. No runtime dependencies:
   # its imports are Pi's own packages.
   piClaudeCode = pkgs.runCommand "pi-claude-code-70abb65-patched" { } ''
     cp -r ${
@@ -151,6 +155,7 @@ let
     patch -d $out -p1 < ${./patches/pi-claude-code-raw-tool-results.patch}
     patch -d $out -p1 < ${./patches/pi-claude-code-advisor.patch}
     patch -d $out -p1 < ${./patches/pi-claude-code-relay-failure.patch}
+    patch -d $out -p1 < ${./patches/pi-claude-code-advisor-scope.patch}
   '';
   # nedleeds/pi-compact-tools 0.16.7 with patches/pi-compact-tools-claude-bash.patch: bash
   # titles leave the folding of long commands to syntax-highlighting, and an opened command
