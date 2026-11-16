@@ -99,3 +99,17 @@ test("a script with one tools call that makes a second at runtime (a loop) is na
 	assert.equal(running.called("toolu_2/2"), undefined);
 	assert.equal(running.called("toolu_3"), undefined);
 });
+
+test("a script that ended before its one call is named when it ends", () => {
+	const running = new RunningScripts();
+	const threw = "const S = JSON.parse('{');\nawait tools.bash({ command: 'ls' });";
+	running.started("toolu_1", threw);
+	assert.equal(running.finished("toolu_1"), threw);
+	assert.equal(running.finished("toolu_1"), undefined);
+	// One that made its call is named by it; one calling no tool shows its own line.
+	running.started("toolu_2", threw);
+	running.called("toolu_2/1");
+	assert.equal(running.finished("toolu_2"), undefined);
+	running.started("toolu_3", "return 6 * 7;");
+	assert.equal(running.finished("toolu_3"), undefined);
+});

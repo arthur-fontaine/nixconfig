@@ -122,6 +122,14 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	// A script that called no tool would stay "Codemode(…)": syntax-highlighting doesn't show a
+	// line that only sets a variable.
+	pi.on("tool_result", async (event) => {
+		if (event.toolName !== "codemode") return;
+		const unnamed = running.finished(event.toolCallId);
+		if (unnamed && !cache.get(scriptKey(unnamed))) enqueue({ key: scriptKey(unnamed), text: unnamed, script: true });
+	});
+
 	pi.on("session_start", async (_event, current) => {
 		ctx = current;
 		void drain();

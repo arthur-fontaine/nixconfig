@@ -70,6 +70,12 @@ export class RunningScripts {
 		if (!callId.includes("/") || !script) return undefined;
 		return ++script.calls === 2 && !wantsScriptTitle(script.code) ? script.code : undefined;
 	}
+	/** Its code when it ended without the call it was written for (it threw first), to be named. */
+	finished(id: string): string | undefined {
+		const script = this.#scripts.get(id);
+		this.#scripts.delete(id);
+		return script && script.calls === 0 && /\btools\s*(\.|\[)/.test(script.code) && !wantsScriptTitle(script.code) ? script.code : undefined;
+	}
 }
 
 export const scriptRequest = (code: string) => request(code.replace(OPTIONS_LINE, ""));
