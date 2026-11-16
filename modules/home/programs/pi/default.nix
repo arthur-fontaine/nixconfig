@@ -8,8 +8,9 @@ let
     defaultModel = "claude-opus-5-5";
     defaultThinkingLevel = "high";
     # Fable as the advisor, as Claude Code's advisorModel (../claude): Claude Code attaches
-    # its server-side advisor tool to the claude-code provider's requests, so it bills as
-    # in Claude Code (see patches/pi-claude-code-advisor.patch). Unset or "off": no advisor.
+    # its server-side advisor tool to the agent loops' claude-code requests (a session's turns, a
+    # subagent's; not extensions' side requests), so it bills as in Claude Code (see
+    # patches/pi-claude-code-advisor.patch and -advisor-scope.patch). Unset or "off": no advisor.
     advisorModel = "fable";
 
     # Pi's light theme or its dark one, switched live as the terminal reports
