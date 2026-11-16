@@ -95,7 +95,11 @@ case $cmd in
   do)
     out=$(app do "$@") || { echo "$out"; exit 1; }
     echo "$out"
-    jq -r 'to_entries[] | select(.key == "space" or .key == "tab") | "\(.key) \(.value)"' <<<"$out" 2>/dev/null >>"$created" || true
+    # Only what this call made: a reply names the space a new tab went into too.
+    case ${1:-} in
+      space.new) jq -r '"space \(.space)"' <<<"$out" >>"$created" ;;
+      tab.new) jq -r '"tab \(.tab)"' <<<"$out" >>"$created" ;;
+    esac
     ;;
   shot) app shot "${1:?shot <file.png>}" ;;
   appearance)
@@ -103,8 +107,14 @@ case $cmd in
     tmp=$(mktemp) && jq --arg a "$1" '.appearance = $a' "$home/settings.json" >"$tmp" && mv "$tmp" "$home/settings.json"
     ;;
   down)
+    if ! running && [ -s "$created" ]; then
+      # Without the window nothing can close them: say what is left rather than lose track.
+      echo "the sandbox window is gone; these are still open (close them yourself):" >&2
+      cat "$created" >&2
+      exit 1
+    fi
     if running; then
-      # What `do` made, newest first: tabs, then spaces. Nothing else is touched.
+      # What `do` made, newest first. Nothing else is touched.
       awk '!seen[$0]++' "$created" | tail -r | while read -r kind id; do
         app do "$kind.close" --id "$id" --confirmed true >/dev/null || true
       done
