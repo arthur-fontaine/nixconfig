@@ -65,11 +65,15 @@ in
     };
   };
 
+  # A sandboxed app's domain lives in its container, which macOS only opens to a terminal
+  # allowed to access other apps' data. Without that, warn and go on rather than fail the
+  # whole activation for one app's setting.
   config.home.activation.writeDefaultsData = lib.hm.dag.entryAfter [ "setDarwinDefaults" ] (
     lib.concatStrings (lib.flatten (lib.mapAttrsToList (domain: keys:
       lib.mapAttrsToList (key: value: ''
         run /usr/bin/defaults write ${lib.escapeShellArg domain} ${lib.escapeShellArg key} -data \
-          "$(printf '%s' ${lib.escapeShellArg (builtins.toJSON value)} | /usr/bin/xxd -p | tr -d '\n')"
+          "$(printf '%s' ${lib.escapeShellArg (builtins.toJSON value)} | /usr/bin/xxd -p | tr -d '\n')" \
+          || warnEcho ${lib.escapeShellArg "Skipped ${domain} ${key}: macOS denied access to the app's data. Allow the terminal running rebuild under System Settings > Privacy & Security > App Management (or Full Disk Access), then rebuild."}
       '') keys
     ) config.nixconfig.defaultsData))
   );
