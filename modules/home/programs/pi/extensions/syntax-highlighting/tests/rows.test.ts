@@ -31,3 +31,13 @@ test("remember keeps the most recently drawn rows", () => {
 	rows.redrawAll();
 	assert.deepEqual(drawn, ["a", "c"]);
 });
+
+test("redraw draws one row, and none for a row it never drew", () => {
+	const rows = new Rows(10);
+	const drawn: string[] = [];
+	rows.remember("a", () => drawn.push("a"));
+	rows.remember("b", () => drawn.push("b"));
+	rows.redraw("b");
+	rows.redraw("c");
+	assert.deepEqual(drawn, ["b"]);
+});

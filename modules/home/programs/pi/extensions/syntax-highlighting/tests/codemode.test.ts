@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { callLines, forInner, NestedCalls, scriptLines, underRail } from "../codemode.ts";
+import { callLines, forInner, NestedCalls, scriptLines, scriptTitle, underRail } from "../codemode.ts";
 import { fakePaint, markup, stripAnsi } from "./paint.ts";
 
 const paint = fakePaint();
@@ -118,4 +118,26 @@ test("a failed script leads with its error, which compact-tools makes the row's 
 	// Without output, the error alone.
 	const alone = forInner({ content: [{ type: "text", text: "Script failed\nWall time 0.1 seconds\nOutput:\n" }, { type: "text", text: "Script error:\nSyntaxError: x" }] });
 	assert.deepEqual(alone.content, [{ type: "text", text: "SyntaxError: x" }]);
+});
+
+test("a script bash-titles doesn't name is titled by its calls, never by a variable it sets", () => {
+	const code = 'const S = "/opt/pi/dist";\nconst r = await tools.bash({ command: `cd ${S}; grep -rn retry .` });\nreturn r.output;';
+	const calls = new NestedCalls();
+	// Before its first call starts: no first line.
+	assert.equal(scriptTitle(code, calls.of("toolu_1"), noTitle, "/repo"), "…");
+	calls.start("toolu_1", "toolu_1/1", "bash", { command: "cd /opt/pi/dist; grep -rn retry ." });
+	// One call: that call's own title, or its command when it has none.
+	const titled = (command: string) => (command.includes("grep") ? "Lists retryable-error matches in Pi's source" : undefined);
+	assert.equal(scriptTitle(code, calls.of("toolu_1"), titled, "/repo"), "Lists retryable-error matches in Pi's source");
+	assert.equal(scriptTitle(code, calls.of("toolu_1"), noTitle, "/repo"), "cd /opt/pi/dist; grep -rn retry .");
+	// A read names its file.
+	const read = new NestedCalls();
+	read.start("toolu_2", "toolu_2/1", "read", { path: "config.ts" });
+	assert.equal(scriptTitle("const p = 'config.ts';\nreturn tools.read({ path: p });", read.of("toolu_2"), noTitle, "/repo"), "Read config.ts");
+	// Several: the tools they used, until Haiku's title comes.
+	read.start("toolu_2", "toolu_2/2", "edit", { path: "config.ts" });
+	read.start("toolu_2", "toolu_2/3", "read", { path: "b.ts" });
+	assert.equal(scriptTitle("x", read.of("toolu_2"), noTitle, "/repo"), "Read, Update");
+	// A script calling no tool is short and plain: its line is the title.
+	assert.equal(scriptTitle("return 6 * 7;", [], noTitle, "/repo"), undefined);
 });

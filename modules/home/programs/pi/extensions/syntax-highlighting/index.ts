@@ -6,7 +6,7 @@
 import { type ExtensionAPI, getLanguageFromPath, highlightCode, type Theme, type ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { escapes, FG_RESET, railOf, stripAnsi } from "./ansi.ts";
-import { callLines, forInner, NestedCalls, scriptLines, underRail } from "./codemode.ts";
+import { callLines, forInner, NestedCalls, scriptLines, scriptTitle, underRail } from "./codemode.ts";
 import { displayedCommand, fold, normalizeCommand, type Preview, readPreview } from "./command.ts";
 import { highlightShell, type Paint } from "./highlight.ts";
 import { type Document, overlay } from "./overlay.ts";
@@ -235,7 +235,7 @@ export default function (pi: ExtensionAPI) {
 			remember(context);
 			const code = (args as { code?: unknown } | undefined)?.code;
 			if (typeof code !== "string") return new Recolored(inner(args, theme, innerContext(context)), theme, (lines) => lines);
-			const title = titles.script?.(code);
+			const title = titles.script?.(code) ?? scriptTitle(code, nested.of(context.toolCallId), (command) => titles.get(command), context.cwd);
 			const component = inner(title ? { ...(args as object), code: title } : args, theme, innerContext(context));
 			if (!context.expanded || !code.trim()) return new Recolored(component, theme, (drawn) => drawn);
 			const styled = memo(() => scriptLines(paintFor(theme), code));
@@ -263,13 +263,17 @@ export default function (pi: ExtensionAPI) {
 		};
 
 	pi.on("tool_execution_start", async (event) => {
-		if (event.parentToolCallId) nested.start(event.parentToolCallId, event.toolCallId, event.toolName, event.args);
+		if (!event.parentToolCallId) return;
+		nested.start(event.parentToolCallId, event.toolCallId, event.toolName, event.args);
+		// The script's title can come from its calls (scriptTitle).
+		rows.redraw(event.parentToolCallId.split("/", 1)[0]!);
 	});
 
 	pi.on("tool_execution_end", async (event) => {
 		if (!event.parentToolCallId) return;
 		const text = (event.result as { content?: { type?: string; text?: string }[] } | undefined)?.content?.find((block) => block.type === "text")?.text;
 		nested.end(event.parentToolCallId, event.toolCallId, event.isError, text);
+		rows.redraw(event.parentToolCallId.split("/", 1)[0]!);
 	});
 
 	const restore = (entries: readonly unknown[]) => {

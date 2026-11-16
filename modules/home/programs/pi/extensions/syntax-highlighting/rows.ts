@@ -15,6 +15,10 @@ export class Rows {
 		if (this.rows.size > this.max) this.rows.delete(this.rows.keys().next().value!);
 	}
 
+	redraw(id: string) {
+		this.rows.get(id)?.();
+	}
+
 	// Pi's invalidate renders the row on the spot, which remembers it again at the end of the
 	// map: iterated live, the loop would come back to it forever (a heap out of memory).
 	redrawAll() {
