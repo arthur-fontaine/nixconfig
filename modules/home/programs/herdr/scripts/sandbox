@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# A throwaway Herdr window on this checkout's mods, beside the person's own: a home under /tmp
+# laid out as default.nix deploys it, opened with HERDR_APP_HOME. It shares the real herdr-core,
+# kanban daemon and LSP bridge, so what it shows (and closes) is real.
+#
+#   sandbox up            build the home, open the window, record its PID
+#   sandbox sync          redeploy mods, themes, layout and nix-editor files after edits
+#   sandbox app <args>    herdr-app on the sandbox window (ls, status, check, commands)
+#   sandbox do <cmd> ...  herdr-app do on the sandbox window; spaces/tabs it creates are recorded
+#   sandbox shot <file>   screenshot of the sandbox window
+#   sandbox down          close what `do` created, kill only the recorded PID, remove the home
+set -euo pipefail
+
+herdr=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+repo=$(git -C "$herdr" rev-parse --show-toplevel)
+root=${HERDR_SANDBOX:-/tmp/herdr-sandbox}
+home=$root/home
+pidfile=$root/pid
+created=$root/created
+bin=/Applications/Herdr.app/Contents/MacOS/Herdr
+deployed=$HOME/.config/herdr-app
+
+case $root in /tmp/herdr-sandbox*|/private/tmp/herdr-sandbox*) ;; *) echo "HERDR_SANDBOX must be under /tmp/herdr-sandbox" >&2; exit 1 ;; esac
+
+app() { HERDR_APP_HOME=$home herdr-app "$@"; }
+
+running() {
+  [ -f "$pidfile" ] || return 1
+  local pid; pid=$(cat "$pidfile")
+  # The PID may have been reused: it must still be Herdr on this home.
+  ps eww -p "$pid" -o command= 2>/dev/null | grep -q "^$bin.*HERDR_APP_HOME=$home\b"
+}
+
+# default.nix's bundle: shared _lib files and the mod's modules without `export` (and the
+# modules without their relative imports), then main.js without its relative imports.
+bundle() {
+  local mod=$1 spec=$2 f
+  {
+    for f in $(jq -r '.shared // [] | .[]' <<<"$spec"); do sed 's/^export //' "$herdr/mods/_lib/$f"; done
+    for f in $(jq -r '.modules // [] | .[]' <<<"$spec"); do
+      sed -e 's/^export //' -e '/^import .* from "\.\.\{0,1\}\//d' "$herdr/mods/$mod/$f"
+    done
+    grep -v -E '^import .* from "(\./|\.\./)' "$herdr/mods/$mod/main.js"
+  }
+}
+
+deploy() {
+  local mods mod spec
+  mods=$(nix eval --json --file "$herdr/mods.nix")
+  for mod in $(jq -r 'keys[]' <<<"$mods"); do
+    spec=$(jq -c --arg m "$mod" '.[$m]' <<<"$mods")
+    mkdir -p "$home/mods/$mod"
+    # Herdr writes jsconfig.json and .d.ts files beside them: only these two are replaced.
+    if [ "$spec" = "{}" ]; then cp "$herdr/mods/$mod/main.js" "$home/mods/$mod/main.js"
+    else bundle "$mod" "$spec" >"$home/mods/$mod/main.js"; fi
+    cp "$herdr/mods/$mod/mod.json" "$home/mods/$mod/mod.json"
+  done
+  # Real files: Herdr draws no svg through a link.
+  rm -rf "$home/mods/nix-head/icons"
+  mkdir -p "$home/mods/nix-head/icons" "$home/themes" "$home/layouts" "$home/nix-editor"
+  cp "$herdr"/mods/nix-head/icons/*.svg "$home/mods/nix-head/icons/"
+  cp "$herdr"/themes/nix-*.json "$home/themes/"
+  cp "$herdr/layouts/nix.json" "$home/layouts/nix.json"
+  cp "$herdr/nix-editor/init.lua" "$herdr/nix-editor/diff.lua" "$home/nix-editor/"
+  # The Ayu colors are a nixpkgs plugin, not in the repo: the deployed one.
+  [ -e "$home/nix-editor/ayu" ] || ln -s "$(readlink -f "$deployed/nix-editor/ayu")" "$home/nix-editor/ayu"
+}
+
+# settings.json and shared.json: the keys default.nix merges in, read from the flake. Written
+# before the window opens only, since a running Herdr keeps them in memory and saves over them.
+settings() {
+  local cfg="#darwinConfigurations.Arthur-Mac.config.home-manager.users.$USER.nixconfig.sync"
+  nix eval --json "$repo$cfg.herdr-settings.managed" >"$home/settings.json"
+  nix eval --json "$repo$cfg.herdr-shared.managed" >"$home/shared.json"
+}
+
+cmd=${1:-}; shift || true
+case $cmd in
+  up)
+    if running; then echo "already up: PID $(cat "$pidfile"), home $home"; exit 0; fi
+    mkdir -p "$home"
+    deploy
+    settings
+    : >"$created"
+    HERDR_APP_HOME=$home nohup "$bin" >"$root/log" 2>&1 &
+    echo $! >"$pidfile"
+    for _ in $(seq 50); do [ -S "$home/herdr-app.sock" ] && break; sleep 0.2; done
+    running || { echo "Herdr didn't start; see $root/log" >&2; exit 1; }
+    echo "up: PID $(cat "$pidfile"), home $home"
+    ;;
+  sync) deploy; echo "synced $home" ;;
+  app) app "$@" ;;
+  do)
+    out=$(app do "$@") || { echo "$out"; exit 1; }
+    echo "$out"
+    jq -r 'to_entries[] | select(.key == "space" or .key == "tab") | "\(.key) \(.value)"' <<<"$out" 2>/dev/null >>"$created" || true
+    ;;
+  shot) app shot "${1:?shot <file.png>}" ;;
+  down)
+    if running; then
+      # What `do` made, newest first: tabs, then spaces. Nothing else is touched.
+      tail -r "$created" 2>/dev/null | while read -r kind id; do
+        app do "$kind.close" --id "$id" --confirmed true >/dev/null || true
+      done
+      kill "$(cat "$pidfile")"
+    fi
+    rm -rf "$root"
+    echo "down"
+    ;;
+  *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
