@@ -62,7 +62,7 @@ const MAX_CHARS = 150;
 // Haiku, through Claude Code, sometimes answers about the task instead ("I'm not going to run this
 // command: my role…"), or wraps the title ("Summary: …", "Naming the script: \"…").
 const ABOUT_THE_TASK = /\b(system role|my (role|job)|your task|the (task|job) here|labeling task|the user wants)\b|^(I|I'm|Your|Let me)\b/i;
-const LEAD = /^[^:"]{0,40}?\b(summary|title|phrase|names?|naming|label|message)\b[^:"]{0,20}:\s*/i;
+const LEAD = /^[^:"]{0,40}?\b(summar|title|phrase|nam|label|message)\w*[^:"]{0,20}:\s*/i;
 const TRAIL = /[.;]?\s*\b(summary|title)( phrase)?:\s*$/i;
 
 // The answer's first line, its wrapping dropped and cut at its first sentence. An answer dropped

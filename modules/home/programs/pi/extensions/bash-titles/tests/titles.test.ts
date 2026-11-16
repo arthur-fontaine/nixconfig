@@ -74,6 +74,7 @@ test("scripts and commands have their own cache keys and requests", () => {
 
 test("a reply that talks about the task is cleaned up or dropped", () => {
 	assert.equal(titleOf('Naming the script: "Runs a sequence of file reads and shell checks'), "Runs a sequence of file reads and shell checks");
+	assert.equal(titleOf('Labeling the script: "Runs file read, sleep, listing, and deliberate error'), "Runs file read, sleep, listing, and deliberate error");
 	assert.equal(titleOf("Summary: Runs a Python script that patches codemode.ts and runs the tests"), "Runs a Python script that patches codemode.ts and runs the tests");
 	assert.equal(titleOf("Names the bash command: Edits the bash-titles extension to title codemode scripts"), "Edits the bash-titles extension to title codemode scripts");
 	assert.equal(titleOf("Edits `titles.ts` and runs its tests. Summary phrase:"), "Edits `titles.ts` and runs its tests");
