@@ -158,7 +158,9 @@ export default class Status extends View {
       .on_click(() => this.command("jump")).when(Boolean(color), (el) => el.child(div().size(6).flex_none().rounded(3).bg(color))).child(`${n} ${word}`);
     return h_flex().size_full().px(12).gap(14).items_center()
       // { onWell: true } (islands layouts): no strip of its own, the text sits on the well.
-      .when(!props()?.onWell, (el) => el.bg(t.chrome).border_t(1).border_color(t.border)).text_size(11).text_color(t.muted)
+      .when(!props()?.onWell, (el) => el.bg(t.chrome).border_t(1).border_color(t.border))
+      // On the well: pushed down so the text sits midway between the islands and the window's bottom.
+      .when(Boolean(props()?.onWell), (el) => el.pt(6.5)).text_size(11).text_color(t.muted)
       .child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer"))
       .when(Boolean(space?.branch), (el) => el.child(label("git-branch", space.branch)))
       .when(needs > 0, (el) => el.child(count("agents-need", needs, needs === 1 ? "needs you" : "need you", t.blocked)))
