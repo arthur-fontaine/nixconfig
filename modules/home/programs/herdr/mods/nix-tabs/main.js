@@ -108,9 +108,9 @@ export default class Tabs extends View {
         .h(36).rounded_t(style === "handle" ? 10 : 6)
         .when(c.active && !style, el => el.bg(t.background).border_l(1).border_t(1).border_r(1).border_color(t.border).text_color(t.foreground))
         .when(c.active && style === "handle", el => el.bg(t.background).text_color(t.foreground).font_medium())
-        // Handle style: a hovered tab only brightens its text; a fill would meet the shown tab's
-        // fillet, which hangs over its bottom corner.
-        .when(!c.active, el => el.text_color(t.muted).hover(s => style === "handle" ? s.text_color(t.foreground) : s.bg(t.hover)))
+        .when(!c.active, el => el.text_color(t.muted).when(style !== "handle", e => e.hover(s => s.bg(t.hover))))
+        // Handle style: the hovered tab takes a fill a step off the well (tab_hover), quieter than the shown one.
+        .when(!c.active && style === "handle" && this.hovered === c.id, el => el.bg(t.tab_hover ?? t.hover).text_color(t.foreground))
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = { id: c.id, moved: false }; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
         // Dragging: the pressed tab fades, a line shows the gap it lands in (the pointer's side).
         .on_mouse_move((e, cx) => {
@@ -148,11 +148,16 @@ export default class Tabs extends View {
       // island's top (the well's color, rounded on the tab's side, over the island's). They hang
       // outside the tab, over its neighbours' bottom corners, so tabs sit edge to edge and none
       // moves when it becomes the shown one.
-      const fillet = (side) => div().absolute().bottom(0).size(10).bg(t.background)
+      // Its outer colour is the neighbour's: the well, or the hover fill of a hovered neighbour.
+      const under = (tab) => tab && !tab.active && this.hovered === tab.id ? (t.tab_hover ?? t.hover) : t.well;
+      const fillet = (side, outer) => div().absolute().bottom(0).size(10).bg(t.background)
         .when(side === "left", el => el.left(-10)).when(side === "right", el => el.right(-10))
-        .child(div().size(10).bg(t.well).when(side === "left", e => e.rounded_br(10)).when(side === "right", e => e.rounded_bl(10)));
+        .child(div().size(10).bg(outer).when(side === "left", e => e.rounded_br(10)).when(side === "right", e => e.rounded_bl(10)));
+      // The tab right of the shown one paints after it, so it redraws that fillet over its own fill.
+      const afterShown = i > 0 && shown[i - 1].active && Boolean(t.well);
       return h_flex().id(`tabw-${c.id}`).flex_none().h_full().items_end()
-        .child(body.when(c.active && Boolean(t.well), el => el.child(fillet("left")).child(fillet("right"))));
+        .child(body.when(c.active && Boolean(t.well), el => el.child(fillet("left", under(shown[i - 1]))).child(fillet("right", under(shown[i + 1]))))
+          .when(afterShown, el => el.child(fillet("right", under(c)).left(0).right_auto())));
     };
     const root = layout(), sidebar = find(root, "sidebar"), w = window();
     // Old saved rails and a dragged-narrow sidebar can be smaller than the window buttons.

@@ -46,6 +46,7 @@
     "done": "#1e8651",
     "idle": "#85868f",
     "unknown": "#85868f",
+    "tab_hover": "#d9d9df",
     "well": "#e8e8ec"
   }
 }
