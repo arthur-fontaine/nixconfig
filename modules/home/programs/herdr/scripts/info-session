@@ -46,10 +46,18 @@ function doEdit(p, oldText, newText) {
   return out.join("\n");
 }
 function doWrite(p, content) { mkdirSync(dirname(abs(p)), { recursive: true }); writeFileSync(abs(p), content); }
-// What bash-changes records for a bash call: git's own numstat of the files it touched.
-function changes(paths) {
-  git("add", "-N", "--", ...paths); // a new file counts too, as bash-changes counts it
-  const files = paths.map((p) => { const [a, r] = git("diff", "--numstat", "--", p).trim().split("\t"); return { path: p, status: "M", added: Number(a), removed: Number(r) }; });
+// What bash-changes records for a bash call: per file, git's numstat of that call's own change
+// (its content before → after).
+function changes(before) {
+  const files = Object.entries(before).map(([p, old]) => {
+    const tmp = join(dir, ".before");
+    writeFileSync(tmp, old);
+    let stat = "";
+    try { execFileSync("git", ["diff", "--no-index", "--numstat", tmp, abs(p)], { encoding: "utf8" }); } catch (e) { stat = e.stdout; }
+    rmSync(tmp);
+    const [a, r] = stat.trim().split("\t");
+    return { path: p, status: "M", added: Number(a), removed: Number(r) };
+  });
   return { root: repo, files };
 }
 
@@ -175,16 +183,18 @@ script("await tools.write({ path: \"src/predict.js\", content: big });\nawait to
   // bash that edits a file, recorded by bash-changes on its result.
   const c = { id: id(), name: "bash", arguments: { command: "sed -i '' 's/saint-malo/saint_malo/' config/harbours.json" } };
   assistant([c]);
+  const before = { "config/harbours.json": read("config/harbours.json") };
   writeFileSync(abs("config/harbours.json"), read("config/harbours.json").replace("saint-malo", "saint_malo"));
-  result(c, { text: "", ms: 80, details: { fileChanges: changes(["config/harbours.json"]) } });
+  result(c, { text: "", ms: 80, details: { fileChanges: changes(before) } });
 }
 {
   // A background bash whose bash-changes record comes later, as a session entry.
   const c = { id: id(), name: "bash", arguments: { command: "npx prettier --write src/units.js" } };
   assistant([c]);
+  const before = { "src/units.js": read("src/units.js") };
   writeFileSync(abs("src/units.js"), read("src/units.js").replace("export const unit1 = 1;\n", "export const unit1 = 1; // metres\n"));
   result(c, { text: "src/units.js 12ms", ms: 1300 });
-  put({ type: "custom", customType: "bash-changes", timestamp: iso(ts(100)), data: { toolCallId: c.id, fileChanges: changes(["src/units.js"]) } });
+  put({ type: "custom", customType: "bash-changes", timestamp: iso(ts(100)), data: { toolCallId: c.id, fileChanges: changes(before) } });
 }
 {
   const c = { id: id(), name: "read", arguments: { path: abs("src/parse.js") } };
