@@ -55,7 +55,7 @@ const pct = (r) => (r === null || r === undefined ? "—" : `${Math.round(r * 10
 const ICON = (name) => `mods/nix-head/icons/${name}.svg`;
 const MONO = "JetBrains Mono";
 const SHOWN = 200;
-const TOOL_ICON = { bash: "terminal", read: "file", edit: "pen", write: "pen", ask: "help-circle", fetch: "globe", agent: "user" };
+const TOOL_ICON = { bash: "terminal", read: "file", edit: "pen", write: "pen", ask: "help-circle", fetch: "globe", agent: "user", code: "code" };
 const LABELS = { context: "Context window", activity: "Agent activity", lines: "Lines changed" };
 const KINDS = [
   { key: "all", label: "All" },
@@ -308,7 +308,8 @@ export default class Info extends View {
       .when(Boolean(c.full || c.arg) && !on, (e) => e.tooltip(c.full || c.arg))
       .cursor_pointer().on_click((_e, cx) => this.select(c.id, cx))
       .child(svg(ICON(icon)).size(big ? 13 : 14).flex_none().text_color(t.dim))
-      .child(div().w(40).flex_none().text_size(12.5).text_color(c.error ? t.blocked : t.muted).child(c.kind))
+      // A long tool name would wrap onto a second line, over the next row: cut instead.
+      .child(div().w(40).flex_none().whitespace_nowrap().truncate().text_size(12.5).text_color(c.error ? t.blocked : t.muted).child(c.kind))
       .child(arg)
       .when(c.running, (e) => e.child(h_flex().flex_none().gap(5).items_center().text_size(11).text_color(t.working)
         .child(this.spinner(t)).child(infoDuration(now - (c.started ?? now)))))

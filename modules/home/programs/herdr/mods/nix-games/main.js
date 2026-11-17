@@ -16,7 +16,7 @@ const POLL = 250;
 const READ = 1000;
 const TAIL_BYTES = 64 * 1024;
 const ICON = (name) => `mods/nix-head/icons/${name}.svg`;
-const TOOL_ICON = { bash: "terminal", read: "file", edit: "pen", write: "pen", ask: "help-circle", fetch: "globe", agent: "user" };
+const TOOL_ICON = { bash: "terminal", read: "file", edit: "pen", write: "pen", ask: "help-circle", fetch: "globe", agent: "user", code: "code" };
 
 function find(node, id) {
   if (node?.id === id) return node;
