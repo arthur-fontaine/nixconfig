@@ -18,7 +18,7 @@ export function tabLabel({ named, name, lead, folder }) {
   if (p && !p.shell && p.name) return p.name;
   if (!lead?.cwd) return "Terminal";
   const cwd = String(lead.cwd).replace(/\/+$/, ""), top = String(folder ?? "").replace(/\/+$/, "");
-  if (top && cwd === top) return tabBase(top);
+  if (top && cwd === top) return "Terminal";
   if (top && cwd.startsWith(top + "/")) return cwd.slice(top.length + 1);
   return tabBase(cwd);
 }
