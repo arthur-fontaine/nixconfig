@@ -6,7 +6,7 @@
     20,
     24
   ],
-  "background": "canvas",
+  "background": "well",
   "terminal_padding": [
     12,
     16
@@ -114,35 +114,45 @@
           "type": "row",
           "children": [
             {
-              "id": "main",
-              "type": "block",
-              "content": {
-                "tab": "active",
-                "pane": {
-                  "gap": 1,
-                  "radius": 0,
-                  "background": "background",
-                  "lone": false,
-                  "border": {
-                    "width": 0,
-                    "color": "border"
-                  },
-                  "focus": {
-                    "width": 1,
-                    "color": "input"
-                  },
-                  "header": {
-                    "content": {
-                      "mod": "nix-pane"
-                    },
-                    "height": 28,
-                    "position": "top",
-                    "reveal": "always"
+              "id": "main-island",
+              "type": "column",
+              "radius": 14,
+              "background": "background",
+              "border": {
+                "width": 1,
+                "color": "border"
+              },
+              "children": [
+                {
+                  "id": "main",
+                  "type": "block",
+                  "content": {
+                    "tab": "active",
+                    "pane": {
+                      "gap": 1,
+                      "radius": 0,
+                      "background": "background",
+                      "lone": false,
+                      "border": {
+                        "width": 0,
+                        "color": "border"
+                      },
+                      "focus": {
+                        "width": 1,
+                        "color": "input"
+                      },
+                      "header": {
+                        "content": {
+                          "mod": "nix-pane"
+                        },
+                        "height": 28,
+                        "position": "top",
+                        "reveal": "always"
+                      }
+                    }
                   }
                 }
-              },
-              "radius": 14,
-              "background": "background"
+              ]
             },
             {
               "id": "panel",

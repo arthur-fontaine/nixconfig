@@ -23,7 +23,7 @@
   ],
   "colors": {
     "background": "#ffffff",
-    "canvas": "#e3e4f1",
+    "canvas": "#f6f6f7",
     "chrome": "#f6f6f7",
     "surface": "#ffffff",
     "popover": "#ffffff",
@@ -45,6 +45,7 @@
     "blocked": "#d0343a",
     "done": "#1e8651",
     "idle": "#85868f",
-    "unknown": "#85868f"
+    "unknown": "#85868f",
+    "well": "#e3e4f1"
   }
 }
