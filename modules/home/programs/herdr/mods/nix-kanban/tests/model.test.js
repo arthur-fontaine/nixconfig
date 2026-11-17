@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { KNOWN_EXCLUSIVE, estimateDraft, estimateEdits, isEdited, resourceName, API, COLUMNS, SIDE_ORDER, apiBase, byColumn, fileSize, isImage, pastedName, pickedPaths, columnColor, factorChips, firstLine, glance, isFolded, kTokens, livePending, neighbor, parseNumber, spacedCode, unrecordedSpaces, waitLabel, waitLabels } from "../model.js";
+import { KNOWN_EXCLUSIVE, estimateDraft, estimateEdits, isEdited, resourceName, API, COLUMNS, SIDE_ORDER, apiBase, byColumn, fileSize, isImage, pastedName, pickedPaths, columnColor, factorChips, firstLine, glance, isFolded, kTokens, livePending, neighbor, parseNumber, spacedCode, unrecordedSpaces, waitLabel, waitLabels, paneRadius } from "../model.js";
 
 const card = (id, column, o = {}) => ({ id, column, priority: 1, createdAt: 0, movedAt: 0, startedAt: null, project: null, orchestrator: null, ...o });
 
@@ -170,4 +170,13 @@ test("edited cards are told apart", () => {
   assert.equal(isEdited({ factors: { manual: ["exclusive"] } }), true);
   assert.equal(isEdited({ factors: { manual: [] } }), false);
   assert.equal(isEdited({ factors: null }), false);
+});
+
+// The board as a tab rounds its own fill by the layout's pane radius (a fill isn't clipped by its frame).
+test("paneRadius: the main block's pane radius, 0 when none", () => {
+  const islands = { id: "root", children: [{ id: "work", children: [{ id: "main", content: { tab: "active", pane: { radius: 9 } } }] }] };
+  assert.equal(paneRadius(islands), 9);
+  assert.equal(paneRadius({ id: "root", children: [{ id: "main", content: { pane: { radius: 0 } } }] }), 0);
+  assert.equal(paneRadius({ id: "root", children: [{ id: "main", content: { tab: "active" } }] }), 0);
+  assert.equal(paneRadius(null), 0);
 });

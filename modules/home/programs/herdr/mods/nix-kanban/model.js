@@ -201,3 +201,12 @@ export function resourceName(text) {
   const s = String(text).trim().toLowerCase().replace(/[\s_]+/g, "-").replace(/-+/g, "-");
   return s.length <= 40 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(s) ? s : null;
 }
+
+// The layout's pane radius (the "main" block's content.pane.radius), 0 if none: the board, as a
+// tab, rounds its own fill by it, since a pane's frame doesn't clip what the mod paints.
+export function paneRadius(node) {
+  if (!node) return 0;
+  if (node.id === "main") return Number(node.content?.pane?.radius) || 0;
+  for (const child of node.children ?? []) { const r = paneRadius(child); if (r || child.id === "main") return r; }
+  return 0;
+}

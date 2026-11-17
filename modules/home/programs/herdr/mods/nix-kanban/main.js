@@ -10,7 +10,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, settings, run, props, shared, setShared, spaces, openOverlay, closeOverlay, notify, pickFolder, layout, nextCommand, exec, appHome } from "herdr";
-import { KNOWN_EXCLUSIVE, estimateDraft, estimateEdits, isEdited, resourceName, apiBase, fileSize, isImage, pickedPaths, pastedName, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces, SIDE_ORDER, isFolded, waitLabel, waitLabels, firstLine } from "./model.js";
+import { KNOWN_EXCLUSIVE, estimateDraft, estimateEdits, isEdited, resourceName, apiBase, fileSize, isImage, pickedPaths, pastedName, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces, SIDE_ORDER, isFolded, waitLabel, waitLabels, firstLine, paneRadius } from "./model.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // An image attachment's thumbnail height in the card dialog.
@@ -354,14 +354,16 @@ export default class Kanban extends View {
 
   renderBoard(t) {
     const s = this.state;
-    const root = v_flex().id("board").size_full().min_h(0).bg(t.canvas ?? t.background).text_color(t.foreground)
+    // A pane's rounded frame doesn't clip the mod's fill: the board rounds it (and its header) itself.
+    const radius = paneRadius(layout());
+    const root = v_flex().id("board").size_full().min_h(0).bg(t.canvas ?? t.background).text_color(t.foreground).rounded(radius)
       .on_mouse_up("left", (_e, cx) => { if (this.drag) { this.drag = null; this.over = null; cx.notify(); } });
     if (this.offline) return root.child(this.offlineNote(t));
     if (!s) return root;
     const col = byColumn(s.cards);
     const pending = livePending(s.pairing.pending);
     const width = this.columnWidth();
-    const header = h_flex().h(48).flex_none().px(16).gap(14).items_center().border_b(1).border_color(t.border).bg(t.chrome)
+    const header = h_flex().h(48).flex_none().px(16).gap(14).items_center().border_b(1).border_color(t.border).bg(t.chrome).rounded_t(radius)
       .child(svg(ICON("square-kanban")).size(15).text_color(t.muted))
       .child(div().text_size(15).font_semibold().child("Kanban"))
       .child(div().flex_1())
