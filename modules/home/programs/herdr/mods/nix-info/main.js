@@ -20,6 +20,10 @@ const HERDR = { spaces, panes, run, shared, setShared, notify };
 const TICK = 1000;
 const POLL = 100;
 const BOUND = 8000;
+// The disclosure cell (R2-5): 16 pt wide over a 10 pt column, 3 pt out on each side.
+const DISCLOSE = { w: 16, out: 3 };
+// The Calls list's › ends at least this far before the overlay scrollbar's thumb (R2-5).
+const GUTTER = 4;
 // Sessions kept read, for switching between panes.
 const KEPT = 6;
 const USAGE_EVERY = 5000;
@@ -424,12 +428,16 @@ export default class Info extends View {
       : sans(fg, c.arg || c.name);
     const KIND = { code: "Script", bash: "Bash", read: "Read", edit: "Edit", write: "Write", ask: "Question", fetch: "Fetch", agent: "Agent" };
     return chromeRow(UI, t, `call-${c.id}`, { on, onClick: inList ? null : onClick, clickable: inList || Boolean(onClick) })
+      // In the Calls list the › clears the overlay scrollbar's thumb by GUTTER (R2-5).
+      .when(inList, (e) => e.pr(CHROME.rowX + GUTTER + 1))
       .when(Boolean(c.full || c.arg) && !more, (e) => e.tooltip(tipText(c.merged ? `${c.tip}\n${c.full || c.arg}` : `${KIND[c.kind] ?? c.name}: ${c.full || c.arg}`)))
       .when(c.level === 1, (e) => e.child(div().w(10).h_full().flex_none().child(div().ml(4).w(1).h_full().bg(t.tones.guide))))
-      .child(div().w(10).flex_none().flex().items_center().justify_center()
+      // R2-5: the disclosure is its own 16 × 26 cell with its own hover fill, over the 10 pt column
+      // (3 pt each side), so the text column stays put; listClick's x test uses the same bounds.
+      .child(div().w(DISCLOSE.w).h(CHROME.row).ml(-DISCLOSE.out).mr(-DISCLOSE.out).flex_none().flex().items_center().justify_center().rounded(CHROME.radius)
         // R2-1: a script merged with its one step: the script's marker, muted, no action of its own.
         .when(Boolean(c.merged), (e) => e.child(svg(ICON(TOOL_ICON.code)).size(10).text_color(t.dim)))
-        .when(Boolean(disclose), (e) => e.id(`toggle-${c.id}`).cursor_pointer().when(!inList, (x) => x.on_click(disclose.onClick))
+        .when(Boolean(disclose), (e) => e.id(`toggle-${c.id}`).cursor_pointer().hover((x) => x.bg(t.selected)).when(!inList, (x) => x.on_click(disclose.onClick))
           .child(svg(ICON(disclose.open ? "chevron-down" : "chevron-right")).size(10).text_color(t.chevron))))
       .when(!more, (e) => e.child(svg(ICON(TOOL_ICON[c.kind] ?? "box")).size(14).flex_none().text_color(t.dim)))
       .child(text)
@@ -548,7 +556,7 @@ export default class Info extends View {
   listClick(id, cx) {
     const r = this.listed?.find((x) => x.id === id);
     if (!r) return;
-    if (r.level === 0 && r.nested?.length && (this.pointerX ?? 99) < CHROME.rowX + 10 + 4) this.command(`toggle:${id}`, cx);
+    if (r.level === 0 && r.nested?.length && (this.pointerX ?? 99) < CHROME.rowX - DISCLOSE.out + DISCLOSE.w) this.command(`toggle:${id}`, cx);
     else this.select(id, cx);
   }
 
