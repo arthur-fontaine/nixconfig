@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { tabLabel, tabSlot, tabMoveIndex } from "../tabs.js";
+import { tabLabel, tabLabelIsPath, tabSlot, tabMoveIndex } from "../tabs.js";
 
 const W = "/r/wt-a";
 const sh = (cwd, name = "zsh") => ({ cwd, title: "", program: { shell: true, agent: false, name } });
@@ -40,4 +40,13 @@ test("tabs: a drop slot becomes tab.move's final position, through hidden tabs",
   assert.equal(tabMoveIndex(all, shown, "a", 2), 3); // between c and d
   assert.equal(tabMoveIndex(all, shown, "c", 1), null); // its own place
   assert.equal(tabMoveIndex(all, shown, "c", 2), null); // its own place
+});
+// A folder label is cut at its start (its end tells tabs apart); any other at its end.
+test("tabs: only a shell's folder label is a path", () => {
+  assert.equal(tabLabelIsPath({ named: false, name: "2", lead: sh(W + "/mods/nix-tabs"), folder: W }), true);
+  assert.equal(tabLabelIsPath({ named: false, name: "2", lead: sh("/tmp/x"), folder: W }), true);
+  assert.equal(tabLabelIsPath({ named: false, name: "2", lead: sh(W), folder: W }), false);
+  assert.equal(tabLabelIsPath({ named: true, name: "fix login", lead: sh(W + "/a"), folder: W }), false);
+  assert.equal(tabLabelIsPath({ named: false, name: "2", lead: { app: "pi", title: "π - a long session - wt-a", program: { agent: true } }, folder: W }), false);
+  assert.equal(tabLabelIsPath({ named: false, name: "2", lead: { cwd: W, program: { shell: false, agent: false, name: "sleep" } }, folder: W }), false);
 });

@@ -23,6 +23,14 @@ export function tabLabel({ named, name, lead, folder }) {
   return tabBase(cwd);
 }
 
+// Whether tabLabel gave a folder (cut at its start when too long), not a name or a program.
+export function tabLabelIsPath(tab) {
+  const { named, name, lead, folder } = tab;
+  if ((named && name !== "Pi") || lead?.app === "pi" || lead?.mod || !lead?.cwd) return false;
+  if (lead.program && !lead.program.shell && lead.program.name) return false;
+  return String(lead.cwd).replace(/\/+$/, "") !== String(folder ?? "").replace(/\/+$/, "");
+}
+
 // Where a dragged tab lands, from the tab under the pointer (its index among the shown tabs,
 // the pointer along it, its length): the gap on the pointer's side of it, 0..n.
 export function tabSlot(index, at, length) {

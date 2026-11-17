@@ -52,6 +52,8 @@ export default class Status extends View {
     const plan = closePlan({ spaces: spaces(), panes: panes(), terminals: terminals() }, target);
     if (!plan) return;
     const { ask, lost } = closeAsk(plan);
+    // A question left unanswered (cancelled) never runs later: a new close replaces it.
+    setShared("nix.closePending", null);
     if (!ask) { for (const [name, args] of plan.commands) run(name, args); return; }
     setShared("nix.closePending", plan.commands);
     openOverlay({ mod: "confirm", kind: "dialog", width: 380, height: 170, props: { ...closeQuestion(plan.scope, lost), command: { name: "nix-status.close-confirmed" } } });
