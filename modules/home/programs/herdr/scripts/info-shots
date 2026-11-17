@@ -65,7 +65,6 @@ state_() { # <state> <theme>
     select-subrow) act nix-info.select:toolu_syn0198/2 ;;
     show-all) act nix-info.detail:activity; act nix-info.all ;;
     no-pi) show "$shell_tab" ;;
-    running) label "$gen/running.jsonl"; echo working >"$state"; sleep 1 ;;
     narrow) "$S" do layout.resize --id panel --px 260 >/dev/null ;;
     changes|files) panel "$1" ;;
     *) echo "unknown state $1" >&2; return 1 ;;
@@ -73,16 +72,24 @@ state_() { # <state> <theme>
   shoot "$1" "$2"
   case $1 in
     no-pi) show "$pi_tab" ;;
-    running) echo idle >"$state"; label "$gen/session.jsonl" ;;
     narrow) "$S" do layout.resize --id panel --px 360 >/dev/null ;;
     changes|files) panel info ;;
   esac
 }
 
+# running last, both themes in one go: its end (working → idle) raises a "Pi finished"
+# notification over the panel's bottom, which would spoil the shots after it.
+running=0
 for theme in dark light; do
   "$S" appearance "$theme"; sleep 1.5
-  for s in "${states[@]}"; do state_ "$s" "$theme"; done
+  for s in "${states[@]}"; do if [ "$s" = running ]; then running=1; else state_ "$s" "$theme"; fi; done
 done
+if [ $running = 1 ]; then
+  act nix-info.detail:
+  label "$gen/running.jsonl"; echo working >"$state"
+  for theme in dark light; do "$S" appearance "$theme"; sleep 1.5; shoot running "$theme"; done
+  echo idle >"$state"; label "$gen/session.jsonl"
+fi
 act nix-info.detail:
 "$S" appearance dark
 echo "corners: $corners"

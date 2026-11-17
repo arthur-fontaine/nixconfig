@@ -17,10 +17,12 @@ x0 = x1
 while x0 > 0 and not near(im.getpixel((x0 - 1, cy)), well): x0 -= 1
 # Clear of the rounded corners and of a toast over the panel's middle.
 cx = x0 + 40
+# The edge is where 4 well pixels in a row start: one antialiased pixel inside can match the well.
+wellrun = lambda y, d: all(0 <= y + d * k < H and near(im.getpixel((cx, y + d * k)), well) for k in range(4))
 y0 = cy
-while y0 > 0 and not near(im.getpixel((cx, y0 - 1)), well): y0 -= 1
+while y0 > 0 and not wellrun(y0 - 1, -1): y0 -= 1
 y1 = cy
-while y1 < H - 1 and not near(im.getpixel((cx, y1 + 1)), well): y1 += 1
+while y1 < H - 1 and not wellrun(y1 + 1, 1): y1 += 1
 print(f"panel x{x0}-{x1} y{y0}-{y1} ({x1 - x0 + 1}x{y1 - y0 + 1} px)")
 im.crop((x0, y0, x1 + 1, y1 + 1)).save(sys.argv[3])
 bad = 0
