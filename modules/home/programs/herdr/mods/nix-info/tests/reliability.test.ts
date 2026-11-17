@@ -1,5 +1,5 @@
 // Figures the Info panel gets wrong, found by the phase-1 reliability audit (inventory.md,
-// "Reliability"). Marked todo: they fail until phase 2 fixes them, without failing the run.
+// "Reliability"), fixed in phase 2.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { infoFeed, infoFiles, infoKeep, infoNewSession, infoTools } from "../model.js";
@@ -10,7 +10,7 @@ const call = (ts, calls, extra = {}) => line({ type: "message", timestamp: ts, .
 const result = (ts, id, extra = {}) => line({ type: "message", timestamp: ts, ...extra, message: { role: "toolResult", toolCallId: id, timestamp: Date.parse(ts), content: [{ type: "text", text: "" }] } });
 const start = line({ type: "session", cwd: "/repo", timestamp: "2026-11-17T10:00:00.000Z" });
 
-test("a write's last newline isn't a line: a 2-line file is +2", { todo: "phase 2" }, () => {
+test("a write's last newline isn't a line: a 2-line file is +2", () => {
   const s = infoNewSession("f");
   infoFeed(s, start + call("2026-11-17T10:00:01.000Z", [{ id: "w", name: "write", arguments: { path: "/repo/a.js", content: "a\nb\n" } }])
     + result("2026-11-17T10:00:02.000Z", "w"));
@@ -18,7 +18,7 @@ test("a write's last newline isn't a line: a 2-line file is +2", { todo: "phase 
   assert.deepEqual(infoFiles(s).map((f) => [f.rel, f.added, f.removed]), [["a.js", 2, 0]]);
 });
 
-test("Claude Code's tool names (Bash, Edit, Write, AskUserQuestion) count for the filters and the lines", { todo: "phase 2" }, () => {
+test("Claude Code's tool names (Bash, Edit, Write, AskUserQuestion) count for the filters and the lines", () => {
   const s = infoNewSession("f");
   infoFeed(s, start + call("2026-11-17T10:00:01.000Z", [
     { id: "b", name: "Bash", arguments: { command: "ls", description: "List" } },

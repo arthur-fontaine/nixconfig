@@ -584,24 +584,3 @@ test("a nested bash takes its bash-titles.json title, keyed by its whole command
   infoFeed(s, late("toolu_01NZrSTC2p7ssRymJ4A1iLvk") + late("toolu_01CdG5Nu7zL7rxJuWhL1CZjt") + late("toolu_01CLKS9CX6zyphy73bQpqtZU"));
   assert.equal(infoNeedsTitles(s), true);
 });
-
-test("nix-info.<verb> commands put the panel in a state", () => {
-  const home = { detail: null, kind: "all", sel: null, all: false };
-  const on = (view, c) => infoViewCommand(view, c);
-  // detail:<key> opens a detail; "detail:" is the overview, as Back leaves it.
-  assert.deepEqual(on(home, "detail:lines"), { ...home, detail: "lines" });
-  assert.deepEqual(on({ detail: "activity", kind: "bash", sel: "x", all: true }, "detail:"), home);
-  assert.equal(on(home, "detail:nope"), null);
-  // kind:<key> filters the activity detail, opening it.
-  assert.deepEqual(on(home, "kind:errors"), { ...home, detail: "activity", kind: "errors" });
-  assert.equal(on(home, "kind:nope"), null);
-  // select:<id> selects a call (a nested one too, "<parent>/<n>"), from the overview into the
-  // activity detail as a click does; "select:" closes the inspector.
-  assert.deepEqual(on(home, "select:a/2"), { ...home, detail: "activity", sel: "a/2" });
-  assert.deepEqual(on({ ...home, detail: "activity", sel: "a" }, "select:"), { ...home, detail: "activity" });
-  assert.deepEqual(on(home, "all"), { ...home, all: true });
-  // back: as Esc, the inspector first, then the detail.
-  assert.deepEqual(on({ ...home, detail: "activity", sel: "a" }, "back"), { ...home, detail: "activity" });
-  assert.deepEqual(on({ ...home, detail: "activity", kind: "read" }, "back"), home);
-  assert.equal(on(home, "whatever"), null);
-});

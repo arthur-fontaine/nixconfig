@@ -40,6 +40,11 @@ export function infoNewSession(file) {
     started: null, // ms
     last: null, // ms of the latest entry
     messages: 0, // user and assistant messages
+    prompts: 0, // user messages
+    replies: 0, // assistant messages
+    lastResult: null, // ms of the latest tool result
+    touched: new Set(), // absolute paths an edit, a write or a bash-changes record changed
+    unreadable: 0, // nested edits/writes that kept neither arguments nor a readable path
     compactions: 0,
     lastCompaction: null, // ms
     requests: [], // per assistant response: { context, input, cacheRead, cacheWrite, output, afterCompaction }
@@ -104,8 +109,22 @@ export function infoCommand(command) {
   return firstLine(shown).trim();
 }
 
+// Claude Code's tool names and argument shapes (a Claude Code-provider session) as Pi's.
+const INFO_CC = { Bash: "bash", Read: "read", Write: "write", Edit: "edit", MultiEdit: "edit", AskUserQuestion: "ask_user_question", WebFetch: "web_fetch", Task: "Agent" };
+export function infoCanonical(name, args) {
+  const to = INFO_CC[name];
+  if (!to) return { name, arguments: args };
+  const a = args && typeof args === "object" ? args : {};
+  const path = a.file_path ?? a.path;
+  if (name === "Edit") return { name: to, arguments: { path, edits: [{ oldText: a.old_string ?? "", newText: a.new_string ?? "" }] } };
+  if (name === "MultiEdit") return { name: to, arguments: { path, edits: (a.edits ?? []).map((e) => ({ oldText: e.old_string ?? "", newText: e.new_string ?? "" })) } };
+  if (name === "Read" || name === "Write") return { name: to, arguments: { ...a, path } };
+  return { name: to, arguments: a };
+}
+
 // A tool call as listed: `kind` is the short word, `arg` the one thing that tells calls apart.
-export function infoTool(call, cwd) {
+export function infoTool(raw, cwd) {
+  const call = { ...raw, ...infoCanonical(raw.name, raw.arguments) };
   const a = call.arguments ?? {};
   const base = { id: call.id, name: call.name, path: null };
   switch (call.name) {
@@ -195,7 +214,11 @@ function infoNestedCalls(m) {
   return (nested ?? details).filter((c) => c && typeof c.name === "string").map((c) => {
     const whole = Boolean(c.arguments && typeof c.arguments === "object");
     const d = byId.get(c.id);
-    return { id: c.id, name: c.name, error: c.status === "error", whole, args: whole ? c.arguments : infoCutArgs(d?.args ?? c.args),
+    const raw = d?.args ?? c.args;
+    const canon = infoCanonical(c.name, whole ? c.arguments : infoCutArgs(raw));
+    // A path cut before its closing quote names no file.
+    const pathKnown = whole || /"(?:path|file_path)"\s*:\s*"(?:[^"\\]|\\.)*"/.test(String(raw ?? ""));
+    return { id: c.id, name: canon.name, error: c.status === "error", whole, pathKnown, args: canon.arguments,
       duration: typeof c.durationMs === "number" ? Math.round(c.durationMs) : null, errorText: c.error ?? d?.error ?? null,
       title: [c.title, d?.title].find((x) => typeof x === "string" && x.trim())?.trim() ?? null };
   });
@@ -274,11 +297,14 @@ export function infoCommandKey(command) {
 }
 
 // Lines added and removed between two texts, line by line as a multiset (moves aren't changes).
+// A text's lines: a last newline ends the last line, it doesn't start another.
+const infoSplitLines = (text) => { const l = String(text).split("\n"); if (l.length > 1 && l.at(-1) === "") l.pop(); return l; };
+
 export function infoLineDiff(before, after) {
   const count = new Map();
-  for (const l of before ? String(before).split("\n") : []) count.set(l, (count.get(l) ?? 0) + 1);
+  for (const l of before ? infoSplitLines(before) : []) count.set(l, (count.get(l) ?? 0) + 1);
   let added = 0;
-  for (const l of after ? String(after).split("\n") : []) {
+  for (const l of after ? infoSplitLines(after) : []) {
     const n = count.get(l) ?? 0;
     if (n > 0) count.set(l, n - 1);
     else added++;
@@ -318,6 +344,7 @@ function infoCountChanges(state, id, changes) {
     const path = infoAbs(f?.path, changes.root ?? state.cwd);
     if (!path) continue;
     covered.add(path);
+    state.touched.add(path);
     if (!state.changed.has(id)) infoAddLines(state, path, Number(f.added) || 0, Number(f.removed) || 0);
   }
   if (typeof id === "string") state.changed.add(id);
@@ -328,6 +355,7 @@ function countLines(state, call, covered = null) {
   const a = call.arguments ?? {};
   const path = infoAbs(a.path, state.cwd);
   if (!path) return;
+  if (call.name === "edit" || call.name === "write") state.touched.add(path);
   let d = null;
   if (call.name === "edit") {
     const edits = Array.isArray(a.edits) ? a.edits : [{ oldText: a.oldText, newText: a.newText }];
@@ -392,9 +420,9 @@ function apply(state, entry) {
       return;
   }
   const m = entry.message ?? {};
-  if (m.role === "user") state.messages++;
+  if (m.role === "user") { state.messages++; state.prompts++; }
   else if (m.role === "assistant") {
-    state.messages++;
+    state.messages++; state.replies++;
     if (m.model) state.model = m.model;
     if (m.thinkingLevel) state.thinking = m.thinkingLevel;
     const u = m.usage;
@@ -405,8 +433,9 @@ function apply(state, entry) {
       state.pendingCompaction = false;
       for (const k of ["input", "output", "cacheRead", "cacheWrite"]) state.totals[k] += r[k];
     }
-    for (const b of Array.isArray(m.content) ? m.content : []) {
+    for (let b of Array.isArray(m.content) ? m.content : []) {
       if (b?.type !== "toolCall" || !b.id || state.tools.has(b.id)) continue;
+      b = { ...b, ...infoCanonical(b.name, b.arguments) };
       state.tools.set(b.id, { ...infoTool(b, state.cwd), started: ms(m.timestamp) ?? t, duration: null, error: null, call: b,
         args: infoCapValue(b.arguments ?? {}), result: null, resultCut: false, finished: null });
       state.order.push(b.id);
@@ -424,7 +453,10 @@ function apply(state, entry) {
     call.threw = m.isError === true;
     call.error = call.threw;
     call.finished = ms(m.timestamp) ?? t;
-    call.duration = typeof m.durationMs === "number" ? m.durationMs : call.finished - (call.started ?? t);
+    state.lastResult = Math.max(state.lastResult ?? 0, call.finished ?? 0) || state.lastResult;
+    // Pi's durationMs is when the call ran; without it, the reply's start is all there is.
+    call.durationExact = typeof m.durationMs === "number";
+    call.duration = call.durationExact ? m.durationMs : call.finished - (call.started ?? t);
     const text = resultText(m.content);
     call.result = text.length > RESULT_CAP ? text.slice(0, RESULT_CAP) : text;
     call.resultCut = text.length > RESULT_CAP;
@@ -457,6 +489,12 @@ function apply(state, entry) {
           result: text.slice(0, INFO_NESTED_ARG_CAP), resultCut: text.length > INFO_NESTED_ARG_CAP || (!c.error && out?.total > lines.length) };
       });
       for (const c of calls) if (!c.error && c.whole) countLines(state, { name: c.name, arguments: c.args }, covered);
+      // A step that kept no arguments still edited its file: by the path its cut arguments name.
+      for (const c of calls) {
+        if (c.error || c.whole || (c.name !== "edit" && c.name !== "write")) continue;
+        const path = c.pathKnown ? infoAbs(c.args?.path, state.cwd) : null;
+        if (path) state.touched.add(path); else state.unreadable++;
+      }
     }
     // Lines count once the edit or write went through.
     else if (!call.threw) countLines(state, call.call, covered);
@@ -606,38 +644,57 @@ export function infoTools(state, titles = null) {
     const nested = titles && c.nested ? c.nested.map((sub) => (sub.titleKey && fromFile(sub.titleKey) ? { ...sub, arg: fromFile(sub.titleKey) } : sub)) : c.nested;
     return { id: c.id, kind: c.kind, name: c.name, arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null,
       threw: c.threw ?? null, nested: nested ?? null,
+      // D6: a call failed (filled dot) when it failed itself; a script that went on after a
+      // failed step didn't (hollow dot).
+      failed: c.threw === true, stepFailed: c.threw !== true && Boolean(c.nested?.some((n) => n.error)),
+      startedExact: c.durationExact && c.finished ? c.finished - c.duration : null, untitled: c.name === "codemode" && !c.title && !c.lateTitle && arg === c.arg,
       args: c.args, result: c.result, resultCut: c.resultCut, finished: c.finished, diff: c.diff ?? null };
   });
 }
 
 const INFO_KINDS = { bash: ["bash"], read: ["read"], edit: ["edit", "write"], ask: ["ask"] };
+const infoFailedKind = (k) => k === "failed" || k === "errors";
 
 // A listed call under a kind filter ("all", "bash", "read", "edit", "ask", "errors"): null when
 // left out. A script is kept for the calls it made, with only those as its sub-rows.
 export function infoKeep(c, kind) {
   const kinds = INFO_KINDS[kind];
-  if (kind !== "errors" && !kinds) return c;
-  const pick = kind === "errors" ? (n) => n.error : (n) => kinds.includes(n.kind);
+  if (!infoFailedKind(kind) && !kinds) return c;
+  const pick = infoFailedKind(kind) ? (n) => n.error : (n) => kinds.includes(n.kind);
   const matched = c.nested?.filter(pick) ?? [];
-  if (kind === "errors" ? !c.error : !kinds.includes(c.kind) && !matched.length) return null;
+  if (infoFailedKind(kind) ? !c.error : !kinds.includes(c.kind) && !matched.length) return null;
   return c.nested ? { ...c, nested: matched } : c;
 }
 
-const INFO_DETAILS = ["context", "activity", "lines"];
-const INFO_FILTERS = ["all", "bash", "read", "edit", "ask", "errors"];
+const INFO_LISTS = ["calls", "files"];
+const INFO_FILTERS = ["all", "bash", "read", "edit", "ask", "failed"];
+export const INFO_VIEW = { detail: null, from: null, kind: "all", sel: null, all: false, collapsed: [], context: false, outside: false, fill: null };
 
-// The panel's state after a nix-info.<verb> command (keys, scripts): { detail, kind, sel, all },
-// or null for a command it doesn't know. detail:<key> ("detail:" the overview), kind:<key>,
-// select:<call id> ("select:" none), all, back (as Esc).
-export function infoViewCommand(view, command) {
-  const home = { detail: null, kind: "all", sel: null, all: false };
+// The panel's state after a nix-info.<verb> command (keys, scripts), or null for one it doesn't
+// know. detail:<calls|files> ("detail:" the overview), kind:<filter>, select:<call id> (the call
+// pushed over its list; "select:" pops it), next / prev (through `ids`, the listed calls), back,
+// all, toggle:<script id> (collapse), open:/close:<context|outside>, fill:<color> (the corner
+// check's), reset. Back keeps the filter, the selection and Show all (D10).
+export function infoViewCommand(view, command, ids = []) {
   const i = command.indexOf(":"), verb = i < 0 ? command : command.slice(0, i), arg = i < 0 ? null : command.slice(i + 1);
-  if (verb === "detail" && arg === "") return home;
-  if (verb === "detail") return INFO_DETAILS.includes(arg) ? { ...home, detail: arg } : null;
-  if (verb === "kind") return INFO_FILTERS.includes(arg) ? { ...view, detail: "activity", kind: arg, sel: null, all: false } : null;
-  if (verb === "select" && arg !== null) return arg ? { ...view, detail: view.detail ?? "activity", sel: arg } : { ...view, sel: null };
+  const pop = (v) => ({ ...v, detail: v.from, from: null });
+  if (command === "reset") return { ...INFO_VIEW };
+  if (verb === "detail" && arg !== null) return arg === "" ? { ...view, detail: null, from: null } : INFO_LISTS.includes(arg) ? { ...view, detail: arg, from: null } : null;
+  if (verb === "kind" && arg !== null) return INFO_FILTERS.includes(arg) ? { ...view, detail: "calls", from: null, kind: arg } : null;
+  if (verb === "select" && arg !== null) {
+    if (!arg) return view.detail === "call" ? pop(view) : view;
+    return { ...view, detail: "call", from: view.detail === "call" ? view.from : view.detail, sel: arg };
+  }
+  if ((command === "next" || command === "prev") && view.sel) {
+    const at = ids.indexOf(view.sel);
+    if (at < 0) return view;
+    return { ...view, sel: ids[Math.max(0, Math.min(ids.length - 1, at + (command === "next" ? 1 : -1)))] };
+  }
+  if (command === "back") return view.detail === "call" ? pop(view) : { ...view, detail: null, from: null };
   if (command === "all") return { ...view, all: true };
-  if (command === "back") return view.sel ? { ...view, sel: null } : home;
+  if (verb === "toggle" && arg) return { ...view, collapsed: view.collapsed.includes(arg) ? view.collapsed.filter((x) => x !== arg) : [...view.collapsed, arg] };
+  if ((verb === "open" || verb === "close") && (arg === "context" || arg === "outside")) return { ...view, [arg]: verb === "open" };
+  if (verb === "fill" && arg !== null) return { ...view, fill: arg || null };
   return null;
 }
 
@@ -645,8 +702,99 @@ export function infoViewCommand(view, command) {
 export function infoRows(calls) {
   return calls.flatMap((c) => [{ ...c, level: 0 }, ...(c.nested ?? []).map((n) => ({
     id: n.id, parent: c.id, level: 1, name: n.name, kind: n.kind, arg: n.arg, full: n.full, path: n.path, duration: n.duration,
-    error: n.error, threw: n.error, running: false, started: null, finished: null, args: n.args, result: n.result, resultCut: n.resultCut, diff: null, nested: null,
+    error: n.error, threw: n.error, failed: n.error, stepFailed: false, startedExact: null, untitled: false, running: false, started: null, finished: null, args: n.args, result: n.result, resultCut: n.resultCut, diff: null, nested: null,
   }))]);
+}
+
+// Calls made, nested included, and those that failed themselves (D6).
+export function infoCounts(tools) {
+  const rows = infoRows(tools);
+  return { calls: rows.length, failed: rows.filter((r) => r.failed).length };
+}
+
+// The filter chips' counts: matching calls, nested included.
+export function infoKindCounts(tools) {
+  const rows = infoRows(tools), n = (f) => rows.filter(f).length;
+  return { all: rows.length, bash: n((r) => r.kind === "bash"), read: n((r) => r.kind === "read"), edit: n((r) => r.kind === "edit" || r.kind === "write"),
+    ask: n((r) => r.kind === "ask"), failed: n((r) => r.failed) };
+}
+
+// "running" while the agent works, "no-result" when it stopped without one (F3), else "done".
+export function infoCallState(c, working) {
+  return c?.running ? (working ? "running" : "no-result") : "done";
+}
+
+// When the last result came (ms), or null.
+export function infoIdleSince(state) {
+  return state.lastResult ?? null;
+}
+
+// The status block's line (D1): from Herdr's status for the pane ("working", "blocked", "done",
+// "idle"); the session only names the running call. `since`: when Herdr saw it start working.
+export function infoStatusLine({ status, since, state, tools, now }) {
+  if (status === "blocked") return { tone: "waiting", text: "Waiting for your answer" };
+  const open = tools.find((c) => c.running);
+  if (status === "working") {
+    const parts = ["Working"];
+    if (since) parts.push(infoDuration(Math.max(100, now - since)));
+    if (open) parts.push(open.arg || open.name);
+    return { tone: "working", text: parts.join(" · ") };
+  }
+  if (open && tools[0] === open) return { tone: "stopped", text: "Stopped mid-call" };
+  const idle = infoIdleSince(state);
+  return idle ? { tone: "idle", text: `Idle for ${infoAge(now - idle)}` } : { tone: "idle", text: "No calls yet" };
+}
+
+// A meter's colour (D2): "warning" from 80 %, "error" from 95 %.
+export function infoMeterTone(ratio) {
+  return ratio >= 0.95 ? "error" : ratio >= 0.8 ? "warning" : "normal";
+}
+
+// "12 pts ahead of pace", only when ahead by a point or more.
+export function infoPaceText(ahead) {
+  const pts = Math.round((ahead ?? 0) * 100);
+  return ahead !== null && ahead !== undefined && pts >= 1 ? `${pts} pts ahead of pace` : null;
+}
+
+// The files the session edited (O3): those under `root` (rel, name, dir), the others apart, and
+// whether some edit kept no path (then the count is a floor).
+export function infoEdited(state, root) {
+  const dir = root ? root.replace(/\/+$/, "") + "/" : null;
+  const files = [], outside = [];
+  for (const path of state.touched) {
+    if (dir && path.startsWith(dir)) {
+      const r = path.slice(dir.length), cut = r.lastIndexOf("/");
+      files.push({ path, rel: r, name: r.slice(cut + 1), dir: cut < 0 ? "" : r.slice(0, cut) });
+    } else outside.push({ path });
+  }
+  files.sort((a, b) => a.rel.localeCompare(b.rel));
+  outside.sort((a, b) => a.path.localeCompare(b.path));
+  return { files, outside, atLeast: state.unreadable > 0 };
+}
+
+// git's per-file view of the session's files: `git diff --numstat <base>` and `--name-status`,
+// plus the untracked files (status A) with their line counts.
+export function infoGitFiles(numstat, nameStatus, untracked = [], untrackedLines = {}) {
+  const out = {};
+  for (const l of String(nameStatus).split("\n")) {
+    const [st, ...rest] = l.split("\t");
+    if (st && rest.length) out[rest.at(-1)] = { status: st[0], added: null, removed: null };
+  }
+  for (const l of String(numstat).split("\n")) {
+    const [a, r, ...rest] = l.split("\t");
+    if (!rest.length) continue;
+    const p = rest.at(-1);
+    out[p] = { status: out[p]?.status ?? "M", added: a === "-" ? null : Number(a), removed: r === "-" ? null : Number(r) };
+  }
+  for (const p of untracked) out[p] = { status: "A", added: untrackedLines[p] ?? null, removed: 0 };
+  return out;
+}
+
+// An untitled script as its steps: "4 steps: read, edit, write" (kinds in order of first use).
+export function infoStepsLabel(nested) {
+  if (!nested?.length) return null;
+  const kinds = [...new Set(nested.map((n) => n.kind))];
+  return `${nested.length} step${nested.length > 1 ? "s" : ""}: ${kinds.join(", ")}`;
 }
 
 // Works out the bash-titles.json keys of up to `max` calls that lack a title (infoTools looks them

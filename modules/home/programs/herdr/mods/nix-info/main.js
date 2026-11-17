@@ -9,7 +9,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts } from "./model.js";
 import { tipText } from "../_lib/tip.js";
 
 // The editor (../_lib/editor.js) gets the herdr functions it uses.
@@ -69,7 +69,7 @@ const KINDS = [
   { key: "read", label: "read" },
   { key: "edit", label: "edit/write" },
   { key: "ask", label: "ask" },
-  { key: "errors", label: "errors" },
+  { key: "failed", label: "failed" },
 ];
 // "in 2h 10m" reads as is; days read as words in the sub-lines ("in 4 days").
 const days = (msec) => { const d = Math.round(msec / 86400000); return d >= 1 && msec >= 86400000 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(msec); };
@@ -101,7 +101,7 @@ export default class Info extends View {
     // nix-info.detail:<key>, .kind:<key>, .select:<id>, .all, .back: any state by key or script.
     cx.spawn(async (cx) => {
       for (;;) {
-        const next = infoViewCommand({ detail: this.detail, kind: this.kind, sel: this.sel, all: this.all }, await nextCommand());
+        const next = infoViewCommand({ detail: this.detail, kind: this.kind, sel: this.sel, all: this.all }, await nextCommand(), this.ids);
         if (next) { Object.assign(this, next); cx.notify(); }
       }
     });
@@ -323,6 +323,9 @@ export default class Info extends View {
   // A tool call row; `big` is the detail view's taller row.
   toolRow(t, c, now, big = false) {
     const icon = TOOL_ICON[c.kind] ?? "box";
+    // A call without a result runs only while the agent works; else it stopped without one (F3).
+    const state = infoCallState(c, this.pane?.status === "working");
+    c = { ...c, running: state === "running" };
     const prose = c.kind === "ask" || c.kind === "agent";
     const path = c.kind === "read" || c.kind === "edit" || c.kind === "write";
     const on = this.sel === c.id;
@@ -339,9 +342,8 @@ export default class Info extends View {
       // A long tool name would wrap onto a second line, over the next row: cut instead.
       .child(div().w(40).flex_none().whitespace_nowrap().truncate().text_size(12.5).text_color(c.error ? t.blocked : t.muted).child(c.kind))
       .child(arg)
-      .when(c.running, (e) => e.child(h_flex().flex_none().gap(5).items_center().text_size(11).text_color(t.working)
-        .child(this.spinner(t)).child(infoDuration(now - (c.started ?? now)))))
-      .when(!c.running, (e) => e.child(div().w(56).flex_none().text_right().text_size(11).text_color(t.dim).child(infoDuration(c.duration))))
+      .when(c.running, (e) => e.child(div().w(56).flex_none().flex().justify_end().child(this.spinner(t))))
+      .when(!c.running, (e) => e.child(div().w(56).flex_none().text_right().text_size(11).text_color(t.dim).child(state === "no-result" ? "No result" : infoDuration(c.duration))))
       .when(Boolean(c.error), (e) => e.child(div().size(6).flex_none().rounded(3).bg(t.blocked)));
   }
 
@@ -398,8 +400,9 @@ export default class Info extends View {
     // A script that caught a failed call went on: its output isn't an error message.
     const failed = c.nested?.filter((n) => n.error).length ?? 0;
     const said = c.threw ? `failed · ${took}` : c.error ? `${failed} call${failed > 1 ? "s" : ""} failed · ${took}` : took;
-    const status = c.running
-      ? h_flex().gap(5).items_center().text_color(t.working).child(this.spinner(t)).child(`running ${infoDuration(now - (c.started ?? now))}`)
+    const state = infoCallState(c, this.pane?.status === "working");
+    const status = state === "running" ? h_flex().gap(5).items_center().text_color(t.working).child(this.spinner(t)).child("running")
+      : state === "no-result" ? div().text_color(t.dim).child("No result")
       : div().text_color(c.error ? t.blocked : t.dim).child(said);
     const button = (id, child, tip, action) => div().id(id).h(24).px(8).flex_none().flex().items_center().gap(6).rounded(6).cursor_pointer()
       .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground)).active((e) => e.bg(t.selected)).tooltip(tip).on_click(action).child(child);
@@ -433,8 +436,8 @@ export default class Info extends View {
     }
     const kv = (k, v) => h_flex().h(22).px(16).gap(10).items_center().text_size(12)
       .child(div().w(70).flex_none().text_color(t.muted).child(k)).child(div().font_family(MONO).text_color(t.foreground).child(v));
-    sections.push(this.label(t, "Timing"), kv("Started", infoClock(c.started)), kv("Finished", c.running ? "—" : infoClock(c.finished)),
-      kv("Took", c.running ? infoDuration(now - (c.started ?? now)) : took));
+    // Started only when exact: finished − took, from Pi's durationMs (F4).
+    if (state === "done" && c.finished) sections.push(this.label(t, "Timing"), ...(c.startedExact ? [kv("Started", infoClock(c.startedExact))] : []), kv("Finished", infoClock(c.finished)), kv("Took", took));
     // 55% of the area it shares with the list, so the list keeps the rest.
     return v_flex().id("inspector").flex_none().h(Math.max(160, Math.round((area || 600) * 0.55))).border_t(1).border_color(t.border).bg(t.chrome)
       .child(v_flex().flex_none().px(16).pt(10).pb(8).gap(4).border_b(1).border_color(t.border)
@@ -446,7 +449,8 @@ export default class Info extends View {
           .child(button("inspector-close", svg(ICON("x")).size(12), "Close (Esc)", (_e, cx) => { this.sel = null; cx.notify(); })))
         .child(div().min_w(0).font_family(MONO).text_size(12).text_color(t.foreground)
           .when(Boolean(c.path), (e) => e.text_ellipsis_start()).when(!c.path, (e) => e.truncate()).child(range ? `${c.arg} · ${range}` : c.arg || c.name))
-        .child(h_flex().gap(6).text_size(11).text_color(t.dim).child(status).child(`· ${infoClock(c.started, false)}`)))
+        .child(h_flex().gap(6).text_size(11).text_color(t.dim).child(status)
+          .when(Boolean(c.startedExact), (e) => e.child(`· started ${infoClock(c.startedExact, false)}`))))
       .child(v_flex().id("inspector-body").flex_1().min_h(0).overflow_y_scrollbar().pb(10).children(sections));
   }
 
@@ -470,7 +474,7 @@ export default class Info extends View {
     return {
       usage, window, working, running, history,
       context: infoContext(s, window), cache: infoCache(s), lines: infoLines(s),
-      errors: tools.filter((c) => c.error).length, total: tools.length,
+      ...(() => { const n = infoCounts(tools); return { errors: n.failed, total: n.calls }; })(),
       started: s.started !== null && s.requests.length + s.messages > 0,
     };
   }
@@ -515,16 +519,15 @@ export default class Info extends View {
       this.bar(t, c.ratio, contextColor(t, c.ratio)),
       this.mixed(t, [c.compactions ? [`${c.compactions} compaction${c.compactions > 1 ? "s" : ""}`] : "no compaction yet", " · cache hits ", [pct(cache.session)]])));
     const last = infoLastCall(s);
-    const since = f.running.reduce((m, r) => Math.min(m, r.started ?? now), now);
     rows.push(this.tile(t, "activity", "Agent activity",
       this.figure(t, f.running.length ? `${f.running.length} running` : "Idle"),
-      f.running.length ? `since ${infoDuration(now - since)}` : last ? `last call ${infoAge(now - last)} ago` : "no tool calls yet", null, null));
+      f.running.length ? "" : last ? `last call ${infoAge(now - last)} ago` : "no tool calls yet", null, null));
     const l = f.lines, added = l.rows.reduce((n, r) => n + r.added, 0), removed = l.rows.reduce((n, r) => n + r.removed, 0);
     rows.push(this.tile(t, "lines", "Lines changed",
       l.files ? h_flex().gap(8).child(this.figure(t, `+${added}`, t.ansi2)).child(this.figure(t, `−${removed}`, t.ansi1)) : this.figure(t, "—", t.muted),
       l.files ? `${l.files} file${l.files > 1 ? "s" : ""}` : "", null,
       this.mixed(t, l.rows.length ? l.rows.flatMap((r, i) => [i ? " · " : "", `${r.category} `, [`+${r.added}`]]).filter(Boolean) : ["No edits yet"])));
-    rows.push(this.section(t, "Tool calls", f.total ? `${f.total}${f.errors ? ` · ${f.errors} errors` : ""}` : "", false));
+    rows.push(this.section(t, "Tool calls", f.total ? `${f.total} calls${f.errors ? ` · ${f.errors} failed` : ""}` : "", false));
     return rows;
   }
 
@@ -577,7 +580,7 @@ export default class Info extends View {
         return [
           h_flex().h(36).flex_none().px(14).gap(2).items_center().children(KINDS.map(chip)),
           ...(running.length ? [this.section(t, "Running", String(running.length)), ...running.map((c) => this.toolRow(t, c, now, true))] : []),
-          this.section(t, "History", `${history.length} calls${f.errors && this.kind === "all" ? ` · ${f.errors} errors` : ""}`),
+          this.section(t, "History", `${infoRows(history).length} calls${f.errors && this.kind === "all" ? ` · ${f.errors} failed` : ""}`),
           ...list,
         ];
       }
