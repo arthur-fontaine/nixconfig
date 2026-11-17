@@ -1,0 +1,25 @@
+// What a worktree row does (k31): a click goes there and starts nothing; the worktree's
+// orchestrator is started on demand. Pure: it returns the commands to run. nix joins it
+// into nix-sidebar, nix-menu and nix-new (no imports, `wt` prefix).
+
+// Orchestrator tabs, both scopes: "<worktree>-orchestrator", "<repo>-project-orchestrator",
+// and "Orchestrator" from before they were named. kanban/src/herdr.ts has the same rule
+// (isOrchestratorTab); a test keeps them in step.
+export const ORCHESTRATOR_RE = /^Orchestrator$|-(project-)?orchestrator$/;
+
+const wtName = (label) => `${String(label).replace(/[^A-Za-z0-9._-]+/g, "-")}-orchestrator`;
+
+// A click: its space as it was left (Herdr shows its last tab); without one, a plain shell.
+export function wtClick({ space, path, machine }) {
+  return space ? [["space.select", { id: space.id }]] : [["space.new", { folder: path, machine: machine ?? "" }]];
+}
+
+// "Orchestrator": the worktree's one if it's there, else a new one (one per worktree: a second
+// Pi with the same --name would break @mentions).
+export function wtOrchestrator({ space, label, folder, argv, machine }) {
+  const name = wtName(label);
+  if (!space) return [["space.new", { folder, machine: machine ?? "", tab: name, argv }]];
+  const tab = (space.tabs ?? []).find((t) => t.named && (t.name === name || t.name === "Orchestrator"));
+  return tab ? [["space.select", { id: space.id }], ["tab.select", { id: tab.id }]]
+    : [["space.select", { id: space.id }], ["tab.new", { space: space.id, name, folder, argv }]];
+}
