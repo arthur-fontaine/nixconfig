@@ -103,7 +103,6 @@ export default class Info extends View {
     Object.assign(this, { from: null, collapsed: [], context: false, outside: false, fill: null });
     this.roots = new Map(); // cwd → its git top (or the cwd), for repo-relative paths
     this.scroll = VirtualListScrollHandle.new(); // the Calls list, put back where it was on Back
-    this.returnTo = false;
     this.git = null; // { key, at, files: path → { status, added, removed }, exact } for the Edited files view
     this.sel = null; // the tool call shown in the inspector
     this.ids = []; // the listed calls' ids, in order, for ↑/↓
@@ -114,7 +113,7 @@ export default class Info extends View {
       for (;;) {
         const view = Object.fromEntries(Object.keys(INFO_VIEW).map((k) => [k, this[k]]));
         const next = infoViewCommand(view, await nextCommand(), this.ids);
-        if (next) { Object.assign(this, next); cx.notify(); }
+        if (next) { this.apply(next); cx.notify(); }
       }
     });
   }
@@ -126,12 +125,19 @@ export default class Info extends View {
     this.viewTab = selectedPane()?.tab ?? this.viewTab;
     const next = infoViewCommand(this.view(), c, this.ids);
     if (!next) return;
-    // Back onto the list: scroll it to the call it came from.
-    if (this.detail === "call" && next.detail === "calls") this.returnTo = true;
-    Object.assign(this, next);
-    this.prepare();
+    this.apply(next);
     this.handle.focus();
     cx.notify();
+  }
+
+  // State is set here and in the loop, never in render(): Herdr keeps nothing render() assigns.
+  apply(next) {
+    const back = this.detail === "call" && next.detail === "calls";
+    Object.assign(this, next);
+    this.prepare();
+    // Back onto the list: scrolled to the call it came from, once the list is drawn again (a
+    // scroll asked for while it isn't is lost); the loop does it on its next poll.
+    if (back) { const i = this.ids.indexOf(this.sel); this.scrollTo = i >= 0 ? i : null; }
   }
 
   back(cx) { this.command("back", cx); }
@@ -227,6 +233,7 @@ export default class Info extends View {
       for (;;) {
         // The selection is checked every POLL (memory only), the file read every TICK or
         // as soon as another pane is selected.
+        if (this.scrollTo != null && this.detail === "calls") { this.scroll.scroll_to_item(this.scrollTo, "center"); this.scrollTo = null; cx.notify(); }
         const p = visible() ? selectedPane() : undefined;
         const moved = p !== undefined && (p?.pane !== this.pane?.pane || p?.status !== this.pane?.status);
         if (p !== undefined && (moved || Date.now() - readAt >= TICK)) {
@@ -242,19 +249,23 @@ export default class Info extends View {
           }
           if (!file && this.session) { this.session = null; changed = true; }
           if (file && (await this.read(file))) changed = true;
+          // The session's figures are shown as soon as they are read, before usage and titles.
+          let shown = false;
+          if (changed) { this.rev++; this.prepare(); cx.notify(); changed = false; shown = true; }
           if (Date.now() - usageAt > USAGE_EVERY) { usageAt = Date.now(); await this.readUsage(); changed = true; }
-          // A few keys per continuation; the view is redrawn once all are keyed.
-          for (const s = this.session; this.titles && s && this.session === s && infoKeyTitles(s, KEYS_AT_ONCE);) {
+          // A few keys per continuation; the view is redrawn once all are keyed. Another pane
+          // selected stops it (the rest is keyed when this one shows again).
+          for (const s = this.session; this.titles && s && this.session === s && selectedPane()?.pane === p?.pane && infoKeyTitles(s, KEYS_AT_ONCE);) {
             changed = true;
             await new Promise((r) => cx.timer.after(1, r));
           }
           // The Edited files view's git figures, every few seconds while it shows.
           if (this.detail === "files" && this.session && (!this.git || this.git.key !== this.session.file || Date.now() - this.git.at > 5000)) { await this.loadGit(); changed = true; }
           // What render() shows from the session is derived here, not in render() (see derive()).
-          if (changed) { this.rev++; this.memo = null; }
+          if (changed) this.rev++;
           this.prepare();
           // Running calls' elapsed time ticks.
-          if (changed || (this.session && this.pane?.status === "working")) cx.notify();
+          if (changed || shown || (this.session && this.pane?.status === "working")) cx.notify();
         }
         await new Promise((r) => { this.wake = r; cx.timer.after(POLL, r); });
         this.wake = null;
@@ -295,8 +306,8 @@ export default class Info extends View {
   statusBlock(t, f, now) {
     const s = this.session;
     const status = this.pane?.status ?? null;
-    const line = s ? infoStatusLine({ status, since: this.workingSince(), state: s, tools: f.tools ?? [], now }) : { tone: "idle", text: "Loading session…" };
-    const tip = s ? `${s.prompts} prompt${s.prompts === 1 ? "" : "s"}, ${s.replies} repl${s.replies === 1 ? "y" : "ies"}${s.started ? ` · started ${infoAge(now - s.started)} ago` : ""}` : null;
+    const line = s && f.tools ? infoStatusLine({ status, since: this.workingSince(), state: s, tools: f.tools ?? [], now }) : { tone: "idle", text: "Loading session…" };
+    const tip = s && f.tools ? `${s.prompts} prompt${s.prompts === 1 ? "" : "s"}, ${s.replies} repl${s.replies === 1 ? "y" : "ies"}${s.started ? ` · started ${infoAge(now - s.started)} ago` : ""}` : null;
     const color = line.tone === "waiting" ? t.blocked : line.tone === "working" ? t.foreground : t.muted;
     return v_flex().id("status").px(CHROME.headerX).pt(12).gap(2).when(Boolean(tip), (e) => e.tooltip(tip))
       .child(h_flex().gap(8).items_center().child(this.piMark(t))
@@ -523,9 +534,6 @@ export default class Info extends View {
         .child(div().child(label)).child(div().text_color(key === "failed" ? t.blocked : t.dim).child(String(n[key])));
     };
     const rows = this.listRows(f), shown = this.all ? rows : rows.slice(0, SHOWN);
-    this.ids = shown.map((r) => r.id);
-    this.listed = shown;
-    if (this.returnTo) { this.returnTo = false; const i = this.ids.indexOf(this.sel); if (i >= 0) this.scroll.scroll_to_item(i, "center"); }
     const label = CHIPS.find(([k]) => k === this.kind)?.[1] ?? "All";
     const list = shown.length
       ? div().id("calls-box").flex_1().min_h(0).relative()
@@ -662,7 +670,8 @@ export default class Info extends View {
 
   figures(now) {
     const usage = infoUsage(this.usageRecord, now);
-    return this.session ? { ...this.derived(), usage } : { usage };
+    const f = this.derived();
+    return f ? { ...f, usage } : { usage };
   }
 
   // What the session gives, worked out in the loop and in command() once per change, and only
@@ -672,17 +681,22 @@ export default class Info extends View {
     return this.session ? `${this.rev}|${this.session.file}|${this.pane?.status}|${this.root()}` : null;
   }
 
-  // The same session's figures from the last tick stand in until the next one (under a second).
+  // The same session's figures from the last tick stand in until the next one (under a second);
+  // none yet reads as loading. Never derived here: a cut render leaves an idle tab's frame stale.
   derived() {
-    return this.memo && this.memo.f.file === this.session.file ? this.memo.f : this.derive();
+    return this.memo && this.memo.f.file === this.session?.file ? this.memo.f : null;
   }
 
   prepare() {
     const key = this.memoKey();
-    if (!key) { this.memo = null; return; }
+    if (!key) { this.memo = null; this.ids = []; this.listed = []; return; }
     if (this.memo?.key !== key) this.memo = { key, f: this.derive() };
     const f = this.memo.f, list = `${this.kind}|${this.collapsed.join(",")}`;
     if (f.list?.key !== list) f.list = { key: list, rows: this.makeList(f, list) };
+    // What the list shows, and what ↑/↓ walk: that list, or the overview's recent calls.
+    this.listed = this.all ? f.list.rows : f.list.rows.slice(0, SHOWN);
+    this.ids = this.detail === "calls" || (this.detail === "call" && this.from === "calls")
+      ? this.listed.map((r) => r.id) : [...f.running, ...f.history].slice(0, 8).map((c) => c.id);
   }
 
   derive() {
@@ -704,7 +718,7 @@ export default class Info extends View {
   }
 
   edited() {
-    return this.derived().edited;
+    return this.derived()?.edited ?? null;
   }
 
   // ---- views ---------------------------------------------------------------------------
@@ -758,7 +772,6 @@ export default class Info extends View {
     const top = this.overview(t, f, now);
     if (!this.session || !f.started) return root.child(v_flex().flex_none().children(top));
     const calls = f.total ? `${f.total} call${f.total === 1 ? "" : "s"}${f.errors ? ` · ${f.errors} failed` : ""}` : null;
-    this.ids = [...(f.running ?? []), ...(f.history ?? [])].slice(0, 8).map((c) => c.id);
     return root.child(v_flex().flex_none().children(top))
       .child(v_flex().id("info-recent").flex_1().min_h(0).mt(12).border_t(1).border_color(t.border).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY)
         .child(this.section(t, "Recent calls", calls, true, f.total ? (_e, cx) => this.command("detail:calls", cx) : null))
