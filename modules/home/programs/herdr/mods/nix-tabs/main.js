@@ -92,7 +92,7 @@ export default class Tabs extends View {
       const line = (side) => div().absolute().top(6).bottom(6).w(2).rounded(1).bg(t.foreground).when(side === "left", el => el.left(-3)).when(side === "right", el => el.right(-3));
       // Full height; the active tab takes the terminal's color and covers the bar's bottom
       // hairline, so it joins the pane below it.
-      return h_flex().id(`tab-${c.id}`).relative().px(12).gap(8).items_center().flex_none().text_size(13)
+      const body = h_flex().id(`tab-${c.id}`).relative().px(12).gap(8).items_center().flex_none().text_size(13)
         .when(dragging, el => el.opacity(0.45))
         .on_hover((on, cx) => { const next = on ? c.id : this.hovered === c.id ? null : this.hovered; if (next !== this.hovered) { this.hovered = next; cx.notify(); } })
         .h(36).rounded_t(style === "handle" ? 10 : 6)
@@ -132,6 +132,14 @@ export default class Tabs extends View {
         .child(div().id(`close-${c.id}`).size(18).flex_none().flex().items_center().justify_center().rounded(4).text_color(t.dim)
           .when(!shownClose, el => el.invisible())
           .hover(s => s.bg(t.input + "80").text_color(t.foreground)).active(s => s.bg(t.input + "b3")).tooltip("Close tab").on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run(`nix-status.close-tab:${c.id}`); }).child(svg(ICON("x")).size(12)));
+      if (style !== "handle") return body;
+      // The handle grows out of the panes' island: inverse-radius fillets where it meets the
+      // island's top (the well's color, rounded on the tab's side, over the island's). Every tab
+      // keeps their room, so a tab doesn't move when it becomes the shown one.
+      const fillet = (side) => div().w(10).h(10).flex_none()
+        .when(c.active && Boolean(t.well), el => el.bg(t.background).child(div().size(10).bg(t.well)
+          .when(side === "left", e => e.rounded_br(10)).when(side === "right", e => e.rounded_bl(10))));
+      return h_flex().id(`tabw-${c.id}`).flex_none().h_full().items_end().child(fillet("left")).child(body).child(fillet("right"));
     };
     const root = layout(), sidebar = find(root, "sidebar"), w = window();
     // Old saved rails and a dragged-narrow sidebar can be smaller than the window buttons.
@@ -160,7 +168,9 @@ export default class Tabs extends View {
       // The bar's bottom hairline, drawn first so the active tab covers it.
       .when(!style, el => el.child(div().absolute().left_0().right_0().bottom(0).h(1).bg(t.border)))
       // + right after the last tab, as in a browser; the right group is the panels.
-      .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_stretch().gap(2).overflow_x_scrollbar().children(shown.map(item))
+      // Handle style: tabs touch (their fillets), and no scrollbar is painted over the junction.
+      .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_stretch().gap(style === "handle" ? 0 : 2)
+        .when(style === "handle", el => el.overflow_x_scroll()).when(style !== "handle", el => el.overflow_x_scrollbar()).children(shown.map(item))
         .child(button("tab-new", svg(ICON("plus")).size(14), (_e, cx) => this.openNew(cx), "New tab")))
       .child(h_flex().flex_none().self_center().gap(2)
         .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "file")))
