@@ -100,8 +100,7 @@ export default class Tabs extends View {
         .on_hover((on, cx) => { const next = on ? c.id : this.hovered === c.id ? null : this.hovered; if (next !== this.hovered) { this.hovered = next; cx.notify(); } })
         .h(36).rounded_t(style === "handle" ? 10 : 6)
         .when(c.active && !style, el => el.bg(t.background).border_l(1).border_t(1).border_r(1).border_color(t.border).text_color(t.foreground))
-        // Capped in a neutral line (no accent): it keeps the handle clear on a dark well.
-        .when(c.active && style === "handle", el => el.bg(t.background).border_t(2).border_color(t.input).text_color(t.foreground).font_medium())
+        .when(c.active && style === "handle", el => el.bg(t.background).text_color(t.foreground).font_medium())
         .when(!c.active, el => el.text_color(t.muted).hover(s => s.bg(t.hover)))
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = { id: c.id, moved: false }; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
         // Dragging: the pressed tab fades, a line shows the gap it lands in (the pointer's side).
