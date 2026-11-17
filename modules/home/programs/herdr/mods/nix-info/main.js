@@ -512,18 +512,22 @@ export default class Info extends View {
     const git = this.git?.key === s.file ? this.git : null;
     const e = infoEdited(s, this.root()), g = git?.files ?? {};
     const color = { A: t.ansi2, D: t.ansi1, U: t.ansi5, R: t.ansi4 };
-    const row = (f) => {
-      const st = g[f.rel];
-      return chromeRow(UI, t, `file-${f.rel}`, { onClick: (ev) => openInEditor(HERDR, f.path, { side: ev.modifiers.alt }) }).tooltip(f.path)
-        .child(div().w(10).flex_none().font_family(MONO()).text_size(11).font_medium().text_color(color[st?.status] ?? t.ansi3).child(st?.status ?? ""))
+    // R2-8: Changes' columns: its checkbox's 14 pt (empty here), the letter, name and folder, +
+    // and − right-aligned in fixed columns, then the ›. Outside rows leave letter and +/− empty.
+    const row = (f, outside = false) => {
+      const st = outside ? null : g[f.rel];
+      const known = st && st.added !== null && st.added !== undefined;
+      return chromeRow(UI, t, `file-${f.path}`, { onClick: (ev) => openInEditor(HERDR, f.path, { side: ev.modifiers.alt }) })
+        .child(div().w(14).flex_none())
+        .child(div().w(10).flex_none().font_family(MONO()).text_size(11).font_medium().text_center().text_color(color[st?.status] ?? t.ansi3).child(st?.status ?? ""))
         .child(this.fileText(t, f.path))
-        .when(st?.added !== null && st?.added !== undefined, (x) => x.child(div().flex_none().text_size(12).text_color(t.ansi2).child(`+${st.added}`)))
-        .when(Boolean(st?.removed), (x) => x.child(div().flex_none().text_size(12).text_color(t.ansi1).child(`−${st.removed}`)))
-        .when(!st, (x) => x.child(div().flex_none().text_size(12).text_color(t.dim).child(git ? "unchanged" : "")))
+        .child(h_flex().flex_none().text_size(11)
+          .child(div().w(34).text_right().text_color(known ? t.ansi2 : t.dim).child(known ? (st.added ? `+${st.added}` : "") : !outside && git && !st ? "unchanged" : ""))
+          .child(div().w(20).text_right().text_color(t.ansi1).child(known && st.removed ? `−${st.removed}` : "")))
         .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.chevron));
     };
     const n = `${e.files.length} file${e.files.length === 1 ? "" : "s"}`;
-    const out = [this.section(t, "In this repo", git?.exact ? `${n} · lines since the session began` : n), ...e.files.map(row)];
+    const out = [this.section(t, "In this repo", git?.exact ? `${n} · since session start` : n), ...e.files.map(row)];
     if (e.atLeast) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("Some edits kept no file name: there may be more."));
     if (git && !git.exact) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("Line counts need the commit the session started from: git status only."));
     if (e.outside.length) {
@@ -532,10 +536,7 @@ export default class Info extends View {
         .child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.chevron))
         .child(div().flex_1().text_size(12).font_medium().text_color(t.muted).child(`Outside this repo (${e.outside.length})`))));
       // The same anatomy as the repo's rows, the letter and +/− columns empty (R2-6).
-      if (open) for (const f of e.outside) out.push(chromeRow(UI, t, `outside-${f.path}`, { onClick: (ev) => openInEditor(HERDR, f.path, { side: ev.modifiers.alt }) })
-        .child(div().w(10).flex_none())
-        .child(this.fileText(t, f.path))
-        .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.chevron)));
+      if (open) for (const f of e.outside) out.push(row(f, true));
     }
     return out;
   }
