@@ -335,10 +335,12 @@ export default class Info extends View {
     const tone = infoMeterTone(ratio ?? 0);
     const fill = tone === "error" ? t.blocked : tone === "warning" ? t.ansi3 : t.tones.fill;
     const r = Math.max(0, Math.min(1, ratio ?? 0));
+    // R2-7: an expandable meter's chevron follows its value ("Context 6% ›"), so every label
+    // starts at the same edge.
     const head = h_flex().gap(6).items_center().text_size(12)
-      .when(Boolean(expand), (e) => e.child(svg(ICON(expand?.open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.chevron)))
       .child(div().flex_none().text_color(t.muted).child(label))
       .child(div().flex_none().font_medium().text_color(tone === "normal" ? t.foreground : fill).child(pct(ratio)))
+      .when(Boolean(expand), (e) => e.child(svg(ICON(expand?.open ? "chevron-down" : "chevron-right")).size(12).flex_none().ml(2).text_color(t.chevron)))
       .child(div().flex_1().min_w(0).truncate().text_right().text_color(t.muted).child(right ?? ""));
     // R2-4: the pace notch is 8 pt tall on the 4 pt bar, so 2 pt of it shows on the island above
     // and below whatever the fill.
@@ -362,7 +364,7 @@ export default class Info extends View {
         expand: { open: this.context, onClick: (_e, cx) => { this.context = !this.context; cx.notify(); } } }));
       if (this.context) {
         const comp = c.compactions ? `Compacted ${c.compactions === 1 ? "once" : `${c.compactions} times`}${s.lastCompaction ? `, ${infoAge(now - s.lastCompaction)} ago` : ""}` : "Not compacted yet";
-        out.push(v_flex().id("context-more").pl(CHROME.rowX + 16).pb(4).gap(2).text_size(12).text_color(t.muted)
+        out.push(v_flex().id("context-more").pl(CHROME.rowX).pb(4).gap(2).text_size(12).text_color(t.muted)
           .child(div().child(`Cache hits ${pct(cache.session)} (last request ${pct(cache.last)})`))
           .child(div().child(`Cache: ${infoTokens(cache.read)} read, ${infoTokens(cache.written)} written`))
           .child(div().child(comp)));
@@ -377,7 +379,8 @@ export default class Info extends View {
     };
     if (u) out.push(...[win("five", "5-hour limit", u.fiveHour), win("week", "Week", u.sevenDay)].filter(Boolean));
     else out.push(div().px(CHROME.rowX).py(4).text_size(12).text_color(t.dim).child("Limits not reported yet"));
-    return v_flex().id("limits").px(CHROME.insetX).pt(12).gap(4).children(out);
+    // R2-7, ink to ink: 24 pt from the status line, 14 pt from one meter's bar to the next label.
+    return v_flex().id("limits").px(CHROME.insetX).pt(10.5).children(out);
   }
 
   // O3: "Edited N files ›" (in the repo; "at least" when an edit kept no path).
@@ -387,7 +390,8 @@ export default class Info extends View {
     const n = e.files.length;
     const text = !n && !e.atLeast ? "No files edited yet" : `Edited ${e.atLeast ? "at least " : ""}${n} file${n === 1 ? "" : "s"}`;
     const go = n || e.outside.length || e.atLeast ? (_e, cx) => this.command("detail:files", cx) : null;
-    return div().px(CHROME.insetX).pt(8).child(chromeRow(UI, t, "edited", { onClick: go })
+    // 24 pt under the last bar: a new group.
+    return div().px(CHROME.insetX).pt(11).child(chromeRow(UI, t, "edited", { onClick: go })
       .child(svg(ICON("file-text")).size(14).flex_none().text_color(t.dim))
       .child(div().flex_1().min_w(0).truncate().text_color(go ? t.foreground : t.muted).child(text))
       .when(e.outside.length > 0, (x) => x.child(div().flex_none().text_size(12).text_color(t.dim).child(`+${e.outside.length} outside`)))
@@ -607,7 +611,7 @@ export default class Info extends View {
 
   tinted(t, text, lang) {
     const syn = { keyword: t.ansi5, string: t.ansi2, number: t.ansi3, constant: t.ansi3, function: t.ansi4, type: t.ansi6, property: t.ansi1, comment: t.dim, operator: t.ansi6, punctuation: t.muted };
-    return this.code(t, String(text).replace(/\n$/, "").split("\n").slice(0, 400).map((l) => this.line(t, {
+    return this.code(t, String(text).replace(/\n$/, "").split("\n").slice(0, 400).map((l) => this.line(t, { bare: true,
       text: h_flex().flex_1().min_w(0).flex_wrap().children(tokenize(l, lang).map((p) => div().text_color(p.kind ? syn[p.kind] ?? t.foreground : t.foreground).child(p.text))),
     })));
   }
@@ -659,7 +663,7 @@ export default class Info extends View {
       const extra = r.more ? `+${r.more} more lines` : c.resultCut ? "cut at 64 KB" : r.lines.length > 1 ? `${r.lines.length} lines` : "";
       out.push(this.label(t, c.failed ? "Error" : "Result", extra),
         (c.result ?? "") === "" ? div().px(CHROME.headerX).py(4).text_size(12).text_color(t.dim).child("Nothing")
-          : this.code(t, r.lines.map((l) => this.line(t, { text: l, color: c.failed ? t.blocked : t.foreground }))));
+          : this.code(t, r.lines.map((l) => this.line(t, { bare: true, text: l, color: c.failed ? t.blocked : t.foreground }))));
     }
     return out;
   }
@@ -693,9 +697,10 @@ export default class Info extends View {
   // One payload line: a 16px marker column, an optional number column, and the text, which
   // wraps inside its own column so continuations hang under the text, not the marker.
   // Diff lines tint the whole row, wrapped parts included.
-  line(t, { marker = "", markerColor = t.dim, num, text, color = t.foreground, tint }) {
+  line(t, { marker = "", markerColor = t.dim, num, text, color = t.foreground, tint, bare = false }) {
     return h_flex().w_full().items_start().when(Boolean(tint), (e) => e.bg(tint))
-      .child(div().w(16).flex_none().text_color(markerColor).child(marker || " "))
+      // R2-7: Code and Result text starts at the block's 10 pt padding, as Change's marker does.
+      .when(!bare, (e) => e.child(div().w(16).flex_none().text_color(markerColor).child(marker || " ")))
       .when(num !== undefined, (e) => e.child(div().w(30).pr(8).flex_none().text_right().text_color(t.dim).child(num === null ? "" : String(num))))
       .child(typeof text === "string" ? div().flex_1().min_w(0).text_color(color).child(text || " ") : text);
   }
@@ -813,7 +818,7 @@ export default class Info extends View {
     if (!this.session || !f.started) return root.child(v_flex().flex_none().children(top));
     const calls = f.total ? `${infoNum(f.total)} call${f.total === 1 ? "" : "s"}${f.errors ? ` · ${infoNum(f.errors)} failed` : ""}` : null;
     return root.child(v_flex().flex_none().children(top))
-      .child(v_flex().id("info-recent").flex_1().min_h(0).mt(12).border_t(1).border_color(t.border).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY)
+      .child(v_flex().id("info-recent").flex_1().min_h(0).mt(5.5).border_t(1).border_color(t.border).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY)
         .child(this.section(t, "Recent calls", calls, true, f.total ? (_e, cx) => this.command("detail:calls", cx) : null))
         .children(f.total ? this.recentCalls(t, f) : [div().px(CHROME.rowX).py(8).text_size(12).text_color(t.dim).child("Calls appear here as the agent works.")]));
   }
