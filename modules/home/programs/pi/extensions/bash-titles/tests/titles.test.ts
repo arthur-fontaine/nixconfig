@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { request, SCRIPT_SYSTEM, scriptKey, scriptRequest, TitleCache, titleOf, wantsScriptTitle, wantsTitle, RunningScripts } from "../titles.ts";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { ENTRY, loadTitles, request, saveTitles, SCRIPT_SYSTEM, scriptKey, scriptRequest, sessionTitles, TitleCache, titleOf, wantsScriptTitle, wantsTitle, withTitle, RunningScripts } from "../titles.ts";
 
 test("short, simple commands are read as they are", () => {
 	assert.equal(wantsTitle("ls -la"), false);
@@ -112,4 +115,64 @@ test("a script that ended before its one call is named when it ends", () => {
 	assert.equal(running.finished("toolu_2"), undefined);
 	running.started("toolu_3", "return 6 * 7;");
 	assert.equal(running.finished("toolu_3"), undefined);
+});
+
+test("two Pis saving titles at once keep both", () => {
+	const dir = mkdtempSync(path.join(tmpdir(), "bash-titles-"));
+	try {
+		const file = path.join(dir, "bash-titles.json");
+		writeFileSync(file, JSON.stringify(new TitleCache({}).toJSON()));
+		// Both loaded the file before either saved.
+		const a = loadTitles(file);
+		const b = loadTitles(file);
+		a.set(scriptKey("tools.bash(1); tools.bash(2)"), "Runs two commands");
+		saveTitles(file, a);
+		b.set("find . -name '*.ts' | xargs wc -l | sort -n | tail", "Counts lines of TypeScript files");
+		saveTitles(file, b);
+		const after = loadTitles(file);
+		assert.equal(after.get(scriptKey("tools.bash(1); tools.bash(2)")), "Runs two commands");
+		assert.equal(after.get("find . -name '*.ts' | xargs wc -l | sort -n | tail"), "Counts lines of TypeScript files");
+		// The second writer now knows the first one's title too.
+		assert.equal(b.get(scriptKey("tools.bash(1); tools.bash(2)")), "Runs two commands");
+		assert.equal(Object.keys(JSON.parse(readFileSync(file, "utf8"))).length, 2);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a missing or broken file is read as no titles, and saving creates it", () => {
+	const dir = mkdtempSync(path.join(tmpdir(), "bash-titles-"));
+	try {
+		const file = path.join(dir, "sub", "bash-titles.json");
+		const cache = loadTitles(file);
+		cache.set("x".repeat(90), "Prints many x");
+		saveTitles(file, cache);
+		writeFileSync(path.join(dir, "broken.json"), "{not json");
+		assert.equal(loadTitles(path.join(dir, "broken.json")).get("x"), undefined);
+		assert.equal(loadTitles(file).get("x".repeat(90)), "Prints many x");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a title goes in the result's details, beside what other extensions put there", () => {
+	assert.deepEqual(withTitle(undefined, "Lists files"), { title: "Lists files" });
+	assert.deepEqual(withTitle({ calls: [], callOutputs: {} }, "Lists files"), { calls: [], callOutputs: {}, title: "Lists files" });
+	assert.equal(withTitle("text", "Lists files"), undefined);
+	assert.equal(withTitle([1], "Lists files"), undefined);
+});
+
+test("a resumed session gives each call its title: from the result's details, or the entry of a title that came later", () => {
+	const entries = [
+		{ type: "message", message: { role: "assistant", content: [] } },
+		{ type: "message", message: { role: "toolResult", toolCallId: "toolu_a", details: { calls: [], title: "Runs two shell commands" } } },
+		{ type: "message", message: { role: "toolResult", toolCallId: "toolu_b", details: { truncation: null } } },
+		{ type: "custom", customType: ENTRY, data: { toolCallId: "toolu_b", title: "Counts lines of every file" } },
+		{ type: "custom", customType: "other", data: { toolCallId: "toolu_c", title: "Not ours" } },
+		{ type: "custom", customType: ENTRY, data: { toolCallId: 3, title: "Bad id" } },
+	];
+	const titles = sessionTitles(entries);
+	assert.equal(titles.get("toolu_a"), "Runs two shell commands");
+	assert.equal(titles.get("toolu_b"), "Counts lines of every file");
+	assert.equal(titles.size, 2);
 });

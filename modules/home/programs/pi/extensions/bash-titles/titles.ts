@@ -1,6 +1,8 @@
 // What bash-titles decides without Pi: which commands get a title, the request sent to Haiku,
 // whether its answer is one, and the cache of titles by command.
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
 // As pi-harness's pi-thinking-summary: a command is read as is when it is short and simple.
 export function wantsTitle(command: string): boolean {
@@ -130,6 +132,22 @@ export class TitleCache {
 	}
 	set(command: string, title: string): void {
 		const key = keyOf(command);
+		this.#put(key, title);
+		this.#added.set(key, title);
+	}
+	/**
+	 * The file's titles with the ones this process added since its last save on top, which become
+	 * this cache's: another Pi's titles saved meanwhile are kept, not written over.
+	 */
+	merge(onDisk: Record<string, string>): Record<string, string> {
+		this.#map.clear();
+		for (const [k, v] of Object.entries(onDisk)) if (typeof v === "string") this.#put(k, v);
+		for (const [k, v] of this.#added) this.#put(k, v);
+		this.#added.clear();
+		return this.toJSON();
+	}
+	readonly #added = new Map<string, string>();
+	#put(key: string, title: string): void {
 		this.#map.delete(key);
 		this.#map.set(key, title);
 		while (this.#map.size > this.max) this.#map.delete(this.#map.keys().next().value!);
@@ -137,4 +155,61 @@ export class TitleCache {
 	toJSON(): Record<string, string> {
 		return Object.fromEntries(this.#map);
 	}
+}
+
+function readTitles(file: string): Record<string, string> {
+	try {
+		const value = JSON.parse(readFileSync(file, "utf8"));
+		return typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+	} catch {
+		return {};
+	}
+}
+
+export const loadTitles = (file: string) => new TitleCache(readTitles(file));
+
+/**
+ * Written as the file is now plus this process's new titles, through a file of its own renamed over
+ * it: several Pis save here, each from the cache it loaded at its start.
+ */
+export function saveTitles(file: string, cache: TitleCache): void {
+	mkdirSync(path.dirname(file), { recursive: true });
+	const merged = cache.merge(readTitles(file));
+	const temp = `${file}.${process.pid}.${randomUUID()}`;
+	try {
+		writeFileSync(temp, JSON.stringify(merged));
+		renameSync(temp, file);
+	} catch (error) {
+		rmSync(temp, { force: true });
+		throw error;
+	}
+}
+
+/**
+ * A row's title in the session itself, for a resumed session and other readers of the file: in its
+ * result's `details.title` when known as the result is written, else in an entry of this type,
+ * `{ toolCallId, title }`, once it comes.
+ */
+export const ENTRY = "bash-titles";
+
+/** The result's details with the title added; undefined when they aren't an object to add it to. */
+export function withTitle(details: unknown, title: string): Record<string, unknown> | undefined {
+	if (details === undefined || details === null) return { title };
+	if (typeof details !== "object" || Array.isArray(details)) return undefined;
+	return { ...(details as Record<string, unknown>), title };
+}
+
+/** The titles a session's entries give its calls, by call id. */
+export function sessionTitles(entries: readonly unknown[]): Map<string, string> {
+	const titles = new Map<string, string>();
+	for (const entry of entries) {
+		const e = entry as { type?: unknown; customType?: unknown; data?: { toolCallId?: unknown; title?: unknown }; message?: { role?: unknown; toolCallId?: unknown; details?: { title?: unknown } } };
+		if (e?.type === "message" && e.message?.role === "toolResult") {
+			const { toolCallId, details } = e.message;
+			if (typeof toolCallId === "string" && typeof details?.title === "string") titles.set(toolCallId, details.title);
+		} else if (e?.type === "custom" && e.customType === ENTRY) {
+			if (typeof e.data?.toolCallId === "string" && typeof e.data.title === "string") titles.set(e.data.toolCallId, e.data.title);
+		}
+	}
+	return titles;
 }
