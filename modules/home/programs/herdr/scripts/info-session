@@ -1,0 +1,202 @@
+#!/usr/bin/env node
+// A synthetic Pi session for the Info panel's shots and audit, never a real transcript.
+//   info-session <dir>   writes <dir>/repo (a git repo the session's edits really happened in:
+//                        "git diff --numstat" there is the lines' ground truth), <dir>/session.jsonl
+//                        and <dir>/running.jsonl (the same plus one script still running).
+// Timestamps end now, so ages read as minutes. The calls the shots look at come last (the list
+// is newest first); some 190 small ones go first so the list passes 200 rows (Show all).
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+
+const dir = process.argv[2];
+if (!dir) { console.error("usage: info-session <dir>"); process.exit(1); }
+const repo = join(dir, "repo");
+rmSync(repo, { recursive: true, force: true });
+mkdirSync(repo, { recursive: true });
+const git = (...a) => execFileSync("git", ["-C", repo, "-c", "user.name=sandbox", "-c", "user.email=sandbox@localhost", "-c", "commit.gpgsign=false", ...a], { encoding: "utf8" });
+
+const lines = (n, f) => Array.from({ length: n }, (_, i) => f(i + 1)).join("\n") + "\n";
+const BASE = {
+  "README.md": "# Tide tables\n\nPredicts high and low water for a harbour from its constituents.\n\n## Usage\n\n    tide predict brest 2026-11-17\n",
+  "src/parse.js": lines(40, (i) => i === 12 ? "export function parse(text) {" : i === 13 ? "  return text.split(\",\").map(Number);" : i === 14 ? "}" : "// parse " + i),
+  "src/harbour.js": lines(30, (i) => i === 5 ? "const DEFAULT = \"brest\";" : "// harbour " + i),
+  "src/predict.js": lines(60, (i) => "// predict " + i),
+  "tests/parse.test.js": lines(20, (i) => "// test " + i),
+  "docs/guide.md": lines(25, (i) => "Guide line " + i),
+  "config/harbours.json": "{\n  \"brest\": { \"lat\": 48.38 },\n  \"saint-malo\": { \"lat\": 48.64 }\n}\n",
+};
+for (const [p, c] of Object.entries(BASE)) { mkdirSync(dirname(join(repo, p)), { recursive: true }); writeFileSync(join(repo, p), c); }
+git("init", "-q", "-b", "main");
+git("add", "-A");
+git("commit", "-q", "-m", "base");
+
+const abs = (p) => join(repo, p);
+const read = (p) => (existsSync(abs(p)) ? readFileSync(abs(p), "utf8") : "");
+// An edit as Pi does it, applied for real, with Pi's numbered diff ("- 13 old", "+ 13 new").
+function doEdit(p, oldText, newText) {
+  const before = read(p), at = before.indexOf(oldText);
+  if (at < 0 || before.indexOf(oldText, at + 1) >= 0) throw new Error("edit " + p + ": not unique");
+  writeFileSync(abs(p), before.slice(0, at) + newText + before.slice(at + oldText.length));
+  const line = before.slice(0, at).split("\n").length;
+  const out = [];
+  if (line > 1) out.push("  " + (line - 1) + " " + before.split("\n")[line - 2]);
+  oldText.split("\n").forEach((l, i) => out.push("- " + (line + i) + " " + l));
+  newText.split("\n").forEach((l, i) => out.push("+ " + (line + i) + " " + l));
+  return out.join("\n");
+}
+function doWrite(p, content) { mkdirSync(dirname(abs(p)), { recursive: true }); writeFileSync(abs(p), content); }
+// What bash-changes records for a bash call: git's own numstat of the files it touched.
+function changes(paths) {
+  git("add", "-N", "--", ...paths); // a new file counts too, as bash-changes counts it
+  const files = paths.map((p) => { const [a, r] = git("diff", "--numstat", "--", p).trim().split("\t"); return { path: p, status: "M", added: Number(a), removed: Number(r) }; });
+  return { root: repo, files };
+}
+
+const now = Date.now();
+let t = now - 52 * 60 * 1000;
+const ts = (step = 2000) => { t += step; return t; };
+const iso = (ms) => new Date(ms).toISOString();
+const out = [];
+const put = (o) => out.push(JSON.stringify(o));
+let ctx = 18000, n = 0;
+const id = (p = "toolu_syn") => p + String(++n).padStart(4, "0");
+
+function assistant(calls, { grow = 900, out: o = 180 } = {}) {
+  ctx += grow;
+  const cached = Math.round(ctx * 0.92), write = ctx - cached - 3;
+  const at = ts(3000);
+  put({ type: "message", timestamp: iso(at), message: { role: "assistant", model: "claude-opus-5-5", thinkingLevel: "high", timestamp: at,
+    usage: { input: 3, cacheRead: cached, cacheWrite: write, output: o, totalTokens: 3 + cached + write + o },
+    content: [{ type: "text", text: "…" }, ...calls.map((c) => ({ type: "toolCall", id: c.id, name: c.name, arguments: c.arguments }))] } });
+  return at;
+}
+function result(c, { text = "", ms = 400, isError = false, details } = {}) {
+  const at = ts(ms);
+  put({ type: "message", timestamp: iso(at), message: { role: "toolResult", toolCallId: c.id, toolName: c.name, timestamp: at, durationMs: ms, isError,
+    content: [{ type: "text", text }], ...(details ? { details } : {}) } });
+}
+function user(text) { const at = ts(20000); put({ type: "message", timestamp: iso(at), message: { role: "user", timestamp: at, content: text } }); }
+
+// One codemode script: its nested calls (applied for real when they edit or write), as Pi
+// records them in nestedCalls and details.calls. A nested call with cut: true keeps only
+// argumentsBytes (its arguments were too big), as Pi does for large writes.
+function script(code, nested, { title = null, ms = 3000, threw = false } = {}) {
+  const c = { id: id(), name: "codemode", arguments: { code } };
+  assistant([c], { grow: 1400 });
+  const calls = nested.map((x, i) => ({ id: c.id + "/" + (i + 1), ...x }));
+  for (const x of calls) {
+    if (x.status === "error") continue;
+    if (x.name === "edit") doEdit(x.arguments.path.slice(repo.length + 1), x.arguments.edits[0].oldText, x.arguments.edits[0].newText);
+    if (x.name === "write") doWrite(x.arguments.path.slice(repo.length + 1), x.arguments.content);
+  }
+  const nestedCalls = { complete: true, calls: calls.map((x) => ({ id: x.id, name: x.name, status: x.status ?? "ok", durationMs: x.ms ?? 120,
+    ...(x.cut ? { argumentsBytes: JSON.stringify(x.arguments).length } : { arguments: x.arguments }), ...(x.error ? { error: x.error } : {}) })) };
+  const details = { autoMode: false, calls: calls.map((x) => ({ id: x.id, name: x.name, status: x.status ?? "ok", durationMs: x.ms ?? 120,
+    args: JSON.stringify(x.arguments).slice(0, x.cut ? 160 : 4000), ...(x.error ? { error: x.error } : {}) })),
+    callOutputs: Object.fromEntries(calls.map((x) => [x.id, { lines: (x.out ?? "ok").split("\n"), total: (x.out ?? "ok").split("\n").length }])),
+    ...(title ? { title } : {}) };
+  result(c, { text: threw ? "Error: tools.bash failed" : calls.map((x) => x.out ?? "ok").join("\n"), ms, isError: threw, details });
+  // Pi's nestedCalls sits on the message itself.
+  const last = JSON.parse(out.pop()); last.message.nestedCalls = nestedCalls; put(last);
+  return c;
+}
+
+// ---- the session ----------------------------------------------------------------------
+put({ type: "session", version: 3, id: "syn-session", cwd: repo, timestamp: iso(t) });
+put({ type: "model_change", modelId: "claude-opus-5-5", provider: "anthropic", timestamp: iso(ts(10)) });
+put({ type: "thinking_level_change", thinkingLevel: "high", timestamp: iso(ts(10)) });
+put({ type: "session_info", name: "tide-tables-parser", timestamp: iso(ts(10)) });
+user("The parser drops negative heights; fix it and add a test.");
+
+// Filler: small direct reads and bash calls, oldest first.
+const FILES = Object.keys(BASE);
+for (let i = 0; i < 64; i++) {
+  const calls = [
+    { id: id(), name: "read", arguments: { path: abs(FILES[i % FILES.length]) } },
+    { id: id(), name: "bash", arguments: { command: ["git status -sb", "ls src tests", "rg -n parse src", "node --test tests"][i % 4] } },
+    { id: id(), name: "read", arguments: { path: abs(FILES[(i + 3) % FILES.length]), offset: 1, limit: 40 } },
+  ];
+  assistant(calls, { grow: 700 });
+  for (const c of calls) result(c, { text: "…", ms: c.name === "bash" ? 300 + (i % 7) * 900 : 20 + i });
+}
+
+// A compaction: the context drops and grows again.
+put({ type: "compaction", timestamp: iso(ts(5000)), summary: "(synthetic)", firstKeptEntryId: "x", tokensBefore: ctx });
+ctx = 42000;
+user("Go on.");
+
+// Direct edits and writes.
+{
+  const c = { id: id(), name: "edit", arguments: { path: abs("src/parse.js"), edits: [{ oldText: "  return text.split(\",\").map(Number);", newText: "  return text.split(\",\").map((s) => Number(s.trim()))\n    .filter((n) => !Number.isNaN(n));" }] } };
+  assistant([c]); const diff = doEdit("src/parse.js", c.arguments.edits[0].oldText, c.arguments.edits[0].newText);
+  result(c, { text: "Successfully replaced 1 block", ms: 40, details: { diff } });
+}
+{
+  const content = lines(14, (i) => "export const unit" + i + " = " + i + ";");
+  const c = { id: id(), name: "write", arguments: { path: abs("src/units.js"), content } };
+  assistant([c]); doWrite("src/units.js", content); result(c, { text: "Wrote 14 lines", ms: 30 });
+}
+{
+  // An existing file rewritten whole: git sees 3 lines changed, the panel can't know the old content.
+  const content = read("docs/guide.md").replace("Guide line 3\n", "Guide line three\n").replace("Guide line 9\n", "").concat("Guide line 26\n");
+  const c = { id: id(), name: "write", arguments: { path: abs("docs/guide.md"), content } };
+  assistant([c]); doWrite("docs/guide.md", content); result(c, { text: "Wrote 25 lines", ms: 30 });
+}
+{
+  const c = { id: id(), name: "ask_user_question", arguments: { questions: [{ question: "Should negative heights below chart datum be kept or clamped to zero?", header: "Datum", options: [{ label: "Keep", description: "" }, { label: "Clamp", description: "" }] }] } };
+  assistant([c]); result(c, { text: "User answered: Keep", ms: 41000 });
+}
+{
+  // A long bash command, titled by its result (bash-titles), that fails.
+  const command = "cd " + repo + " && export NODE_OPTIONS=--enable-source-maps; node --test tests/parse.test.js 2>&1 | tee /tmp/parse-test.log | tail -40 && grep -c FAIL /tmp/parse-test.log";
+  const c = { id: id(), name: "bash", arguments: { command } };
+  assistant([c]); result(c, { text: "not ok 3 - negative heights\n1", ms: 6200, isError: true, details: { title: "Runs the parser tests and counts failures" } });
+}
+// Script A: titled by its result, nested read, edit, write, bash.
+script("const a = await tools.read({ path: \"src/parse.js\" });\nawait tools.edit({ path: \"tests/parse.test.js\", edits: [...] });\nawait tools.write({ path: \"tests/negative.test.js\", content });\nreturn await tools.bash({ command: \"node --test tests\" });", [
+  { name: "read", arguments: { path: abs("src/parse.js") }, out: "// parse 1\n// parse 2" },
+  { name: "edit", arguments: { path: abs("tests/parse.test.js"), edits: [{ oldText: "// test 4\n// test 5", newText: "// test 4\ntest(\"keeps negative heights\", () => {\n  assert.deepEqual(parse(\"-0.4, 1.2\"), [-0.4, 1.2]);\n});" }] } },
+  { name: "write", arguments: { path: abs("tests/negative.test.js"), content: lines(12, (i) => "// negative " + i) } },
+  { name: "bash", arguments: { command: "node --test tests" }, ms: 2400, out: "ok 1\nok 2\nok 3" },
+], { title: "Fixes negative heights and adds their test", ms: 3100 });
+// Script B: a nested bash fails, the script catches it and goes on; titled later by a bash-titles entry.
+const b = script("for (const h of [\"brest\", \"saint-malo\"]) { try { await tools.bash({ command: \"tide predict \" + h }); } catch {} }", [
+  { name: "bash", arguments: { command: "tide predict brest 2026-11-17" }, ms: 900, out: "06:12 high 6.8 m" },
+  { name: "bash", arguments: { command: "tide predict saint-malo 2026-11-17" }, status: "error", error: "unknown harbour: saint-malo", ms: 300 },
+], { ms: 1500 });
+put({ type: "custom", customType: "bash-titles", timestamp: iso(ts(200)), data: { toolCallId: b.id, title: "Predicts the tides of two harbours" } });
+// Script C: a big nested write keeps only argumentsBytes; a nested edit beside it.
+script("await tools.write({ path: \"src/predict.js\", content: big });\nawait tools.edit({ path: \"src/harbour.js\", edits: [...] });", [
+  { name: "write", cut: true, arguments: { path: abs("src/predict.js"), content: lines(90, (i) => "export const k" + i + " = " + (i * 0.01).toFixed(2) + ";") } },
+  { name: "edit", arguments: { path: abs("src/harbour.js"), edits: [{ oldText: "const DEFAULT = \"brest\";", newText: "const DEFAULT = process.env.TIDE_HARBOUR ?? \"brest\";" }] } },
+], { ms: 2200 });
+{
+  // bash that edits a file, recorded by bash-changes on its result.
+  const c = { id: id(), name: "bash", arguments: { command: "sed -i '' 's/saint-malo/saint_malo/' config/harbours.json" } };
+  assistant([c]);
+  writeFileSync(abs("config/harbours.json"), read("config/harbours.json").replace("saint-malo", "saint_malo"));
+  result(c, { text: "", ms: 80, details: { fileChanges: changes(["config/harbours.json"]) } });
+}
+{
+  // A background bash whose bash-changes record comes later, as a session entry.
+  const c = { id: id(), name: "bash", arguments: { command: "npx prettier --write src/units.js" } };
+  assistant([c]);
+  writeFileSync(abs("src/units.js"), read("src/units.js").replace("export const unit1 = 1;\n", "export const unit1 = 1; // metres\n"));
+  result(c, { text: "src/units.js 12ms", ms: 1300 });
+  put({ type: "custom", customType: "bash-changes", timestamp: iso(ts(100)), data: { toolCallId: c.id, fileChanges: changes(["src/units.js"]) } });
+}
+{
+  const c = { id: id(), name: "read", arguments: { path: abs("src/parse.js") } };
+  assistant([c], { grow: 600, out: 900 }); result(c, { text: read("src/parse.js"), ms: 15 });
+}
+user("Thanks.");
+assistant([], { grow: 300, out: 420 });
+
+const base = out.join("\n") + "\n";
+writeFileSync(join(dir, "session.jsonl"), base);
+// running: one more script, no result yet.
+const run = { id: "toolu_running", name: "codemode", arguments: { code: "await tools.bash({ command: \"node --test tests --watch\" });" } };
+out.length = 0; t = now - 20000; assistant([run], { grow: 500 });
+writeFileSync(join(dir, "running.jsonl"), base + out.join("\n") + "\n");
+console.log(JSON.stringify({ repo, session: join(dir, "session.jsonl"), running: join(dir, "running.jsonl"), calls: n }));
