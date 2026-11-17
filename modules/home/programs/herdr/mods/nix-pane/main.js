@@ -6,7 +6,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { panes, props, run, theme, home } from "herdr";
+import { panes, props, run, theme, home, spaces } from "herdr";
 
 function icon(p, size, color) {
   if (!p?.icon) return null;
@@ -50,7 +50,9 @@ export default class Pane extends View {
     const t = theme();
     const p = this.me();
     if (!p) return div();
-    const name = ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
+    // A mod pane (a board, a diff) has its folder name as title: its tab's name says what it shows.
+    const tab = p.mod ? spaces().flatMap((s) => s.tabs ?? []).find((x) => x.id === p.tab) : null;
+    const name = ((p.program?.agent || p.program?.shell) && p.program.name) || (tab?.named && tab.name) || p.title || p.program?.name || "shell";
     // The program's icon; Pi's keeps the tile's focused/muted colors.
     const pic = icon(p.program, 14, p.app === "pi" ? (p.focused ? t.foreground : t.muted) : t.dim);
     const st = p.status;
