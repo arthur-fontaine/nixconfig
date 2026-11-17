@@ -28,11 +28,13 @@ export function chromeTextButton(ui, t, id, label, onClick, tip = null) {
 
 // A list row's frame: 26 px, rounded, the selected fill when `on`, else a hover fill when it does
 // something (`onClick`). Children are the caller's.
-export function chromeRow(ui, t, id, { on = false, onClick = null } = {}) {
+// `clickable`: the look without the handler, for a virtual list's rows (its on_item_click acts).
+export function chromeRow(ui, t, id, { on = false, onClick = null, clickable = Boolean(onClick) } = {}) {
   return ui.h_flex().id(id).h(CHROME.row).flex_none().px(CHROME.rowX).gap(8).items_center().rounded(CHROME.radius).text_size(CHROME.rowText)
     .when(on, (e) => e.bg(t.selected))
-    .when(!on && Boolean(onClick), (e) => e.hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)))
-    .when(Boolean(onClick), (e) => e.cursor_pointer().on_click(onClick));
+    .when(!on && clickable, (e) => e.hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)))
+    .when(clickable, (e) => e.cursor_pointer())
+    .when(Boolean(onClick), (e) => e.on_click(onClick));
 }
 
 // A section header: label 12 medium muted, meta 12 muted on the right; as a button (`onClick`)

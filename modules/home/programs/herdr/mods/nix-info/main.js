@@ -5,11 +5,12 @@
 // Four key figures, each opening its detail in place, then the tool calls (spec-3b, "A");
 // a selected call opens below the list with its arguments, result and timing.
 import { View, div, svg, image } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
+import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts } from "./model.js";
+import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
 
@@ -64,24 +65,16 @@ const ICON = (name) => `mods/nix-head/icons/${name}.svg`;
 let infoMono = "JetBrains Mono";
 const MONO = () => infoMono;
 const UI = { div, h_flex, svg };
+// Herdr's theme() names colours only: a light theme is one whose background is light.
+const infoLight = (t) => { const h = String(t.background ?? "#000").replace("#", ""); return parseInt(h.slice(0, 2), 16) + parseInt(h.slice(2, 4), 16) + parseInt(h.slice(4, 6), 16) > 384; };
 const SHOWN = 200;
 const TOOL_ICON = { bash: "terminal", read: "file", edit: "pen", write: "pen", ask: "help-circle", fetch: "globe", agent: "user", code: "code" };
 const LABELS = { context: "Context window", activity: "Agent activity", lines: "Lines changed", calls: "Calls", files: "Edited files" };
 // The commands' names for the views (nix-info.detail:calls|files) until those views are redone.
 const OLD = { calls: "activity", files: "lines" };
 // The activity detail's filters (infoKeep's kinds): a script counts for the calls it made.
-const KINDS = [
-  { key: "all", label: "All" },
-  { key: "bash", label: "bash" },
-  { key: "read", label: "read" },
-  { key: "edit", label: "edit/write" },
-  { key: "ask", label: "ask" },
-  { key: "failed", label: "failed" },
-];
 // "in 2h 10m" reads as is; days read as words in the sub-lines ("in 4 days").
 const days = (msec) => { const d = Math.round(msec / 86400000); return d >= 1 && msec >= 86400000 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(msec); };
-const usageColor = (t, r) => (r >= 0.85 ? t.blocked : r >= 0.6 ? t.ansi3 : t.done);
-const contextColor = (t, r) => (r > 0.95 ? t.blocked : r > 0.85 ? t.ansi3 : t.accent);
 
 export default class Info extends View {
   init(_props, cx) {
@@ -103,6 +96,8 @@ export default class Info extends View {
     this.kind = "all"; // the activity detail's filter
     Object.assign(this, { from: null, collapsed: [], context: false, outside: false, fill: null });
     this.roots = new Map(); // cwd → its git top (or the cwd), for repo-relative paths
+    this.scroll = VirtualListScrollHandle.new(); // the Calls list, put back where it was on Back
+    this.returnTo = false;
     this.sel = null; // the tool call shown in the inspector
     this.ids = []; // the listed calls' ids, in order, for ↑/↓
     this.area = 0; // height of the list + inspector area
@@ -117,39 +112,33 @@ export default class Info extends View {
     });
   }
 
-  open(key, cx) {
-    this.detail = key;
+  view() { return Object.fromEntries(Object.keys(INFO_VIEW).map((k) => [k, this[k]])); }
+
+  command(c, cx) {
+    // The view belongs to the tab shown when it was set (the loop resets it on another tab).
+    this.viewTab = selectedPane()?.tab ?? this.viewTab;
+    const next = infoViewCommand(this.view(), c, this.ids);
+    if (!next) return;
+    // Back onto the list: scroll it to the call it came from.
+    if (this.detail === "call" && next.detail === "calls") this.returnTo = true;
+    Object.assign(this, next);
     this.handle.focus();
     cx.notify();
   }
 
-  back(cx) {
-    this.detail = null; this.all = false; this.kind = "all"; this.sel = null;
-    cx.notify();
-  }
+  back(cx) { this.command("back", cx); }
 
-  // From the overview, a call opens in the activity detail: the list and the inspector get
-  // the panel's height instead of what the tiles leave.
-  select(id, cx) {
-    if (!this.detail) { this.detail = "activity"; this.sel = id; this.handle.focus(); cx.notify(); return; }
-    this.sel = this.sel === id ? null : id;
-    this.handle.focus();
-    cx.notify();
-  }
+  // A call opens over the list it is in (D7).
+  select(id, cx) { this.command(`select:${id}`, cx); }
 
-  // ↑/↓ through the listed calls; Esc closes the inspector, then the detail.
+  // ↑/↓ through the listed calls (in a call: the previous or next one); Esc goes back.
   key(e, cx) {
-    if (e.key === "escape" && (this.sel || this.detail)) {
+    if (e.key === "escape" && this.detail) { cx.stop_propagation(); this.back(cx); return; }
+    if ((e.key === "up" || e.key === "down") && this.ids.length && (this.detail === "call" || this.detail === "calls")) {
       cx.stop_propagation();
-      if (this.sel) { this.sel = null; cx.notify(); } else this.back(cx);
-      return;
-    }
-    if ((e.key === "up" || e.key === "down") && this.ids.length) {
-      cx.stop_propagation();
-      const at = this.ids.indexOf(this.sel);
-      const next = at < 0 ? 0 : Math.max(0, Math.min(this.ids.length - 1, at + (e.key === "down" ? 1 : -1)));
-      this.sel = this.ids[next];
-      cx.notify();
+      if (!this.sel || !this.ids.includes(this.sel)) { this.sel = this.ids[0]; cx.notify(); return; }
+      this.command(e.key === "down" ? "next" : "prev", cx);
+      if (this.detail === "calls") this.scroll.scroll_to_item(this.ids.indexOf(this.sel), "center");
     }
   }
 
@@ -235,6 +224,8 @@ export default class Info extends View {
         if (p !== undefined && (moved || Date.now() - readAt >= TICK)) {
           readAt = Date.now();
           let changed = moved;
+          // Filter, selection and Show all stay with the tab, until another one is shown (D10).
+          if (p && p.tab !== this.viewTab) { if (this.viewTab !== undefined) Object.assign(this, { ...INFO_VIEW, fill: this.fill, context: this.context }); this.viewTab = p.tab; }
           this.pane = p;
           const file = p ? await this.fileOf(p) : null;
           if (p?.cwd && !this.roots.has(p.cwd)) {
@@ -268,64 +259,6 @@ export default class Info extends View {
   piMark(t) {
     const p = this.pane?.program?.icon ? this.pane.program : { icon: "icons/pi.svg", tint: true };
     return p.tint ? svg(p.icon).size(14).flex_none().text_color(t.foreground) : image(p.icon).w(14).h(14).flex_none();
-  }
-
-  // `pace` (0–1), when given, draws the normal-pace tick, a little taller than the bar.
-  bar(t, ratio, color, pace = null) {
-    const r = Math.max(0, Math.min(1, ratio ?? 0));
-    return div().relative().h(4).w_full().rounded(2).bg(t.raised).child(div().h(4).rounded(2).bg(color).w(`${(r * 100).toFixed(1)}%`))
-      // Outlined in the panel colour so it reads over both the track and the fill.
-      .when(pace !== null && pace !== undefined, (e) => e.child(div().absolute().top(-3).h(10).w(4).ml(-2).rounded(1).bg(t.foreground).border_l(1).border_r(1).border_color(t.chrome)
-        .left(`${(Math.max(0, Math.min(1, pace)) * 100).toFixed(1)}%`)));
-  }
-
-  // A usage window: label, bar with the pace tick, %, tokens left, time to reset. The % turns
-  // amber more than 10 points ahead of pace; the tooltip gives the gap either way. The
-  // tokens left are herdr-session's estimate, with their own tooltip.
-  usageRow(t, u, key, label, w, now) {
-    const left = infoTokensLeft(w.left, key === "week" ? "weekly" : "5-hour");
-    const ahead = w.ahead ?? 0;
-    const tip = w.ahead === null ? null : `${Math.abs(Math.round(ahead * 100))}% ${ahead >= 0 ? "ahead of" : "under"} the normal pace (the tick)`;
-    const reset = w.resetsAt ? `in ${key === "week" ? days(w.resetsAt - now) : infoSpan(w.resetsAt - now)}` : "";
-    return h_flex().id(`usage-${key}`).h(20).gap(10).items_center().when(Boolean(tip), (e) => e.tooltip(tip))
-      .child(div().w(52).flex_none().whitespace_nowrap().text_size(12).text_color(t.muted).child(label))
-      .child(div().flex_1().min_w(0).child(this.bar(t, w.ratio, usageColor(t, w.ratio), w.pace)))
-      .child(div().w(36).flex_none().text_right().text_size(13).font_medium()
-        .text_color(u.stale ? t.muted : ahead > 0.1 ? t.ansi3 : t.foreground).child(pct(w.ratio)))
-      .when(Boolean(left), (e) => e.child(div().id(`usage-${key}-left`).w(80).flex_none().text_right().whitespace_nowrap().text_size(12)
-        .text_color(w.left.tokens === null ? t.dim : t.muted).child(left.text).tooltip(left.tip)))
-      .child(div().w(62).flex_none().text_right().text_size(12).text_color(t.dim).truncate().child(reset));
-  }
-
-  usageRows(t, u, now) {
-    return [
-      ...(u.fiveHour ? [this.usageRow(t, u, "five", "5 hours", u.fiveHour, now)] : []),
-      ...(u.sevenDay ? [this.usageRow(t, u, "week", "Week", u.sevenDay, now)] : []),
-    ];
-  }
-
-  // Values in `muted` among `dim` words: parts are strings (dim) or [text] (muted).
-  mixed(t, parts) {
-    return h_flex().min_w(0).gap(0).text_size(12).text_color(t.dim).overflow_hidden()
-      .children(parts.map((p, i) => div().when(i < parts.length - 1, (e) => e.flex_none()).when(i === parts.length - 1, (e) => e.min_w(0).truncate())
-        .text_color(Array.isArray(p) ? t.muted : t.dim).child(Array.isArray(p) ? p[0] : p)));
-  }
-
-  // A key figure tile: label, figure + qualifier, optional bar, sub-line; a click opens its detail.
-  tile(t, key, label, figure, qualifier, barEl, sub) {
-    return h_flex().id(`tile-${key}`).px(CHROME.headerX).py(10).gap(10).items_center().border_b(1).border_color(t.border)
-      .cursor_pointer().hover((e) => e.bg(t.hover)).active((e) => e.bg(t.selected))
-      .on_click((_e, cx) => this.open(key, cx))
-      .child(v_flex().flex_1().min_w(0).gap(3)
-        .child(div().text_size(12).font_medium().text_color(t.muted).line_height("16px").child(label))
-        .child(h_flex().gap(8).items_baseline().child(figure).child(div().min_w(0).truncate().text_size(13).text_color(t.muted).child(qualifier)))
-        .when(Boolean(barEl), (e) => e.child(barEl))
-        .when(Boolean(sub), (e) => e.child(sub)))
-      .child(svg(ICON("chevron-right")).size(12).flex_none().text_color(t.dim));
-  }
-
-  figure(t, text, color = t.foreground) {
-    return div().flex_none().text_size(20).font_medium().line_height("22px").text_color(color).child(text);
   }
 
   section(t, label, meta, _top = true, onClick = null) {
@@ -412,7 +345,7 @@ export default class Info extends View {
     if (!e) return null;
     const n = e.files.length;
     const text = !n && !e.atLeast ? "No files edited yet" : `Edited ${e.atLeast ? "at least " : ""}${n} file${n === 1 ? "" : "s"}`;
-    const go = n || e.outside.length || e.atLeast ? (_e, cx) => { this.detail = "files"; this.from = null; this.handle.focus(); cx.notify(); } : null;
+    const go = n || e.outside.length || e.atLeast ? (_e, cx) => this.command("detail:files", cx) : null;
     return div().px(CHROME.insetX).pt(8).child(chromeRow(UI, t, "edited", { onClick: go })
       .child(svg(ICON("file-text")).size(14).flex_none().text_color(t.dim))
       .child(div().flex_1().min_w(0).truncate().text_color(go ? t.foreground : t.muted).child(text))
@@ -423,7 +356,7 @@ export default class Info extends View {
   // D5: a call as a row: [disclosure] icon, the one thing that tells it apart (a path sans as
   // name + folder, a command or code mono, a title or question sans), the failure dot (filled:
   // it failed; hollow: a script went on after a failed step), the duration, a chevron.
-  callRow(t, c, { on = false, onClick = null, disclose = null, more = null } = {}) {
+  callRow(t, c, { on = false, onClick = null, disclose = null, more = null, inList = false } = {}) {
     const state = infoCallState(c, this.pane?.status === "working");
     const path = (c.kind === "read" || c.kind === "edit" || c.kind === "write") && c.path;
     const root = this.root();
@@ -439,11 +372,11 @@ export default class Info extends View {
       : prose ? div().flex_1().min_w(0).truncate().text_color(t.foreground).child(c.arg || c.name)
       : div().flex_1().min_w(0).truncate().font_family(MONO()).text_size(12).text_color(t.foreground).child(c.arg || c.name);
     const KIND = { code: "Script", bash: "Bash", read: "Read", edit: "Edit", write: "Write", ask: "Question", fetch: "Fetch", agent: "Agent" };
-    return chromeRow(UI, t, `call-${c.id}`, { on, onClick })
+    return chromeRow(UI, t, `call-${c.id}`, { on, onClick: inList ? null : onClick, clickable: inList || Boolean(onClick) })
       .when(Boolean(c.full || c.arg) && !more, (e) => e.tooltip(tipText(`${KIND[c.kind] ?? c.name}: ${c.full || c.arg}`)))
       .when(c.level === 1, (e) => e.child(div().w(10).h_full().flex_none().child(div().ml(4).w(1).h_full().bg(t.border))))
       .child(div().w(10).flex_none().flex().items_center().justify_center()
-        .when(Boolean(disclose), (e) => e.id(`toggle-${c.id}`).cursor_pointer().on_click(disclose.onClick)
+        .when(Boolean(disclose), (e) => e.id(`toggle-${c.id}`).cursor_pointer().when(!inList, (x) => x.on_click(disclose.onClick))
           .child(svg(ICON(disclose.open ? "chevron-down" : "chevron-right")).size(10).text_color(t.dim))))
       .when(!more, (e) => e.child(svg(ICON(TOOL_ICON[c.kind] ?? "box")).size(14).flex_none().text_color(t.dim)))
       .child(text)
@@ -451,7 +384,7 @@ export default class Info extends View {
       .when(!c.failed && Boolean(c.stepFailed), (e) => e.child(div().id(`hollow-${c.id}`).size(6).flex_none().rounded(3).border_1().border_color(t.blocked).tooltip("Went on after a failed step")))
       .when(!more, (e) => e.child(div().flex_none().min_w(28).text_right().text_size(12).text_color(t.muted)
         .child(state === "running" ? this.spinner(t) : state === "no-result" ? "No result" : infoDuration(c.duration))))
-      .when(Boolean(onClick), (e) => e.child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.dim)));
+      .when(Boolean(onClick) || inList, (e) => e.child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.dim)));
   }
 
   // O1: the last 8 calls, a script's steps under it (the first 3, then "+N steps").
@@ -469,56 +402,162 @@ export default class Info extends View {
     return rows;
   }
 
-  // A tool call row; `big` is the detail view's taller row.
-  toolRow(t, c, now, big = false) {
-    const icon = TOOL_ICON[c.kind] ?? "box";
-    // A call without a result runs only while the agent works; else it stopped without one (F3).
-    const state = infoCallState(c, this.pane?.status === "working");
-    c = { ...c, running: state === "running" };
-    const prose = c.kind === "ask" || c.kind === "agent";
-    const path = c.kind === "read" || c.kind === "edit" || c.kind === "write";
-    const on = this.sel === c.id;
-    const arg = div().flex_1().min_w(0).text_color(t.foreground)
-      .when(prose, (e) => e.text_size(12.5)).when(!prose, (e) => e.font_family(MONO()).text_size(12))
-      .when(path, (e) => e.text_ellipsis_start()).when(!path, (e) => e.truncate()).child(c.arg || c.name);
-    return chromeRow(UI, t, `call-${c.id}`, { on, onClick: (_e, cx) => this.select(c.id, cx) })
-      // A script's own calls sit under it, one step in.
-      .when(c.level === 1, (e) => e.pl(CHROME.rowX + 16))
-      .when(Boolean(c.full || c.arg) && !on, (e) => e.tooltip(tipText(c.full || c.arg)))
-      .child(svg(ICON(icon)).size(14).flex_none().text_color(t.dim))
-      // A long tool name would wrap onto a second line, over the next row: cut instead.
-      .child(div().w(40).flex_none().whitespace_nowrap().truncate().text_size(12.5).text_color(c.error ? t.blocked : t.muted).child(c.kind))
-      .child(arg)
-      .when(c.running, (e) => e.child(div().w(56).flex_none().flex().justify_end().child(this.spinner(t))))
-      .when(!c.running, (e) => e.child(div().w(56).flex_none().text_right().text_size(11).text_color(t.dim).child(state === "no-result" ? "No result" : infoDuration(c.duration))))
-      .when(Boolean(c.error), (e) => e.child(div().size(6).flex_none().rounded(3).bg(t.blocked)));
+  // ---- Calls (D6, D10, O1, O2) ------------------------------------------------------------
+
+  // The listed rows: the running calls first, a script's steps under it unless collapsed.
+  listRows(f) {
+    const keep = (l) => l.map((c) => infoKeep(c, this.kind)).filter(Boolean);
+    const calls = [...keep(f.running ?? []), ...keep(f.history ?? [])];
+    const rows = [];
+    for (const c of calls) {
+      rows.push({ ...c, level: 0 });
+      if (c.nested?.length && !this.collapsed.includes(c.id)) rows.push(...infoRows([c]).slice(1));
+    }
+    return rows;
   }
 
-  // The calls with their scripts' calls under them; SHOWN rows unless all are asked for.
-  toolList(t, running, history, now, big) {
-    const rows = infoRows(history);
-    const shown = this.all ? rows : rows.slice(0, SHOWN);
-    const listed = [...infoRows(running), ...shown];
-    this.ids = listed.map((c) => c.id);
+  // A row of the virtual list: no handlers (its rows are rebuilt each frame); the list's
+  // on_item_click acts, a click on the disclosure column (by where the pointer went down)
+  // collapsing the script, elsewhere opening the call.
+  listRow(t, r) {
+    const open = !this.collapsed.includes(r.id);
+    return this.callRow(t, r, { on: this.sel === r.id, inList: true, disclose: r.level === 0 && r.nested?.length ? { open } : null });
+  }
+
+  listClick(id, cx) {
+    const r = this.listed?.find((x) => x.id === id);
+    if (!r) return;
+    if (r.level === 0 && r.nested?.length && (this.pointerX ?? 99) < CHROME.rowX + 10 + 4) this.command(`toggle:${id}`, cx);
+    else this.select(id, cx);
+  }
+
+  callsView(t, f) {
+    const n = infoKindCounts(f.tools ?? []);
+    const CHIPS = [["all", "All"], ["bash", "bash"], ["read", "read"], ["edit", "edit/write"], ["ask", "ask"], ["failed", "failed"]];
+    const chip = ([key, label]) => {
+      const on = this.kind === key;
+      return div().id(`kind-${key}`).h(24).px(8).gap(5).flex_none().flex().items_center().rounded(CHROME.radius).cursor_pointer().text_size(12)
+        .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
+        .on_click((_e, cx) => this.command(`kind:${key}`, cx))
+        .child(div().child(label)).child(div().text_color(key === "failed" ? t.blocked : t.dim).child(String(n[key])));
+    };
+    const rows = this.listRows(f), shown = this.all ? rows : rows.slice(0, SHOWN);
+    this.ids = shown.map((r) => r.id);
+    this.listed = shown;
+    if (this.returnTo) { this.returnTo = false; const i = this.ids.indexOf(this.sel); if (i >= 0) this.scroll.scroll_to_item(i, "center"); }
+    const label = CHIPS.find(([k]) => k === this.kind)?.[1] ?? "All";
+    const list = shown.length
+      ? div().id("calls-box").flex_1().min_h(0).relative()
+        .child(div().id("calls-frame").size_full()
+          // Where a click lands (the list's click knows only the row): x for the disclosure column.
+          .on_mouse_down("left", (e) => { this.pointerX = e.local_position?.x ?? 99; })
+          .child(v_virtual_list("info-calls", shown.length, CHROME.row, (i) => shown[i].id, (range) => shown.slice(range.start, range.end).map((r) => this.listRow(t, r)))
+            .track_scroll(this.scroll).on_item_click((key, cx) => this.listClick(key, cx)).size_full()))
+        .child(Scrollbar.vertical("info-calls").absolute().inset_0())
+      : v_flex().px(CHROME.rowX).py(8).gap(8).items_start().text_size(12).text_color(t.dim)
+        .child(div().child(this.kind === "failed" ? "No call failed in this session." : `No ${label} calls in this session.`))
+        .child(chromeTextButton(UI, t, "show-all-calls", "Show all calls", (_e, cx) => this.command("kind:all", cx)));
+    return v_flex().flex_1().min_h(0).px(CHROME.insetX).py(CHROME.insetY)
+      .child(h_flex().flex_none().flex_wrap().gap(2).pb(4).children(CHIPS.filter(([k]) => k === "all" || k === this.kind || n[k] > 0).map(chip)))
+      .child(this.section(t, this.kind === "all" ? "All calls" : label, `${shown.length} shown`))
+      .child(list);
+  }
+
+  showAllAction(t, f) {
+    const rows = this.listRows(f);
+    return rows.length > SHOWN && !this.all ? [chromeTextButton(UI, t, "show-all", `Show all ${rows.length}`, (_e, cx) => this.command("all", cx), "The list shows the latest 200")] : [];
+  }
+
+  // ---- a call, pushed over its list (D7) ---------------------------------------------------
+
+  rel(path) {
+    const root = this.root();
+    return path && root && path.startsWith(root + "/") ? path.slice(root.length + 1) : path;
+  }
+
+  tinted(t, text, lang) {
+    const syn = { keyword: t.ansi5, string: t.ansi2, number: t.ansi3, constant: t.ansi3, function: t.ansi4, type: t.ansi6, property: t.ansi1, comment: t.dim, operator: t.ansi6, punctuation: t.muted };
+    return this.code(t, String(text).replace(/\n$/, "").split("\n").slice(0, 400).map((l) => this.line(t, {
+      text: h_flex().flex_1().min_w(0).flex_wrap().children(tokenize(l, lang).map((p) => div().text_color(p.kind ? syn[p.kind] ?? t.foreground : t.foreground).child(p.text))),
+    })));
+  }
+
+  callView(t, f, now) {
+    const c = this.selected(f);
+    if (!c) return [div().px(CHROME.headerX).py(12).text_size(12).text_color(t.dim).child("This call isn't in the session any more.")];
+    const state = infoCallState(c, this.pane?.status === "working");
+    const took = infoDuration(c.duration) || "<0.1s";
+    const meta = state === "running" ? "Running" : state === "no-result" ? "No result"
+      : [`Took ${took}`, c.startedExact ? `started ${infoClock(c.startedExact, false)}` : null, c.level === 0 && c.finished ? `finished ${infoClock(c.finished, false)}` : null].filter(Boolean).join(" · ");
+    const untitled = c.untitled && c.nested?.length ? infoStepsLabel(c.nested) : null;
+    const title = c.path ? this.rel(c.path) : untitled ?? c.arg ?? c.name;
+    const args = c.args ?? {};
+    const out = [
+      div().px(CHROME.headerX).pt(12).font_medium().text_color(untitled ? t.muted : t.foreground).when(Boolean(c.path), (e) => e.tooltip(c.path)).child(title),
+      h_flex().px(CHROME.headerX).pt(2).gap(8).text_size(12).text_color(t.muted).child(meta)
+        .when(Boolean(c.failed), (e) => e.child(div().text_color(t.blocked).child("Failed")))
+        .when(!c.failed && Boolean(c.stepFailed), (e) => e.child(div().text_color(t.blocked).child("Went on after a failed step"))),
+    ];
+    if (c.kind === "code" && typeof args.code === "string") out.push(this.label(t, "Code"), this.tinted(t, args.code, "js"));
+    if (c.kind === "bash" && typeof args.command === "string") out.push(this.label(t, "Command"), this.tinted(t, args.command, "sh"));
+    if (c.kind === "edit") {
+      const numbered = Boolean(c.diff?.lines.length);
+      const diff = numbered ? c.diff.lines : infoEditDiff(args);
+      const sign = { "-": ["−", t.ansi1], "+": ["+", t.ansi2] };
+      if (diff.length) out.push(this.label(t, "Change"), this.code(t, diff.map((l) => this.line(t, { marker: sign[l.sign]?.[0] ?? "", markerColor: sign[l.sign]?.[1] ?? t.dim,
+        ...(numbered && { num: l.num }), text: l.text, color: l.text === "⋯" ? t.dim : t.foreground, tint: sign[l.sign] ? sign[l.sign][1] + "14" : undefined }))));
+    }
+    if (c.nested?.length) {
+      out.push(this.label(t, "Steps", String(c.nested.length)));
+      out.push(v_flex().px(CHROME.insetX).children(infoRows([c]).slice(1).map((n) => this.callRow(t, { ...n, level: 0 }, { onClick: (_e, cx) => this.select(n.id, cx) }))));
+    }
+    // The rest as key/value rows, paths relative to the repo; long text as a block.
+    const skip = new Set(c.kind === "code" ? ["code"] : c.kind === "bash" ? ["command"] : c.kind === "edit" ? ["edits", "oldText", "newText", "path"] : c.path ? ["path"] : []);
+    const rest = Object.entries(args).filter(([k]) => !skip.has(k));
+    if (rest.length) {
+      out.push(this.label(t, "Arguments"));
+      for (const [k, v] of rest) {
+        const text = typeof v === "string" ? v : JSON.stringify(v);
+        if (typeof v === "string" && v.includes("\n")) { out.push(div().px(CHROME.headerX).pt(4).text_size(12).text_color(t.muted).child(k), this.tinted(t, v, null)); continue; }
+        out.push(h_flex().px(CHROME.headerX).py(3).gap(10).items_start().text_size(12)
+          .child(div().w(70).flex_none().text_color(t.muted).child(k))
+          .child(div().flex_1().min_w(0).font_family(MONO()).text_color(t.foreground).when(k === "path", (e) => e.tooltip(text)).child(k === "path" ? this.rel(text) : text)));
+      }
+    }
+    if (state === "done") {
+      const r = infoResultLines(c.result ?? "");
+      const extra = r.more ? `+${r.more} more lines` : c.resultCut ? "cut at 64 KB" : r.lines.length > 1 ? `${r.lines.length} lines` : "";
+      out.push(this.label(t, c.failed ? "Error" : "Result", extra),
+        (c.result ?? "") === "" ? div().px(CHROME.headerX).py(4).text_size(12).text_color(t.dim).child("Nothing")
+          : this.code(t, r.lines.map((l) => this.line(t, { text: l, color: c.failed ? t.blocked : t.foreground }))));
+    }
+    return out;
+  }
+
+  callActions(t, f) {
+    const c = this.selected(f), at = this.ids.indexOf(this.sel);
+    const icon = (id, glyph, tip, cmd, on) => div().id(id).size(24).flex_none().flex().items_center().justify_center().rounded(CHROME.radius).text_size(13)
+      .when(on, (e) => e.cursor_pointer().text_color(t.muted).hover((x) => x.bg(t.hover).text_color(t.foreground)).active((x) => x.bg(t.selected)).on_click((_e, cx) => this.command(cmd, cx)))
+      .when(!on, (e) => e.text_color(t.dim)).tooltip(tip).child(glyph);
+    const opens = c && (c.kind === "edit" || c.kind === "write" || c.kind === "read") && c.path;
     return [
-      ...listed.map((c) => this.toolRow(t, c, now, big)),
-      ...(rows.length > shown.length ? [div().id("show-all").h(24).mx(10).my(4).px(6).flex_none().flex().items_center().rounded(6).cursor_pointer()
-        .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground)).active((e) => e.bg(t.selected))
-        .on_click((_e, cx) => { this.all = true; cx.notify(); }).child(`Show all ${history.length}`)] : []),
+      icon("call-prev", "↑", "Previous call (↑)", "prev", at > 0),
+      icon("call-next", "↓", "Next call (↓)", "next", at >= 0 && at < this.ids.length - 1),
+      ...(opens ? [chromeTextButton(UI, t, "call-open", "Open", (e) => openInEditor(HERDR, c.path, { line: c.diff?.from ?? null, side: e.modifiers.alt }), c.path)] : []),
     ];
   }
 
   // ---- inspector: the selected call in full ----------------------------------------------
 
   code(t, children) {
-    return v_flex().mx(16).px(10).py(8).rounded(6).bg(t.background).border_1().border_color(t.border)
+    return v_flex().mx(CHROME.headerX).px(10).py(8).rounded(CHROME.radius).bg(t.background).when(infoLight(t), (e) => e.border_1().border_color(t.border))
       .font_family(MONO()).text_size(12).line_height("18px").children(children);
   }
 
   label(t, text, extra) {
-    return h_flex().h(28).flex_none().px(16).pt(4).gap(8).items_center()
-      .child(div().flex_1().text_size(11).font_medium().text_color(t.muted).child(text))
-      .when(Boolean(extra), (e) => e.child(div().text_size(11).text_color(t.dim).child(extra)));
+    return h_flex().h(CHROME.section).flex_none().px(CHROME.headerX).pt(8).gap(8).items_center()
+      .child(div().flex_1().text_size(12).font_medium().text_color(t.muted).child(text))
+      .when(Boolean(extra), (e) => e.child(div().text_size(12).text_color(t.muted).child(extra)));
   }
 
   // One payload line: a 16px marker column, an optional number column, and the text, which
@@ -531,79 +570,10 @@ export default class Info extends View {
       .child(typeof text === "string" ? div().flex_1().min_w(0).text_color(color).child(text || " ") : text);
   }
 
-  jsonLines(t, value) {
-    const color = { key: t.ansi4, string: t.ansi2, number: t.ansi3, literal: t.ansi5, punct: t.dim };
-    return infoJsonLines(value).map((l) => this.line(t, {
-      text: h_flex().flex_1().min_w(0).flex_wrap().pl(l.indent * 14)
-        .children(l.parts.map((p) => div().when(p.kind === "string", (e) => e.min_w(0)).text_color(color[p.kind] ?? t.foreground).child(p.text))),
-    }));
-  }
-
-  inspector(t, c, now, area) {
-    const icon = TOOL_ICON[c.kind] ?? "box";
-    const opens = (c.kind === "edit" || c.kind === "write" || c.kind === "read") && c.path;
-    const range = c.kind === "edit" && c.diff?.from ? (c.diff.from === c.diff.to ? `line ${c.diff.from}` : `lines ${c.diff.from}–${c.diff.to}`) : "";
-    const took = infoDuration(c.duration) || "<0.1s";
-    // A script that caught a failed call went on: its output isn't an error message.
-    const failed = c.nested?.filter((n) => n.error).length ?? 0;
-    const said = c.threw ? `failed · ${took}` : c.error ? `${failed} call${failed > 1 ? "s" : ""} failed · ${took}` : took;
-    const state = infoCallState(c, this.pane?.status === "working");
-    const status = state === "running" ? h_flex().gap(5).items_center().text_color(t.working).child(this.spinner(t)).child("running")
-      : state === "no-result" ? div().text_color(t.dim).child("No result")
-      : div().text_color(c.error ? t.blocked : t.dim).child(said);
-    const button = (id, child, tip, action) => div().id(id).h(24).px(8).flex_none().flex().items_center().gap(6).rounded(6).cursor_pointer()
-      .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground)).active((e) => e.bg(t.selected)).tooltip(tip).on_click(action).child(child);
-    const args = c.args ?? {};
-    const sections = [];
-    if (c.kind === "bash" && typeof args.command === "string") {
-      sections.push(this.label(t, "Command"), this.code(t, args.command.replace(/\n$/, "").split("\n").map((l) => this.line(t, { text: l }))));
-    }
-    if (c.kind === "edit") {
-      // Pi's own diff when the result has it (numbered, with context), else old → new text.
-      const numbered = Boolean(c.diff?.lines.length);
-      const diff = numbered ? c.diff.lines : infoEditDiff(args);
-      const sign = { "-": ["−", t.ansi1], "+": ["+", t.ansi2] };
-      if (diff.length) sections.push(this.label(t, "Change"), this.code(t, diff.map((l) => this.line(t, {
-        marker: sign[l.sign]?.[0] ?? "", markerColor: sign[l.sign]?.[1] ?? t.dim,
-        ...(numbered && { num: l.num }),
-        text: l.text, color: l.text === "⋯" ? t.dim : t.foreground,
-        tint: sign[l.sign] ? sign[l.sign][1] + "14" : undefined,
-      }))));
-    }
-    // The command and the diff above say it all for those; the rest show their arguments.
-    const rest = Object.keys(args).filter((k) => !(c.kind === "bash" && k === "command") && !(c.kind === "edit" && (k === "edits" || k === "oldText" || k === "newText")));
-    if (rest.length) sections.push(this.label(t, "Arguments"), this.code(t, this.jsonLines(t, Object.fromEntries(rest.map((k) => [k, args[k]])))));
-    if (c.running) sections.push(this.label(t, "Result"), div().px(16).py(4).text_size(12).text_color(t.dim).child("Waiting for the result…"));
-    else {
-      const r = infoResultLines(c.result ?? "");
-      const extra = r.more ? `+${r.more} more lines` : c.resultCut ? "cut at 64 KB" : r.lines.length > 1 ? `${r.lines.length} lines` : "";
-      sections.push(this.label(t, c.threw ? "Error" : "Result", extra),
-        (c.result ?? "") === "" ? div().px(16).py(4).text_size(12).text_color(t.dim).child("Nothing")
-          : this.code(t, r.lines.map((l) => this.line(t, { text: l, color: c.threw ? t.blocked : t.foreground }))));
-    }
-    const kv = (k, v) => h_flex().h(22).px(16).gap(10).items_center().text_size(12)
-      .child(div().w(70).flex_none().text_color(t.muted).child(k)).child(div().font_family(MONO()).text_color(t.foreground).child(v));
-    // Started only when exact: finished − took, from Pi's durationMs (F4).
-    if (state === "done" && c.finished) sections.push(this.label(t, "Timing"), ...(c.startedExact ? [kv("Started", infoClock(c.startedExact))] : []), kv("Finished", infoClock(c.finished)), kv("Took", took));
-    // 55% of the area it shares with the list, so the list keeps the rest.
-    return v_flex().id("inspector").flex_none().h(Math.max(160, Math.round((area || 600) * 0.55))).border_t(1).border_color(t.border).bg(t.chrome)
-      .child(v_flex().flex_none().px(16).pt(10).pb(8).gap(4).border_b(1).border_color(t.border)
-        .child(h_flex().gap(8).items_center()
-          .child(svg(ICON(icon)).size(14).flex_none().text_color(c.error ? t.blocked : t.muted))
-          .child(div().flex_none().text_size(13).font_medium().text_color(c.error ? t.blocked : t.foreground).child(c.name))
-          .child(div().flex_1())
-          .when(Boolean(opens), (e) => e.child(button("inspector-open", "Open file", c.path, (e) => openInEditor(HERDR, c.path, { line: c.diff?.from ?? null, side: e.modifiers.alt }))))
-          .child(button("inspector-close", svg(ICON("x")).size(12), "Close (Esc)", (_e, cx) => { this.sel = null; cx.notify(); })))
-        .child(div().min_w(0).font_family(MONO()).text_size(12).text_color(t.foreground)
-          .when(Boolean(c.path), (e) => e.text_ellipsis_start()).when(!c.path, (e) => e.truncate()).child(range ? `${c.arg} · ${range}` : c.arg || c.name))
-        .child(h_flex().gap(6).text_size(11).text_color(t.dim).child(status)
-          .when(Boolean(c.startedExact), (e) => e.child(`· started ${infoClock(c.startedExact, false)}`))))
-      .child(v_flex().id("inspector-body").flex_1().min_h(0).overflow_y_scrollbar().pb(10).children(sections));
-  }
-
   selected(f) {
     if (!this.sel || !this.session) return null;
     return infoRows([...(f.running ?? []), ...(f.history ?? [])]).find((c) => c.id === this.sel) ?? null;
+    // (sub-rows carry their kind's path; level tells a step from a call)
   }
 
   // ---- figures -------------------------------------------------------------------------
@@ -627,19 +597,6 @@ export default class Info extends View {
   }
 
   // ---- views ---------------------------------------------------------------------------
-
-  // Both windows at a glance; there is no detail behind it.
-  usageTile(t, f, now) {
-    const u = f.usage;
-    if (!u) return this.tile(t, "usage", "Usage", this.figure(t, "—", t.muted), "no usage reported yet", null, null);
-    const note = u.overage ? [`Overage on${u.overageStatus ? ` · ${u.overageStatus}` : ""}`, t.blocked] : u.stale ? [`${infoAge(now - (u.at ?? now))} ago`, t.dim] : null;
-    return h_flex().id("tile-usage").px(CHROME.headerX).py(10).gap(10).items_center().border_b(1).border_color(t.border)
-      .child(v_flex().flex_1().min_w(0).gap(4)
-        .child(h_flex().gap(8).items_baseline()
-          .child(div().flex_1().text_size(12).font_medium().text_color(t.muted).line_height("16px").child("Usage"))
-          .when(Boolean(note), (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(note[1]).child(note[0]))))
-        .children(this.usageRows(t, u, now)));
-  }
 
   // D1–D4, O1–O3: status, limits, edited files, recent calls; spacing instead of dividers but one
   // above the calls.
@@ -666,46 +623,6 @@ export default class Info extends View {
       return [div().px(16).py(14).text_size(12).text_color(t.dim).child(this.pane ? "…" : "No Pi session in this tab")];
     }
     switch (OLD[this.detail] ?? this.detail) {
-      case "context": {
-        if (!s) return [];
-        const c = f.context, cache = f.cache;
-        const spark = infoSpark(s, f.window, 64);
-        return [
-          div().h(8),
-          h_flex().h(30).px(16).gap(10).items_center().child(div().flex_1().child(this.bar(t, c.ratio, contextColor(t, c.ratio))))
-            .child(div().text_size(13).font_medium().child(pct(c.ratio)))
-            .child(div().text_size(12).text_color(t.dim).child(`${infoTokens(c.used)} / ${infoTokens(c.window)}`)),
-          h_flex().h(20).px(16).gap(1).items_end().children(spark.map((b, i) =>
-            div().w(4).flex_none().rounded(1).h(Math.max(1, Math.round(b.ratio * 20)))
-              .bg(i === spark.length - 1 ? t.accent : b.afterCompaction ? t.dim : t.input))),
-          div().h(8),
-          this.kv(t, "Cache hits", h_flex().gap(8).items_baseline().child(div().text_size(13).font_medium().child(pct(cache.session)))
-            .child(div().text_size(12).text_color(t.dim).child(`${pct(cache.last)} on the last request`))),
-          this.kv(t, "Cache tokens", div().text_size(12).text_color(t.muted).child(`${infoTokens(cache.read)} read · ${infoTokens(cache.written)} written`)),
-          this.kv(t, "Compactions", div().text_size(12).text_color(t.muted).child(c.compactions
-            ? `${c.compactions}${s.lastCompaction ? ` · last ${infoAge(now - s.lastCompaction)} ago` : ""}` : "none yet")),
-        ];
-      }
-      case "activity": {
-        if (!s) return [];
-        const keep = (list) => list.map((c) => infoKeep(c, this.kind)).filter(Boolean);
-        const running = keep(f.running), history = keep(f.history);
-        const chip = (k) => {
-          const on = this.kind === k.key;
-          return div().id(`kind-${k.key}`).h(22).px(8).flex_none().flex().items_center().rounded(6).cursor_pointer().text_size(12)
-            .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
-            .on_click((_e, cx) => { this.kind = k.key; this.all = false; cx.notify(); }).child(k.label);
-        };
-        const list = history.length ? this.toolList(t, [], history, now, true) : [div().px(16).py(12).text_size(12).text_color(t.dim).child("None")];
-        // ↑/↓ go through the running calls too, listed above the history here.
-        this.ids = [...running.map((c) => c.id), ...(history.length ? this.ids : [])];
-        return [
-          h_flex().h(32).flex_none().gap(2).items_center().children(KINDS.map(chip)),
-          ...(running.length ? [this.section(t, "Running", String(running.length)), ...running.map((c) => this.toolRow(t, c, now, true))] : []),
-          this.section(t, "History", `${infoRows(history).length} calls${f.errors && this.kind === "all" ? ` · ${f.errors} failed` : ""}`),
-          ...list,
-        ];
-      }
       case "lines": {
         if (!s) return [];
         const l = f.lines, files = infoFiles(s);
@@ -742,24 +659,25 @@ export default class Info extends View {
     // The header names the model, not the session again (D8).
     const s = this.session;
     const meta = s?.model ? [s.model.replace(/^claude-/, ""), s.thinking ? `thinking ${s.thinking}` : null].filter(Boolean).join(" · ") : null;
-    const header = chromeHeader(UI, t, { id: "info-head", title: this.detail ? LABELS[this.detail] ?? "Info" : "Info", meta, back: this.detail ? (cx) => this.back(cx) : null });
-    const root = v_flex().id("info").track_focus(this.handle).size_full().min_h(0).bg(t.chrome).text_color(t.foreground).text_size(CHROME.text)
+    const KIND = { code: "Script", bash: "Bash", read: "Read", edit: "Edit", write: "Write", ask: "Question", fetch: "Fetch", agent: "Agent" };
+    const call = this.detail === "call" ? this.selected(f) : null;
+    const title = this.detail === "call" ? KIND[call?.kind] ?? call?.name ?? "Call" : LABELS[this.detail] ?? "Info";
+    const actions = this.detail === "calls" ? this.showAllAction(t, f) : this.detail === "call" ? this.callActions(t, f) : [];
+    const header = chromeHeader(UI, t, { id: "info-head", title, meta: this.detail === "call" ? null : meta, back: this.detail ? (cx) => this.back(cx) : null, actions });
+    // fill: the corner check's (nix-info.fill:<color>), so the content's own corners show.
+    const root = v_flex().id("info").track_focus(this.handle).size_full().min_h(0).bg(this.fill ?? t.chrome).text_color(t.foreground).text_size(CHROME.text)
       .on_key_down((e, cx) => this.key(e, cx))
       .child(header);
-    // The list above, the selected call below (only where calls are listed).
-    const sel = this.detail === null || this.detail === "activity" || this.detail === "calls" || this.detail === "call" ? this.selected(f) : null;
-    const area = (id, list) => v_flex().id(id).flex_1().min_h(0)
-      .on_size_change((size, cx) => { if (size.height !== this.area) { this.area = size.height; cx.notify(); } })
-      .child(list).when(Boolean(sel), (e) => e.child(this.inspector(t, sel, now, this.area)));
-    if (this.detail) {
-      return root.child(area("info-detail-area", v_flex().id("info-detail").flex_1().min_h(0).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY).children(this.detailView(t, f, now))));
-    }
+    if (this.detail === "calls") return root.child(this.callsView(t, f));
+    if (this.detail === "call") return root.child(v_flex().id("info-call").flex_1().min_h(0).overflow_y_scrollbar().pb(12).children(this.callView(t, f, now)));
+    if (this.detail) return root.child(v_flex().id("info-detail").flex_1().min_h(0).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY).children(this.detailView(t, f, now)));
     const top = this.overview(t, f, now);
     if (!this.session || !f.started) return root.child(v_flex().flex_none().children(top));
     const calls = f.total ? `${f.total} call${f.total === 1 ? "" : "s"}${f.errors ? ` · ${f.errors} failed` : ""}` : null;
+    this.ids = [...(f.running ?? []), ...(f.history ?? [])].slice(0, 8).map((c) => c.id);
     return root.child(v_flex().flex_none().children(top))
       .child(v_flex().id("info-recent").flex_1().min_h(0).mt(12).border_t(1).border_color(t.border).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY)
-        .child(this.section(t, "Recent calls", calls, true, f.total ? (_e, cx) => { this.detail = "calls"; this.from = null; this.handle.focus(); cx.notify(); } : null))
+        .child(this.section(t, "Recent calls", calls, true, f.total ? (_e, cx) => this.command("detail:calls", cx) : null))
         .children(f.total ? this.recentCalls(t, f) : [div().px(CHROME.rowX).py(8).text_size(12).text_color(t.dim).child("Calls appear here as the agent works.")]));
   }
 }
