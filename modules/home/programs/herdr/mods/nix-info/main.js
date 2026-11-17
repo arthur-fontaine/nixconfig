@@ -370,7 +370,7 @@ export default class Info extends View {
     const root = this.root();
     const rel = path && root && c.path.startsWith(root + "/") ? c.path.slice(root.length + 1) : c.arg;
     const cut = rel ? rel.lastIndexOf("/") : -1;
-    const untitled = c.untitled && c.nested?.length ? infoStepsLabel(c.nested) : null;
+    const untitled = c.untitled && c.nested?.length ? infoStepsLabel(c.steps ?? c.nested) : null;
     const prose = c.kind === "ask" || c.kind === "agent" || (c.kind === "code" && !untitled && !/^(\w+)(: |\s×)/.test(c.arg ?? ""));
     const text = more ? div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(more)
       : path ? h_flex().flex_1().min_w(0).gap(6).items_baseline()
@@ -560,7 +560,7 @@ export default class Info extends View {
     const took = infoDuration(c.duration) || "<0.1s";
     const meta = state === "running" ? "Running" : state === "no-result" ? "No result"
       : [`Took ${took}`, c.startedExact ? `started ${infoClock(c.startedExact, false)}` : null, c.level === 0 && c.finished ? `finished ${infoClock(c.finished, false)}` : null].filter(Boolean).join(" · ");
-    const untitled = c.untitled && c.nested?.length ? infoStepsLabel(c.nested) : null;
+    const untitled = c.untitled && c.nested?.length ? infoStepsLabel(c.steps ?? c.nested) : null;
     const title = c.path ? this.rel(c.path) : untitled ?? c.arg ?? c.name;
     const args = c.args ?? {};
     const out = [

@@ -665,7 +665,8 @@ export function infoKeep(c, kind) {
   const pick = infoFailedKind(kind) ? (n) => n.error : (n) => kinds.includes(n.kind);
   const matched = c.nested?.filter(pick) ?? [];
   if (infoFailedKind(kind) ? !c.error : !kinds.includes(c.kind) && !matched.length) return null;
-  return c.nested ? { ...c, nested: matched } : c;
+  // steps keeps them all: an untitled script is named after all its steps, not the shown ones.
+  return c.nested ? { ...c, nested: matched, steps: c.steps ?? c.nested } : c;
 }
 
 const INFO_LISTS = ["calls", "files"];

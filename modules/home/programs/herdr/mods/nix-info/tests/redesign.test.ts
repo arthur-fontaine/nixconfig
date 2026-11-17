@@ -178,3 +178,11 @@ test("nix-info.<verb> commands put the panel in any state; Back keeps filter and
   assert.deepEqual(on({ ...home, fill: "#ff00ff", kind: "bash", detail: "calls" }, "reset"), home);
   assert.equal(on(home, "whatever"), null);
 });
+
+test("an untitled script's label counts all its steps, also under a filter that shows some (O1)", () => {
+  const steps = [{ kind: "bash" }, { kind: "edit" }, { kind: "bash" }, { kind: "read" }, { kind: "edit" }];
+  const script = { id: "s", kind: "bash", untitled: true, error: false, nested: steps.map((n, i) => ({ id: "s/" + i, error: false, ...n })) };
+  const kept = infoKeep(script, "bash");
+  assert.equal(kept.nested.length, 2);
+  assert.equal(infoStepsLabel(kept.steps), "5 steps: bash, edit, read");
+});
