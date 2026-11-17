@@ -99,7 +99,9 @@ export default class Tabs extends View {
         .h(36).rounded_t(style === "handle" ? 10 : 6)
         .when(c.active && !style, el => el.bg(t.background).border_l(1).border_t(1).border_r(1).border_color(t.border).text_color(t.foreground))
         .when(c.active && style === "handle", el => el.bg(t.background).text_color(t.foreground).font_medium())
-        .when(!c.active, el => el.text_color(t.muted).hover(s => s.bg(t.hover)))
+        // Handle style: a hovered tab only brightens its text; a fill would meet the shown tab's
+        // fillet, which hangs over its bottom corner.
+        .when(!c.active, el => el.text_color(t.muted).hover(s => style === "handle" ? s.text_color(t.foreground) : s.bg(t.hover)))
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = { id: c.id, moved: false }; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
         // Dragging: the pressed tab fades, a line shows the gap it lands in (the pointer's side).
         .on_mouse_move((e, cx) => {
@@ -134,12 +136,14 @@ export default class Tabs extends View {
           .hover(s => s.bg(t.input + "80").text_color(t.foreground)).active(s => s.bg(t.input + "b3")).tooltip("Close tab").on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run(`nix-status.close-tab:${c.id}`); }).child(svg(ICON("x")).size(12)));
       if (style !== "handle") return body;
       // The handle grows out of the panes' island: inverse-radius fillets where it meets the
-      // island's top (the well's color, rounded on the tab's side, over the island's). Every tab
-      // keeps their room, so a tab doesn't move when it becomes the shown one.
-      const fillet = (side) => div().w(10).h(10).flex_none()
-        .when(c.active && Boolean(t.well), el => el.bg(t.background).child(div().size(10).bg(t.well)
-          .when(side === "left", e => e.rounded_br(10)).when(side === "right", e => e.rounded_bl(10))));
-      return h_flex().id(`tabw-${c.id}`).flex_none().h_full().items_end().child(fillet("left")).child(body).child(fillet("right"));
+      // island's top (the well's color, rounded on the tab's side, over the island's). They hang
+      // outside the tab, over its neighbours' bottom corners, so tabs sit edge to edge and none
+      // moves when it becomes the shown one.
+      const fillet = (side) => div().absolute().bottom(0).size(10).bg(t.background)
+        .when(side === "left", el => el.left(-10)).when(side === "right", el => el.right(-10))
+        .child(div().size(10).bg(t.well).when(side === "left", e => e.rounded_br(10)).when(side === "right", e => e.rounded_bl(10)));
+      return h_flex().id(`tabw-${c.id}`).flex_none().h_full().items_end()
+        .child(body.when(c.active && Boolean(t.well), el => el.child(fillet("left")).child(fillet("right"))));
     };
     const root = layout(), sidebar = find(root, "sidebar"), w = window();
     // Old saved rails and a dragged-narrow sidebar can be smaller than the window buttons.
@@ -161,8 +165,9 @@ export default class Tabs extends View {
         }).child(svg(ICON(icon)).size(14));
     };
     const ghost = this.pressed?.moved && this.ghostX !== null ? shown.find(x => x.id === this.pressed.id) : null;
-    // Handle style starts the strip 24 in: the island's 14 corner, then the first tab's 10 fillet on flat top.
-    return h_flex().id("tab-bar").relative().size_full().min_w(0).px(8).pl(style === "handle" ? Math.max(lightsPadding, 24) : lightsPadding).gap(4).items_stretch().when(style !== "handle", el => el.bg(t.chrome))
+    // Handle style starts the tabs 24 in: the island's 14 corner, then the first tab's 10 fillet
+    // on flat top (inside the strip, which clips what hangs out of it).
+    return h_flex().id("tab-bar").relative().size_full().min_w(0).px(8).pl(style === "handle" ? Math.max(lightsPadding, 14) : lightsPadding).gap(4).items_stretch().when(style !== "handle", el => el.bg(t.chrome))
       // Released off the tabs: the drag is dropped.
       .on_mouse_up("left", (_e, cx) => { if (this.pressed) { this.pressed = null; this.slot = null; this.ghostX = null; cx.notify(); } })
       // Released outside the window's bar: no release reaches it, so leaving it ends the drag.
@@ -178,8 +183,8 @@ export default class Tabs extends View {
       // + right after the last tab, as in a browser; the right group is the panels.
       // Handle style: tabs touch (their fillets), and no scrollbar is painted over the junction.
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_stretch().gap(style === "handle" ? 0 : 2)
-        .when(style === "handle", el => el.overflow_x_scroll()).when(style !== "handle", el => el.overflow_x_scrollbar()).children(shown.map(item))
-        .child(button("tab-new", svg(ICON("plus")).size(14), (_e, cx) => this.openNew(cx), "New tab")))
+        .when(style === "handle", el => el.pl(10).overflow_x_scroll()).when(style !== "handle", el => el.overflow_x_scrollbar()).children(shown.map(item))
+        .child(button("tab-new", svg(ICON("plus")).size(14), (_e, cx) => this.openNew(cx), "New tab").when(style === "handle", el => el.ml(10))))
       .child(h_flex().flex_none().self_center().gap(2)
         .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "file")))
         .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "git-compare")))
