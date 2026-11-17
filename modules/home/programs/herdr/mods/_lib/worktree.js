@@ -8,6 +8,8 @@
 export const ORCHESTRATOR_RE = /^Orchestrator$|-(project-)?orchestrator$/;
 
 const wtName = (label) => `${String(label).replace(/[^A-Za-z0-9._-]+/g, "-")}-orchestrator`;
+// As nix-sidebar's orchestratorArgv("worktree", label): Pi named after it, with its role.
+export const wtArgv = (label, home) => ["pi", "--name", wtName(label), "--append-system-prompt", `${home}/.pi/agent/orchestrator/worktree.md`];
 
 // A click: its space as it was left (Herdr shows its last tab); without one, a plain shell.
 export function wtClick({ space, path, machine }) {
@@ -16,8 +18,8 @@ export function wtClick({ space, path, machine }) {
 
 // "Orchestrator": the worktree's one if it's there, else a new one (one per worktree: a second
 // Pi with the same --name would break @mentions).
-export function wtOrchestrator({ space, label, folder, argv, machine }) {
-  const name = wtName(label);
+export function wtOrchestrator({ space, label, folder, home, machine }) {
+  const name = wtName(label), argv = wtArgv(label, home);
   if (!space) return [["space.new", { folder, machine: machine ?? "", tab: name, argv }]];
   // Any worktree orchestrator in the space: its name may be from another folder (a cd, a rename).
   const tab = (space.tabs ?? []).find((t) => t.named && ORCHESTRATOR_RE.test(t.name) && !/-project-orchestrator$/.test(t.name));
