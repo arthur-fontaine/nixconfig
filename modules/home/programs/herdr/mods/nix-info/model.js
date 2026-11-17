@@ -772,6 +772,8 @@ export function infoFolder(path, root, home) {
     const segs = rel.split("/").slice(0, -1);
     return { name, folder: segs.at(-1) ?? "", tip: rel };
   }
+  // macOS's /tmp, /var and /etc live in /private: named as typed.
+  if (/^\/private\/(tmp|var|etc)(\/|$)/.test(dir)) return { ...infoFolder(p.slice("/private".length), root, home), tip: p };
   const inHome = home && (dir === home || dir.startsWith(home + "/"));
   const anchor = inHome ? "~" : "";
   const segs = (inHome ? dir.slice(home.length) : dir).split("/").filter(Boolean);

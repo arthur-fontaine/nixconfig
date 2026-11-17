@@ -132,5 +132,8 @@ test("outside the repo it is its anchor and last segment", () => {
   assert.equal(infoFolder("/Users/a/scratch/f.txt", "/r", "/Users/a").folder, "~/scratch");
   assert.equal(infoFolder("/tmp/scratch/f.txt", "/r", "/Users/a").folder, "/tmp/scratch");
   assert.equal(infoFolder("/Users/a/f.txt", "/r", "/Users/a").folder, "~");
+  // macOS's /tmp, /var and /etc are /private's: named as you type them.
+  assert.equal(infoFolder("/private/tmp/herdr-sandbox/info-fixture/scratch/probe.mjs", "/r", "/Users/a").folder, "/tmp/…/scratch");
+  assert.equal(infoFolder("/private/var/folders/x/f", "/r", "/Users/a").folder, "/var/…/x");
   assert.equal(infoFolder("/tmp/herdr-sandbox/info-fixture/scratch/probe.mjs", "/r", "/Users/a").tip, "/tmp/herdr-sandbox/info-fixture/scratch/probe.mjs");
 });

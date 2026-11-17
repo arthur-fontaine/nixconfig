@@ -397,6 +397,15 @@ export default class Info extends View {
   // D5: a call as a row: [disclosure] icon, the one thing that tells it apart (a path sans as
   // name + folder, a command or code mono, a title or question sans), the failure dot (filled:
   // it failed; hollow: a script went on after a failed step), the duration, a chevron.
+  // R2-6: a file as its name and a short muted folder (infoFolder): the name never truncates
+  // before the folder, which is capped at 40 % and cut at its end. The whole path in the tooltip.
+  fileText(t, path, fg = t.foreground) {
+    const f = infoFolder(path, this.root(), home());
+    return h_flex().id(`path-${path}`).flex_1().min_w(0).gap(6).items_baseline().tooltip(f.tip)
+      .child(div().flex_none().max_w("100%").truncate().text_color(fg).child(f.name))
+      .child(div().flex_1().min_w(0).max_w("40%").truncate().text_size(12).text_color(t.muted).child(f.folder));
+  }
+
   callRow(t, c, { on = false, onClick = null, disclose = null, more = null, inList = false } = {}) {
     const state = infoCallState(c, this.pane?.status === "working");
     const root = this.root();
@@ -406,8 +415,6 @@ export default class Info extends View {
     const file = c.titled || c.placeholder ? null
       : fileKind(c.kind) && c.path ? c.path
       : c.kind === "code" && fileKind(c.argKind) && c.arg ? (c.arg.startsWith("/") || !root ? c.arg : `${root}/${c.arg}`) : null;
-    const rel = file && root && file.startsWith(root + "/") ? file.slice(root.length + 1) : file;
-    const cut = rel ? rel.lastIndexOf("/") : -1;
     const untitled = c.untitled && c.nested?.length ? infoStepsLabel(c.steps ?? c.nested) : null;
     const command = !c.titled && (c.kind === "bash" || c.kind === "fetch" || (c.kind === "code" && (c.argKind === "bash" || c.argKind === "code")));
     const unknown = !TOOL_ICON[c.kind];
@@ -416,9 +423,7 @@ export default class Info extends View {
     const sans = (color, s) => div().flex_1().min_w(0).truncate().text_color(color).child(s);
     const text = more ? div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(more)
       : c.placeholder ? sans(t.muted, c.arg)
-      : file ? h_flex().flex_1().min_w(0).gap(6).items_baseline()
-        .child(div().flex_none().max_w("70%").truncate().text_color(fg).child(cut < 0 ? rel : rel.slice(cut + 1)))
-        .child(div().flex_1().min_w(0).text_ellipsis_start().text_size(12).text_color(t.muted).child(cut < 0 ? "" : rel.slice(0, cut)))
+      : file ? this.fileText(t, file, fg)
       : untitled ? sans(t.muted, untitled)
       : c.kind === "code" && c.argKind === "calls" && !c.titled ? sans(t.muted, c.arg)
       : unknown && !c.titled ? h_flex().flex_1().min_w(0).gap(6).items_baseline()
@@ -507,9 +512,7 @@ export default class Info extends View {
       const st = g[f.rel];
       return chromeRow(UI, t, `file-${f.rel}`, { onClick: (ev) => openInEditor(HERDR, f.path, { side: ev.modifiers.alt }) }).tooltip(f.path)
         .child(div().w(10).flex_none().font_family(MONO()).text_size(11).font_medium().text_color(color[st?.status] ?? t.ansi3).child(st?.status ?? ""))
-        .child(h_flex().flex_1().min_w(0).gap(6).items_baseline()
-          .child(div().flex_none().max_w("70%").truncate().text_color(t.foreground).child(f.name))
-          .child(div().flex_1().min_w(0).text_ellipsis_start().text_size(12).text_color(t.muted).child(f.dir)))
+        .child(this.fileText(t, f.path))
         .when(st?.added !== null && st?.added !== undefined, (x) => x.child(div().flex_none().text_size(12).text_color(t.ansi2).child(`+${st.added}`)))
         .when(Boolean(st?.removed), (x) => x.child(div().flex_none().text_size(12).text_color(t.ansi1).child(`−${st.removed}`)))
         .when(!st, (x) => x.child(div().flex_none().text_size(12).text_color(t.dim).child(git ? "unchanged" : "")))
@@ -524,9 +527,10 @@ export default class Info extends View {
       out.push(div().pt(8).child(chromeRow(UI, t, "outside", { onClick: (_e, cx) => this.command(open ? "close:outside" : "open:outside", cx) })
         .child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.chevron))
         .child(div().flex_1().text_size(12).font_medium().text_color(t.muted).child(`Outside this repo (${e.outside.length})`))));
-      const home = (p) => p.replace(/^\/Users\/[^/]+/, "~");
-      if (open) for (const f of e.outside) out.push(chromeRow(UI, t, `outside-${f.path}`, { onClick: (ev) => openInEditor(HERDR, f.path, { side: ev.modifiers.alt }) }).pl(CHROME.rowX + 18).tooltip(f.path)
-        .child(div().flex_1().min_w(0).text_ellipsis_start().text_size(12).text_color(t.foreground).child(home(f.path)))
+      // The same anatomy as the repo's rows, the letter and +/− columns empty (R2-6).
+      if (open) for (const f of e.outside) out.push(chromeRow(UI, t, `outside-${f.path}`, { onClick: (ev) => openInEditor(HERDR, f.path, { side: ev.modifiers.alt }) })
+        .child(div().w(10).flex_none())
+        .child(this.fileText(t, f.path))
         .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.chevron)));
     }
     return out;
