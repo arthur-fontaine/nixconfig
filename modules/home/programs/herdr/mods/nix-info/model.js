@@ -193,7 +193,10 @@ function infoNestedCalls(m) {
   const byId = new Map(details.map((c) => [c?.id, c]));
   return (nested ?? details).filter((c) => c && typeof c.name === "string").map((c) => {
     const whole = Boolean(c.arguments && typeof c.arguments === "object");
-    return { name: c.name, error: c.status === "error", whole, args: whole ? c.arguments : infoCutArgs(byId.get(c.id)?.args ?? c.args) };
+    const d = byId.get(c.id);
+    return { id: c.id, name: c.name, error: c.status === "error", whole, args: whole ? c.arguments : infoCutArgs(d?.args ?? c.args),
+      duration: typeof c.durationMs === "number" ? Math.round(c.durationMs) : null, errorText: c.error ?? d?.error ?? null,
+      title: [c.title, d?.title].find((x) => typeof x === "string" && x.trim())?.trim() ?? null };
   });
 }
 
@@ -436,9 +439,17 @@ function apply(state, entry) {
       call.arg = infoNestedArg(calls, state.cwd) ?? call.arg;
       // A failed nested call is an error, though the script caught it and went on.
       call.error ||= calls.some((c) => c.error);
-      call.nested = calls.slice(0, INFO_NESTED_CAP).map((c) => {
+      const outputs = m.details?.callOutputs ?? {};
+      call.nested = calls.slice(0, INFO_NESTED_CAP).map((c, i) => {
         const t = infoTool({ name: c.name, arguments: c.args }, state.cwd);
-        return { name: c.name, kind: t.kind, arg: t.arg, label: t.arg ? `${t.kind}: ${t.arg}` : t.kind, error: c.error };
+        // Its result: the error, else the first lines of its output codemode kept.
+        const out = outputs[c.id];
+        const lines = Array.isArray(out?.lines) ? out.lines : [];
+        const text = c.error && typeof c.errorText === "string" ? c.errorText : lines.join("\n");
+        // Title first, as a top-level bash: none carries one yet, but bash-titles may name them.
+        return { id: typeof c.id === "string" ? c.id : `${m.toolCallId}/${i + 1}`, name: c.name, kind: t.kind, arg: c.title ?? t.arg, full: t.full ?? t.arg, path: t.path,
+          error: c.error, duration: c.duration, args: infoCapValue(c.args, INFO_NESTED_ARG_CAP),
+          result: text.slice(0, INFO_NESTED_ARG_CAP), resultCut: text.length > INFO_NESTED_ARG_CAP || (!c.error && out?.total > lines.length) };
       });
       for (const c of calls) if (!c.error && c.whole) countLines(state, { name: c.name, arguments: c.args }, covered);
     }
@@ -452,8 +463,9 @@ function apply(state, entry) {
 
 // The stored text of one call's result (and of each long argument string) stops here.
 export const RESULT_CAP = 64 * 1024;
-// The nested calls kept per script, for the kind filters.
+// The nested calls kept per script (its sub-rows), and the length of each one's strings.
 const INFO_NESTED_CAP = 200;
+const INFO_NESTED_ARG_CAP = 2048;
 const ARG_STRING_CAP = 16 * 1024;
 
 function resultText(content) {
@@ -463,10 +475,10 @@ function resultText(content) {
 }
 
 // Arguments as given, long strings cut (a write's content, an edit's text).
-export function infoCapValue(value) {
-  if (typeof value === "string") return value.length > ARG_STRING_CAP ? `${value.slice(0, ARG_STRING_CAP)}…` : value;
-  if (Array.isArray(value)) return value.map(infoCapValue);
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, infoCapValue(v)]));
+export function infoCapValue(value, cap = ARG_STRING_CAP) {
+  if (typeof value === "string") return value.length > cap ? `${value.slice(0, cap)}…` : value;
+  if (Array.isArray(value)) return value.map((v) => infoCapValue(v, cap));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, infoCapValue(v, cap)]));
   return value;
 }
 
@@ -597,16 +609,22 @@ export function infoTools(state, titles = null) {
 const INFO_KINDS = { bash: ["bash"], read: ["read"], edit: ["edit", "write"], ask: ["ask"] };
 
 // A listed call under a kind filter ("all", "bash", "read", "edit", "ask", "errors"): null when
-// left out. A script is kept for the calls it made, and then named by those (`tip` lists them all).
+// left out. A script is kept for the calls it made, with only those as its sub-rows.
 export function infoKeep(c, kind) {
   const kinds = INFO_KINDS[kind];
   if (kind !== "errors" && !kinds) return c;
   const pick = kind === "errors" ? (n) => n.error : (n) => kinds.includes(n.kind);
   const matched = c.nested?.filter(pick) ?? [];
   if (kind === "errors" ? !c.error : !kinds.includes(c.kind) && !matched.length) return null;
-  if (!matched.length) return c;
-  const arg = matched.length === 1 ? matched[0].label : `${infoCallNames(matched.map((n) => n.name))} · ${matched[0].arg}`;
-  return { ...c, arg, tip: matched.map((n) => n.label).join("\n") };
+  return c.nested ? { ...c, nested: matched } : c;
+}
+
+// The rows listed: each call at level 0, a script's calls under it at level 1, in call order.
+export function infoRows(calls) {
+  return calls.flatMap((c) => [{ ...c, level: 0 }, ...(c.nested ?? []).map((n) => ({
+    id: n.id, parent: c.id, level: 1, name: n.name, kind: n.kind, arg: n.arg, full: n.full, path: n.path, duration: n.duration,
+    error: n.error, threw: n.error, running: false, started: null, finished: null, args: n.args, result: n.result, resultCut: n.resultCut, diff: null, nested: null,
+  }))]);
 }
 
 // Works out the bash-titles.json keys of up to `max` calls that lack a title (infoTools looks them

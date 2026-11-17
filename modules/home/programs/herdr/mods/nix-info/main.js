@@ -9,7 +9,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
 
 // The editor (../_lib/editor.js) gets the herdr functions it uses.
 const HERDR = { spaces, panes, run, shared, setShared, notify };
@@ -322,8 +322,10 @@ export default class Info extends View {
       .when(prose, (e) => e.text_size(12.5)).when(!prose, (e) => e.font_family(MONO).text_size(12))
       .when(path, (e) => e.text_ellipsis_start()).when(!path, (e) => e.truncate()).child(c.arg || c.name);
     return h_flex().id(`call-${c.id}`).h(big ? 32 : 28).flex_none().px(big ? 6 : 16).when(big, (e) => e.mx(10).rounded(6)).gap(big ? 10 : 8).items_center()
+      // A script's own calls sit under it, one step in.
+      .when(c.level === 1, (e) => e.pl(big ? 24 : 34))
       .when(on, (e) => e.bg(t.selected)).when(!on && c.running, (e) => e.bg(t.hover)).when(!on && !c.running, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
-      .when(Boolean(c.tip || c.full || c.arg) && !on, (e) => e.tooltip(c.tip || c.full || c.arg))
+      .when(Boolean(c.full || c.arg) && !on, (e) => e.tooltip(c.full || c.arg))
       .cursor_pointer().on_click((_e, cx) => this.select(c.id, cx))
       .child(svg(ICON(icon)).size(big ? 13 : 14).flex_none().text_color(t.dim))
       // A long tool name would wrap onto a second line, over the next row: cut instead.
@@ -335,13 +337,15 @@ export default class Info extends View {
       .when(Boolean(c.error), (e) => e.child(div().size(6).flex_none().rounded(3).bg(t.blocked)));
   }
 
+  // The calls with their scripts' calls under them; SHOWN rows unless all are asked for.
   toolList(t, running, history, now, big) {
-    const shown = this.all ? history : history.slice(0, SHOWN);
-    this.ids = [...running, ...shown].map((c) => c.id);
+    const rows = infoRows(history);
+    const shown = this.all ? rows : rows.slice(0, SHOWN);
+    const listed = [...infoRows(running), ...shown];
+    this.ids = listed.map((c) => c.id);
     return [
-      ...running.map((c) => this.toolRow(t, c, now, big)),
-      ...shown.map((c) => this.toolRow(t, c, now, big)),
-      ...(history.length > shown.length ? [div().id("show-all").h(24).mx(10).my(4).px(6).flex_none().flex().items_center().rounded(6).cursor_pointer()
+      ...listed.map((c) => this.toolRow(t, c, now, big)),
+      ...(rows.length > shown.length ? [div().id("show-all").h(24).mx(10).my(4).px(6).flex_none().flex().items_center().rounded(6).cursor_pointer()
         .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground)).active((e) => e.bg(t.selected))
         .on_click((_e, cx) => { this.all = true; cx.notify(); }).child(`Show all ${history.length}`)] : []),
     ];
@@ -440,7 +444,7 @@ export default class Info extends View {
 
   selected(f) {
     if (!this.sel || !this.session) return null;
-    return [...(f.running ?? []), ...(f.history ?? [])].find((c) => c.id === this.sel) ?? null;
+    return infoRows([...(f.running ?? []), ...(f.history ?? [])]).find((c) => c.id === this.sel) ?? null;
   }
 
   // ---- figures -------------------------------------------------------------------------

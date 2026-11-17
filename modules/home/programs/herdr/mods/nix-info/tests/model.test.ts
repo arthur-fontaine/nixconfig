@@ -5,7 +5,7 @@ import {
   infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length,
   infoCapValue, infoClock, infoEditDiff, infoJsonLines, infoParseDiff, infoResultLines, RESULT_CAP,
   infoPace, FIVE_HOURS, SEVEN_DAYS, infoTokensLeft, infoScriptKey, infoNeedsTitles,
-  infoKeep, infoCommandKey, infoWantsTitle, infoKeyTitles,
+  infoKeep, infoCommandKey, infoWantsTitle, infoKeyTitles, infoRows,
 } from "../model.js";
 import { keyOf, scriptKey, wantsTitle } from "../../../../pi/extensions/bash-titles/titles.ts";
 
@@ -427,30 +427,70 @@ test("a nested call that failed makes its script an error, though the script did
   assert.equal(infoTools(s).filter((c) => c.error).length, 2);
 });
 
-test("the kind filters match a script by the calls it made, and say which", () => {
+test("the kind filters keep a script for the calls it made, with only those under it", () => {
   const s = infoNewSession("f");
   infoFeed(s, REAL + MORE);
-  const kept = (kind) => infoTools(s).map((c) => infoKeep(c, kind)).filter(Boolean).map((c) => [c.id, c.arg]);
+  const kept = (kind) => infoRows(infoTools(s).map((c) => infoKeep(c, kind)).filter(Boolean)).map((r) => [r.level, r.id, r.kind, r.arg]);
   const [fail, edit, nofc] = ["toolu_01NZrSTC2p7ssRymJ4A1iLvk", "toolu_01CdG5Nu7zL7rxJuWhL1CZjt", "toolu_01CLKS9CX6zyphy73bQpqtZU"];
   assert.deepEqual(kept("bash"), [
-    ["bg", "pnpm install"],
-    [nofc, "bash: sed -n 112,118p modules/home/programs/herdr/mods/nix-tabs/main.js"],
-    [edit, "bash: git add mods.nix default.nix && git diff --cached --stat"],
-    [fail, "bash: which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"],
+    [0, "bg", "bash", "pnpm install"],
+    [0, nofc, "code", "edit, bash"],
+    [1, nofc + "/2", "bash", "sed -n 112,118p modules/home/programs/herdr/mods/nix-tabs/main.js"],
+    [0, edit, "code", "write ×2, read, bash"],
+    [1, edit + "/4", "bash", "git add mods.nix default.nix && git diff --cached --stat"],
+    [0, fail, "code", "bash: which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"],
+    [1, fail + "/1", "bash", "which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"],
   ]);
-  assert.deepEqual(kept("read"), [[edit, "read: modules/home/programs/herdr/default.nix"]]);
+  assert.deepEqual(kept("read"), [[0, edit, "code", "write ×2, read, bash"], [1, edit + "/2", "read", "modules/home/programs/herdr/default.nix"]]);
   // The write with argumentsBytes only is named from details.calls' cut JSON.
-  assert.deepEqual(kept("edit"), [
-    ["again", "edit ×2 · modules/home/programs/herdr/mods.nix"],
-    [nofc, "edit: /home/u/notes/feasibility.md"],
-    [edit, "write ×2 · modules/home/programs/herdr/mods.nix"],
+  assert.deepEqual(kept("edit").filter((r) => r[1].startsWith(edit)), [
+    [0, edit, "code", "write ×2, read, bash"],
+    [1, edit + "/1", "write", "modules/home/programs/herdr/mods.nix"],
+    [1, edit + "/3", "write", "modules/home/programs/herdr/default.nix"],
   ]);
-  assert.deepEqual(kept("errors"), [["again", "edit: x.ts"], [fail, "bash: which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"]]);
+  assert.deepEqual(kept("edit").map((r) => r[1]), ["again", "again/1", "again/2", nofc, nofc + "/1", edit, edit + "/1", edit + "/3"]);
+  assert.deepEqual(kept("errors"), [
+    [0, "again", "code", "edit ×2"], [1, "again/2", "edit", "x.ts"],
+    [0, fail, "code", "bash: which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"],
+    [1, fail + "/1", "bash", "which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"],
+  ]);
   assert.deepEqual(kept("ask"), []);
-  assert.equal(kept("all").length, 5);
-  // The tooltip lists every matched call; All leaves rows as they are.
-  assert.equal(infoKeep(infoTools(s).find((c) => c.id === edit), "edit").tip, "write: modules/home/programs/herdr/mods.nix\nwrite: modules/home/programs/herdr/default.nix");
-  assert.equal(infoKeep(infoTools(s).find((c) => c.id === edit), "all").arg, "write ×2, read, bash");
+});
+
+test("a codemode call lists the calls it made under it, in call order, at level 1", () => {
+  const s = infoNewSession("f");
+  infoFeed(s, REAL);
+  const all = infoRows(infoTools(s));
+  const edit = "toolu_01CdG5Nu7zL7rxJuWhL1CZjt";
+  const at = all.findIndex((r) => r.id === edit);
+  assert.deepEqual(all.slice(at, at + 5).map((r) => [r.level, r.kind, r.arg, r.duration, r.error, r.path]), [
+    [0, "code", "write ×2, read, bash", 2244, false, null],
+    [1, "write", "modules/home/programs/herdr/mods.nix", 4, false, "modules/home/programs/herdr/mods.nix"],
+    [1, "read", "modules/home/programs/herdr/default.nix", 2, false, "modules/home/programs/herdr/default.nix"],
+    [1, "write", "modules/home/programs/herdr/default.nix", 3, false, "modules/home/programs/herdr/default.nix"],
+    [1, "bash", "git add mods.nix default.nix && git diff --cached --stat", 2195, false, null],
+  ]);
+  const sub = all[at + 4];
+  assert.equal(sub.parent, edit);
+  assert.equal(sub.running, false);
+  assert.deepEqual(sub.args, { command: "cd modules/home/programs/herdr/ && git add mods.nix default.nix && git diff --cached --stat" });
+  // A failed nested call: its error is its result.
+  const failed = all.find((r) => r.id === "toolu_01NZrSTC2p7ssRymJ4A1iLvk/1");
+  assert.equal(failed.error, true);
+  assert.equal(failed.result, "/opt/homebrew/bin/herdr-app\n…");
+  assert.equal(all.filter((r) => r.level === 0).length, 3);
+  assert.equal(all.length, 3 + 1 + 4 + 2);
+});
+
+test("a nested call's output preview (details.callOutputs) is its result", () => {
+  const s = infoNewSession("f");
+  infoFeed(s, assistant("2026-11-17T15:49:40.000Z", { input: 1, output: 1 }, [codemode("co", "await tools.bash({command:'git status -sb'})")])
+    + result("2026-11-17T15:49:42.905Z", "co", { details: { calls: [{ id: "co/1", name: "bash", args: "{\"command\":\"git status -sb\"}", status: "ok", durationMs: 2255.6 }],
+      callOutputs: { "co/1": { lines: ["## fix/pi-codemode-rows", "1ad0c29 fix(herdr/nix-editor): the command line"], total: 146 } } },
+      nestedCalls: { calls: [{ id: "co/1", name: "bash", status: "ok", arguments: { command: "git status -sb" }, durationMs: 2255 }], complete: true } }));
+  const sub = infoRows(infoTools(s))[1];
+  assert.equal(sub.result, "## fix/pi-codemode-rows\n1ad0c29 fix(herdr/nix-editor): the command line");
+  assert.equal(sub.resultCut, true);
 });
 
 // ---- a top-level bash: its title instead of its command, for the commands bash-titles names ----
@@ -505,4 +545,17 @@ test("bash-titles.json keys are worked out a few calls at a time", () => {
   assert.deepEqual(infoTools(s, titles).map((c) => c.arg), ["return 3", "Title of return 2", "Title of return 1"]);
   assert.equal(infoKeyTitles(s, 2), false);
   assert.deepEqual(infoTools(s, titles).map((c) => c.arg), ["Title of return 3", "Title of return 2", "Title of return 1"]);
+});
+
+test("a sub-row takes its nested call's title when it carries one, else its command", () => {
+  const s = infoNewSession("f");
+  infoFeed(s, assistant("2026-11-17T15:49:40.000Z", { input: 1, output: 1 }, [codemode("nt", "await tools.bash({command:a}); await tools.bash({command:b})")])
+    + result("2026-11-17T15:49:42.000Z", "nt", { nestedCalls: { complete: true, calls: [
+      { id: "nt/1", name: "bash", status: "ok", title: "Lists the spec files", arguments: { command: LONG } },
+      { id: "nt/2", name: "bash", status: "ok", title: "  ", arguments: { command: "git status -sb" } },
+    ] } }));
+  const [, titled, plain] = infoRows(infoTools(s));
+  assert.equal(titled.arg, "Lists the spec files");
+  assert.equal(titled.full, LONG);
+  assert.equal(plain.arg, "git status -sb");
 });
