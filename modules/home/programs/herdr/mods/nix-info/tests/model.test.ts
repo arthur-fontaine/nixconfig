@@ -5,9 +5,9 @@ import {
   infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length,
   infoCapValue, infoClock, infoEditDiff, infoJsonLines, infoParseDiff, infoResultLines, RESULT_CAP,
   infoPace, FIVE_HOURS, SEVEN_DAYS, infoTokensLeft, infoScriptKey, infoNeedsTitles,
-  infoKeep,
+  infoKeep, infoCommandKey, infoWantsTitle,
 } from "../model.js";
-import { keyOf, scriptKey } from "../../../../pi/extensions/bash-titles/titles.ts";
+import { keyOf, scriptKey, wantsTitle } from "../../../../pi/extensions/bash-titles/titles.ts";
 
 const line = (o) => JSON.stringify(o) + "\n";
 const assistant = (ts, usage, calls = []) => line({ type: "message", timestamp: ts, message: { role: "assistant", model: "claude-opus-5-5", thinkingLevel: "high", timestamp: Date.parse(ts), usage, content: calls.map((c) => ({ type: "toolCall", ...c })) } });
@@ -290,6 +290,9 @@ test("a codemode result's details.title names the call, before bash-titles.json"
 test("bash-titles.json is needed only while a codemode call has no title of its own", () => {
   const s = infoNewSession("f");
   infoFeed(s, SESSION);
+  // SESSION's bash "pnpm test\nmore" spans two lines: bash-titles names it, so it needs one too.
+  assert.equal(infoNeedsTitles(s), true);
+  infoFeed(s, line({ type: "custom", customType: "bash-titles", timestamp: "2026-11-03T10:01:59.000Z", data: { toolCallId: "b", title: "Runs the tests" } }));
   assert.equal(infoNeedsTitles(s), false);
   infoFeed(s, assistant("2026-11-03T10:02:00.000Z", { input: 1, output: 1 }, [codemode("x", "return 1")]));
   assert.equal(infoNeedsTitles(s), true);
@@ -448,4 +451,46 @@ test("the kind filters match a script by the calls it made, and say which", () =
   // The tooltip lists every matched call; All leaves rows as they are.
   assert.equal(infoKeep(infoTools(s).find((c) => c.id === edit), "edit").tip, "write: modules/home/programs/herdr/mods.nix\nwrite: modules/home/programs/herdr/default.nix");
   assert.equal(infoKeep(infoTools(s).find((c) => c.id === edit), "all").arg, "write ×2, read, bash");
+});
+
+// ---- a top-level bash: its title instead of its command, for the commands bash-titles names ----
+// The call and result keep a real top-level bash's shape (its command replaced); details.title
+// and the bash-titles entry follow titles.ts's withTitle and ENTRY: no session has one yet.
+const LONG = "cd /tmp/spec && ls -la *.html *.md 2>/dev/null; git log --oneline -5; git status --short | head -20";
+const bashCall = (id, command) => ({ type: "toolCall", id, name: "bash", arguments: { command } });
+const bashResult = (ts, id, details = { autoMode: { allowed: true } }) => line({ type: "message", timestamp: ts, message: { role: "toolResult", toolCallId: id, toolName: "bash",
+  content: [{ type: "text", text: "…" }], details, isError: false, durationMs: 72, timestamp: Date.parse(ts) } });
+
+test("a top-level bash shows its title when bash-titles names it; the command stays in full", () => {
+  const s = infoNewSession("f");
+  infoFeed(s, line({ type: "session", cwd: "/repo", timestamp: "2026-11-05T09:26:10.912Z" })
+    + assistant("2026-11-05T09:30:00.000Z", { input: 1, output: 1 }, [bashCall("file", LONG), bashCall("short", "ls -la"), bashCall("res", LONG + " # 2"), bashCall("late", LONG + " # 3")])
+    + bashResult("2026-11-05T09:30:01.000Z", "file")
+    + bashResult("2026-11-05T09:30:01.000Z", "short", { autoMode: { allowed: true }, title: "Lists the files" })
+    + bashResult("2026-11-05T09:30:01.000Z", "res", { autoMode: { allowed: true }, title: "Lists the spec files and recent commits" })
+    + bashResult("2026-11-05T09:30:01.000Z", "late")
+    + line({ type: "custom", customType: "bash-titles", timestamp: "2026-11-05T09:30:02.000Z", data: { toolCallId: "late", title: "Shows the spec, a third time" } })
+    + line({ type: "custom", customType: "bash-titles", timestamp: "2026-11-05T09:30:02.000Z", data: { toolCallId: "short", title: "Lists the files, late" } }));
+  const titles = { [infoCommandKey(LONG)]: "Lists the spec files, plus recent commits", [infoCommandKey("ls -la")]: "Lists the files" };
+  assert.deepEqual(rows(s, titles).reverse(), [
+    ["file", "bash", "Lists the spec files, plus recent commits"],
+    ["short", "bash", "ls -la"],
+    ["res", "bash", "Lists the spec files and recent commits"],
+    ["late", "bash", "Shows the spec, a third time"],
+  ]);
+  // Without bash-titles.json, the command as before.
+  assert.equal(rows(s)[3][2], "ls -la *.html *.md 2>/dev/null; git log --oneline -5; git status --short | head -20");
+  assert.equal(infoTools(s, titles).find((c) => c.id === "file").full, LONG);
+  // Only "file" lacks a title of its own: it needs bash-titles.json; the short one never does.
+  assert.equal(infoNeedsTitles(s), true);
+  infoFeed(s, line({ type: "custom", customType: "bash-titles", timestamp: "2026-11-05T09:30:03.000Z", data: { toolCallId: "file", title: "Lists the spec" } }));
+  assert.equal(infoNeedsTitles(s), false);
+});
+
+test("the command key and which commands get a title are bash-titles' own", () => {
+  const samples = ["ls -la", "git status && git diff", "cd a && make && make test && make install", "python3 -c 'print(1)'\necho done", "x".repeat(80), "x".repeat(81), "  padded  ", "é è — 漢字 🎉 && a || b | c", "a; b; c", LONG];
+  for (const c of samples) {
+    assert.equal(infoWantsTitle(c), wantsTitle(c), JSON.stringify(c));
+    assert.equal(infoCommandKey(c), keyOf(c), JSON.stringify(c));
+  }
 });

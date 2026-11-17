@@ -203,6 +203,14 @@ function infoNestedArg(calls, cwd) {
   return calls.length ? infoCallLabel(calls[0].name, calls[0].args, cwd) : null;
 }
 
+// Which commands bash-titles names (its wantsTitle): long, on several lines, or of several steps.
+export function infoWantsTitle(command) {
+  const text = String(command ?? "").trim();
+  if (!text) return false;
+  const steps = (text.match(/;|&&|\|\|?/g) ?? []).length;
+  return text.length > 80 || text.includes("\n") || steps > 2;
+}
+
 // sha256 as hex, of a string's UTF-8 (a lone surrogate as U+FFFD, as Node encodes it), which
 // bash-titles keys its cache by. Here rather than Herdr's crypto: this file is joined into two
 // bundles with its imports dropped, and runs under node --test as is.
@@ -254,6 +262,11 @@ export function infoSha256(s) {
 // A script's key in ~/.pi/agent/bash-titles.json (its keyOf(scriptKey(code))).
 export function infoScriptKey(code) {
   return infoSha256(`codemode\0${String(code).trim()}`.trim()).slice(0, 32);
+}
+
+// A command's key in ~/.pi/agent/bash-titles.json (its keyOf(command)).
+export function infoCommandKey(command) {
+  return infoSha256(String(command).trim()).slice(0, 32);
 }
 
 // Lines added and removed between two texts, line by line as a multiset (moves aren't changes).
@@ -327,7 +340,8 @@ function countLines(state, call, covered = null) {
   if (d && !covered?.has(path)) infoAddLines(state, path, d.added, d.removed);
 }
 
-// A codemode call has a title of its own: bash-titles.json is no longer needed for it.
+// A call bash-titles names (a codemode script, a long bash command) has a title of its own:
+// bash-titles.json is no longer needed for it.
 function infoTitled(state, call) {
   if (!call.needsTitle || call.titled) return;
   call.titled = true;
@@ -393,7 +407,7 @@ function apply(state, entry) {
         args: infoCapValue(b.arguments ?? {}), result: null, resultCut: false, finished: null });
       state.order.push(b.id);
       const call = state.tools.get(b.id);
-      call.needsTitle = b.name === "codemode";
+      call.needsTitle = b.name === "codemode" || (b.name === "bash" && infoWantsTitle(b.arguments?.command));
       if (call.needsTitle) state.untitled++;
       if (state.early.has(b.id)) {
         if (call.needsTitle) { call.lateTitle = state.early.get(b.id); infoTitled(state, call); }
@@ -570,7 +584,7 @@ export function infoTools(state, titles = null) {
     const c = state.tools.get(id);
     let arg = c.title ?? c.lateTitle ?? c.arg;
     if (titles && c.needsTitle && !c.titled) {
-      c.titleKey ??= infoScriptKey(c.full);
+      c.titleKey ??= c.name === "codemode" ? infoScriptKey(c.full) : infoCommandKey(c.full);
       const title = titles[c.titleKey];
       if (typeof title === "string" && title && !title.endsWith("…")) arg = title;
     }
