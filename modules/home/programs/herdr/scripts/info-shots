@@ -11,7 +11,8 @@ set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 S=$here/sandbox
 STATES=(overview context calls calls-bash calls-failed calls-nomatch collapsed call-script call-step call-edit call-next
-  show-all files files-outside no-pi no-calls running dead claude-code narrow changes files-panel corners)
+  show-all back files files-outside no-pi no-calls running dead claude-code narrow changes files-panel corners
+  big big-calls big-all big-call)
 prefix=${1:?info-shots <prefix> <out dir> [state...]}; out=${2:?out dir}; shift 2
 states=("$@"); [ ${#states[@]} -gt 0 ] || states=("${STATES[@]}")
 root=${HERDR_SANDBOX:-/tmp/herdr-sandbox}; root=$(cd "$root" && pwd -P)
@@ -48,6 +49,9 @@ shell_tab=$(tabs | jq -r '[.[] | select(.name | startswith("pi") | not)][0].id')
 
 # Calls the states open, by what they are rather than by id.
 script_a=$(jq -r 'select(.message.role == "toolResult" and .message.details.title == "Fixes negative heights and adds their test") | .message.toolCallId' "$gen/session.jsonl")
+# The 40th latest call: in the 200 listed, below the fold.
+deep_call=$(jq -r 'select(.message.role == "assistant") | .message.content[] | select(.type == "toolCall") | .id' "$gen/session.jsonl" | tail -r | sed -n 40p)
+big_call=$(jq -r 'select(.message.role == "assistant") | .message.content[] | select(.type == "toolCall") | .id' "$gen/big.jsonl" | sed -n 30p)
 edit_call=$(jq -r 'select(.message.role == "assistant") | .message.content[] | select(.type == "toolCall" and .name == "edit") | .id' "$gen/session.jsonl" | head -1)
 
 act() { "$S" act "$@" >/dev/null; }
@@ -73,6 +77,8 @@ shoot() { # <state> <theme>
 # One state: set it up from a reset panel on the main stand-in, shoot, put things back.
 state_() { # <state> <theme>
   show pi; act nix-info.reset
+  # The big states lend the working stand-in the big session (a working pane renders every second).
+  case $1 in big*) hc label "$(term_of pi-run)" "pi.session=$gen/big.jsonl" >/dev/null; show pi-run; act nix-info.reset; sleep 4 ;; esac
   case $1 in
     overview) ;;
     context) act nix-info.open:context ;;
@@ -86,6 +92,12 @@ state_() { # <state> <theme>
     call-edit) act "nix-info.select:$edit_call" ;;
     call-next) act "nix-info.select:$script_a"; act nix-info.next ;;
     show-all) act nix-info.detail:calls; act nix-info.all ;;
+    # Back from a call far down the list: the list again, scrolled to it and selected.
+    back) act nix-info.detail:calls; act "nix-info.select:$deep_call"; sleep 0.5; act nix-info.back ;;
+    big) ;;
+    big-calls) act nix-info.detail:calls ;;
+    big-all) act nix-info.detail:calls; act nix-info.all ;;
+    big-call) act nix-info.detail:calls; act nix-info.all; act "nix-info.select:$big_call" ;;
     files) act nix-info.detail:files ;;
     files-outside) act nix-info.detail:files; act nix-info.open:outside ;;
     no-pi) "$S" do tab.select --id "$shell_tab" >/dev/null ;;
@@ -105,6 +117,7 @@ state_() { # <state> <theme>
     narrow) "$S" do layout.resize --id panel --px 360 >/dev/null ;;
     changes|files-panel) panel info ;;
     corners) act nix-info.fill: ;;
+    big*) hc label "$(term_of pi-run)" "pi.session=$gen/running.jsonl" >/dev/null ;;
   esac
 }
 

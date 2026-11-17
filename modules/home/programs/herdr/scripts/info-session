@@ -7,6 +7,7 @@
 //     running.jsonl   the same plus one script without a result (working, or dead when idle)
 //     waiting.jsonl   the same plus an ask without an answer
 //     cc.jsonl        a session with Claude Code's tool names (Bash, Read, Edit, Write, …)
+//     big.jsonl       440 untitled scripts, ~1 400 rows: a long real session's size
 //     empty.jsonl     a session that started and made no call yet
 //   <dir>/scratch holds the files it wrote outside the repo.
 // Timestamps end now, so ages read as minutes. The calls the shots look at come last (the list
@@ -273,4 +274,17 @@ put({ type: "session_info", name: "tide-tables-new", timestamp: iso(ts(10)) });
 user("Look at the predictor.");
 assistant([], { grow: 0, out: 40 });
 writeFileSync(join(dir, "empty.jsonl"), out.join("\n") + "\n");
+// big: the size of a long real session (440 untitled scripts, ~1 400 rows), to see the panel
+// render that much in Herdr. Reads and bash only: the repo stays the main session's truth.
+out.length = 0; t = now - 5 * 3600 * 1000; ctx = 20000;
+put({ type: "session", version: 3, id: "syn-big", cwd: repo, timestamp: iso(t) });
+put({ type: "session_info", name: "tide-tables-big", timestamp: iso(ts(10)) });
+user("Go through every harbour.");
+for (let i = 0; i < 440; i++) {
+  const steps = [{ name: "read", arguments: { path: abs(FILES[i % FILES.length]) } }, { name: "bash", arguments: { command: `tide predict harbour-${i} 2026-11-17` }, ms: 300 }];
+  if (i % 3 === 0) steps.push({ name: "bash", arguments: { command: `grep -n harbour-${i} src/harbour.js` }, ...(i % 30 === 0 ? { status: "error", error: "exit 1" } : {}) });
+  script(`await tools.read(...); await tools.bash(...);`, steps, { ms: 900 });
+}
+assistant([], { grow: 100 });
+writeFileSync(join(dir, "big.jsonl"), out.join("\n") + "\n");
 console.log(JSON.stringify({ repo, session: join(dir, "session.jsonl"), running: join(dir, "running.jsonl"), calls }));

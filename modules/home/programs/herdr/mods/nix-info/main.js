@@ -98,6 +98,7 @@ export default class Info extends View {
     this.detail = null;
     this.asked = undefined;
     this.all = false; // every tool call rendered, not just the latest 200
+    this.rev = 0; // bumped when the loop sees a change; keys derived()
     this.kind = "all"; // the activity detail's filter
     Object.assign(this, { from: null, collapsed: [], context: false, outside: false, fill: null });
     this.roots = new Map(); // cwd → its git top (or the cwd), for repo-relative paths
@@ -128,6 +129,7 @@ export default class Info extends View {
     // Back onto the list: scroll it to the call it came from.
     if (this.detail === "call" && next.detail === "calls") this.returnTo = true;
     Object.assign(this, next);
+    this.prepare();
     this.handle.focus();
     cx.notify();
   }
@@ -248,6 +250,9 @@ export default class Info extends View {
           }
           // The Edited files view's git figures, every few seconds while it shows.
           if (this.detail === "files" && this.session && (!this.git || this.git.key !== this.session.file || Date.now() - this.git.at > 5000)) { await this.loadGit(); changed = true; }
+          // What render() shows from the session is derived here, not in render() (see derive()).
+          if (changed) { this.rev++; this.memo = null; }
+          this.prepare();
           // Running calls' elapsed time ticks.
           if (changed || (this.session && this.pane?.status === "working")) cx.notify();
         }
@@ -349,7 +354,7 @@ export default class Info extends View {
 
   // O3: "Edited N files ›" (in the repo; "at least" when an edit kept no path).
   editedRow(t) {
-    const e = this.session ? infoEdited(this.session, this.root()) : null;
+    const e = this.session ? this.edited() : null;
     if (!e) return null;
     const n = e.files.length;
     const text = !n && !e.atLeast ? "No files edited yet" : `Edited ${e.atLeast ? "at least " : ""}${n} file${n === 1 ? "" : "s"}`;
@@ -401,7 +406,7 @@ export default class Info extends View {
     for (const c of [...(f.running ?? []), ...(f.history ?? [])].slice(0, 8)) {
       const open = !this.collapsed.includes(c.id);
       rows.push(this.callRow(t, { ...c, level: 0 }, { on: this.sel === c.id, onClick: (_e, cx) => this.select(c.id, cx),
-        disclose: c.nested?.length ? { open, onClick: (_e, cx) => { cx.stop_propagation(); this.collapsed = open ? [...this.collapsed, c.id] : this.collapsed.filter((x) => x !== c.id); cx.notify(); } } : null }));
+        disclose: c.nested?.length ? { open, onClick: (_e, cx) => { cx.stop_propagation(); this.collapsed = open ? [...this.collapsed, c.id] : this.collapsed.filter((x) => x !== c.id); this.prepare(); cx.notify(); } } : null }));
       if (!open || !c.nested?.length) continue;
       const steps = infoRows([c]).slice(1);
       for (const n of steps.slice(0, 3)) rows.push(this.callRow(t, n, { on: this.sel === n.id, onClick: (_e, cx) => this.select(n.id, cx) }));
@@ -477,6 +482,11 @@ export default class Info extends View {
 
   // The listed rows: the running calls first, a script's steps under it unless collapsed.
   listRows(f) {
+    const key = `${this.kind}|${this.collapsed.join(",")}`;
+    return f.list?.key === key ? f.list.rows : this.makeList(f, key);
+  }
+
+  makeList(f, key) {
     const keep = (l) => l.map((c) => infoKeep(c, this.kind)).filter(Boolean);
     const calls = [...keep(f.running ?? []), ...keep(f.history ?? [])];
     const rows = [];
@@ -503,7 +513,7 @@ export default class Info extends View {
   }
 
   callsView(t, f) {
-    const n = infoKindCounts(f.tools ?? []);
+    const n = f.kinds ?? infoKindCounts([]);
     const CHIPS = [["all", "All"], ["bash", "bash"], ["read", "read"], ["edit", "edit/write"], ["ask", "ask"], ["failed", "failed"]];
     const chip = ([key, label]) => {
       const on = this.kind === key;
@@ -643,28 +653,58 @@ export default class Info extends View {
 
   selected(f) {
     if (!this.sel || !this.session) return null;
-    return infoRows([...(f.running ?? []), ...(f.history ?? [])]).find((c) => c.id === this.sel) ?? null;
+    const byId = f.byId ?? new Map(infoRows([...(f.running ?? []), ...(f.history ?? [])]).map((c) => [c.id, c]));
+    return byId.get(this.sel) ?? null;
     // (sub-rows carry their kind's path; level tells a step from a call)
   }
 
   // ---- figures -------------------------------------------------------------------------
 
   figures(now) {
-    const s = this.session, p = this.pane;
     const usage = infoUsage(this.usageRecord, now);
-    if (!s) return { usage };
+    return this.session ? { ...this.derived(), usage } : { usage };
+  }
+
+  // What the session gives, worked out in the loop and in command() once per change, and only
+  // read by render(): Herdr keeps nothing render() sets on the view, and a long session's
+  // derivation (1 400 rows, some 25 ms under Herdr) on each render got the view interrupted.
+  memoKey() {
+    return this.session ? `${this.rev}|${this.session.file}|${this.pane?.status}|${this.root()}` : null;
+  }
+
+  // The same session's figures from the last tick stand in until the next one (under a second).
+  derived() {
+    return this.memo && this.memo.f.file === this.session.file ? this.memo.f : this.derive();
+  }
+
+  prepare() {
+    const key = this.memoKey();
+    if (!key) { this.memo = null; return; }
+    if (this.memo?.key !== key) this.memo = { key, f: this.derive() };
+    const f = this.memo.f, list = `${this.kind}|${this.collapsed.join(",")}`;
+    if (f.list?.key !== list) f.list = { key: list, rows: this.makeList(f, list) };
+  }
+
+  derive() {
+    const s = this.session, p = this.pane;
     const window = this.windows[s.model] ?? 1_000_000;
     const working = p?.status === "working";
     const tools = infoTools(s, this.titles);
     // A call without a result runs only while the agent works (a session that died mid-call keeps one).
     const running = working ? tools.filter((c) => c.running) : [];
     const history = tools.filter((c) => !running.some((r) => r.id === c.id));
-    return {
-      usage, window, working, running, history, tools,
-      context: infoContext(s, window), cache: infoCache(s), lines: infoLines(s),
-      ...(() => { const n = infoCounts(tools); return { errors: n.failed, total: n.calls }; })(),
+    const n = infoCounts(tools);
+    const f = {
+      file: s.file, window, working, running, history, tools, kinds: infoKindCounts(tools),
+      context: infoContext(s, window), cache: infoCache(s), errors: n.failed, total: n.calls,
       started: s.started !== null && s.requests.length + s.messages > 0,
+      list: null, byId: new Map(infoRows([...running, ...history]).map((c) => [c.id, c])), edited: infoEdited(s, this.root()),
     };
+    return f;
+  }
+
+  edited() {
+    return this.derived().edited;
   }
 
   // ---- views ---------------------------------------------------------------------------
