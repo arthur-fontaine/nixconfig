@@ -13,8 +13,9 @@ x1 = W - 1
 while x1 > 0 and near(im.getpixel((x1, cy)), well): x1 -= 1
 if not near(im.getpixel((W - 4, 4)), well, 6):
     print(f"the window's corner isn't the well {sys.argv[2]}: {im.getpixel((W - 4, 4))}"); sys.exit(2)
+# The left edge is where 4 well pixels in a row start (one antialiased text pixel can match).
 x0 = x1
-while x0 > 0 and not near(im.getpixel((x0 - 1, cy)), well): x0 -= 1
+while x0 > 3 and not all(near(im.getpixel((x0 - 1 - k, cy)), well) for k in range(4)): x0 -= 1
 # The edge is where 4 well pixels in a row start: one antialiased pixel inside can match the well.
 # Three columns clear of the corners; the tightest box wins (a long tab strip, a toast or the panel
 # buttons can touch the island at one of them).

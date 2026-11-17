@@ -94,8 +94,10 @@ shoot() { # <state> <theme>
 state_() { # <state> <theme>
   show pi; act nix-info.reset
   # The big states lend the working stand-in the big session (a working pane renders every second).
-  case $1 in big*) hc label "$(term_of pi-run)" "pi.session=$gen/big.jsonl" >/dev/null; show pi-run; act nix-info.reset; sleep 4 ;; esac
-  case $1 in real*) hc label "$(term_of pi-dead)" "pi.session=$INFO_REAL" >/dev/null; show pi-dead; act nix-info.reset ;; esac
+  # A relabelled stand-in: a tick for the panel to drop the session it had (else the probe passes
+  # on that one), then the wait for the new one.
+  case $1 in big*) hc label "$(term_of pi-run)" "pi.session=$gen/big.jsonl" >/dev/null; "$S" do tab.select --id "$(tab_of pi-run)" >/dev/null; sleep 2; show pi-run ;; esac
+  case $1 in real*) hc label "$(term_of pi-dead)" "pi.session=$INFO_REAL" >/dev/null; "$S" do tab.select --id "$(tab_of pi-dead)" >/dev/null; sleep 2; show pi-dead ;; esac
   case $1 in
     overview) ;;
     context) act nix-info.open:context ;;
