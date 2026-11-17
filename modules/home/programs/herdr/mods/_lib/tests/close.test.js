@@ -40,7 +40,11 @@ for (const [what, scope, items, extra, asks] of cases)
 // A world: space s1 (tabs t1 with panes p1+p2, t2 with p3), space s2 (one tab t3, one pane p4),
 // s3 on another machine. t2 holds the board. A Pi worker (t9) started from p1's terminal.
 const zsh = { shell: true, agent: false, name: "zsh" };
+// What resolves Pi's resumability: the + popover's rule (sessionHidden, wtSessionDirName),
+// and the git top of each Pi pane's folder (tops), all given by nix-status.
+const rules = { hidden: (n) => /-orchestrator$|#[0-9a-f]{6,}$/.test(n ?? ""), dirName: (p) => `--${p.replace(/^\/+|\/+$/g, "").replaceAll("/", "-")}--`, tops: { a2: "/r/wt" } };
 const world = {
+  ...rules,
   spaces: [
     { id: "s1", machine: null, tabs: [{ id: "t1" }, { id: "t2" }] },
     { id: "s2", machine: null, tabs: [{ id: "t3" }] },
@@ -54,7 +58,7 @@ const world = {
     { pane: "p5", tab: "t4", terminal: "a5", program: zsh, status: null, app: null },
   ],
   terminals: [
-    { address: "a2", state: "live", labels: { "pi.session": "/s.jsonl" } },
+    { address: "a2", state: "live", labels: { "pi.session": "/h/.pi/agent/sessions/--r-wt--/s.jsonl" } },
     { address: "a9", state: "live", parent: "a1", status: "working" },
   ],
 };
@@ -112,3 +116,29 @@ test("target: nothing focused targets nothing", () => {
   assert.equal(closeTarget("close-tab", {}), null);
   assert.equal(closeTarget("close-space", { space: null }), null);
 });
+
+// "Resumable" means the + popover would offer it again.
+const piWorld = (over) => {
+  const tab = { id: "t1", named: false, name: "1", ...over.tab };
+  return {
+    ...rules, tops: { a1: "/r/wt" }, ...over.rules,
+    spaces: [{ id: "s1", machine: null, tabs: [tab, { id: "t2", named: false, name: "2" }] }],
+    panes: [
+      { pane: "p1", tab: "t1", terminal: "a1", program: { shell: false, agent: true, name: "Pi" }, status: "idle", app: "pi", title: over.title ?? "π - k31 islands - wt", cwd: "/r/wt" },
+      { pane: "p2", tab: "t2", terminal: "a2", program: { shell: true, agent: false, name: "zsh" }, status: null, app: null },
+    ],
+    terminals: [{ address: "a1", state: "live", labels: over.labels ?? { "pi.session": "/h/.pi/agent/sessions/--r-wt--/s.jsonl" } }],
+  };
+};
+const asks = (w) => closeAsk(closePlan(w, { tab: "t1" })).ask;
+test("resumable: an idle Pi chat in its worktree's folder, in a tab with others → no ask", () => assert.equal(asks(piWorld({})), false));
+test("resumable: idle main-orchestrator in a tab with others → asks", () => assert.equal(asks(piWorld({ tab: { named: true, name: "main-orchestrator" }, title: "π - main-orchestrator - main" })), true));
+test("resumable: a project orchestrator's tab → asks", () => assert.equal(asks(piWorld({ tab: { named: true, name: "repo-project-orchestrator" } })), true));
+test("resumable: a session named like an orchestrator in an unnamed tab → asks", () => assert.equal(asks(piWorld({ title: "π - wt-orchestrator - wt" })), true));
+test("resumable: a pi-subagents worker given a pane → asks", () => assert.equal(asks(piWorld({ title: "π - general-purpose#534df88b - wt" })), true));
+test("resumable: a session filed under another folder than the worktree's → asks", () =>
+  assert.equal(asks(piWorld({ labels: { "pi.session": "/h/.pi/agent/sessions/--r-wt-src--/s.jsonl" } })), true));
+test("resumable: no session label → asks", () => assert.equal(asks(piWorld({ labels: {} })), true));
+test("resumable: no git top for the pane → asks", () => assert.equal(asks(piWorld({ rules: { tops: {} } })), true));
+test("resumable: no popover rule given → asks", () => assert.equal(asks(piWorld({ rules: { hidden: undefined } })), true));
+test("resumable: no session-folder rule given → asks", () => assert.equal(asks(piWorld({ rules: { dirName: undefined } })), true));

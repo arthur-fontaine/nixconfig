@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { wtClick, wtOrchestrator, wtArgv, ORCHESTRATOR_RE } from "../worktree.js";
+import { wtClick, wtOrchestrator, wtArgv, ORCHESTRATOR_RE, sessionHidden, wtSessionDirName } from "../worktree.js";
 import { isOrchestratorTab, orchestratorName } from "../../../kanban/src/herdr.ts";
 
 test("worktree: a click on an open worktree only selects its space (its last tab shows)", () =>
@@ -33,4 +33,13 @@ test("worktree: the orchestrator's argv is nix-sidebar's (name, role prompt)", (
 test("worktree: in a project's space, Orchestrator focuses the project's one (never a second Pi there)", () => {
   const space = { id: "sp", tabs: [{ id: "t1", named: false, name: "1" }, { id: "tp", named: true, name: "repo-project-orchestrator" }] };
   assert.deepEqual(wtOrchestrator({ space, label: "repo", folder: "/r", home: "/h" }), [["space.select", { id: "sp" }], ["tab.select", { id: "tp" }]]);
+});
+// What the + popover leaves out of its resume list (and so what a close can't call resumable).
+test("worktree: orchestrators and pi-subagents workers are hidden sessions, chats aren't", () => {
+  for (const n of ["Orchestrator", "main-orchestrator", "nixconfig-project-orchestrator", "general-purpose#534df88b"]) assert.equal(sessionHidden(n), true, n);
+  for (const n of ["k31 islands", "", null, "fix #12", "orchestrator notes"]) assert.equal(sessionHidden(n), false, String(n));
+});
+test("worktree: Pi's session folder for a worktree is the one nix-new reads", () => {
+  assert.equal(wtSessionDirName("/Users/a/code/github.com/x/main"), "--Users-a-code-github.com-x-main--");
+  assert.equal(wtSessionDirName("/Users/a/x/"), "--Users-a-x--");
 });

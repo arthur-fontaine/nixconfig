@@ -27,6 +27,7 @@
   };
   nix-status = {
     shared = [
+      "worktree.js"
       "close.js"
     ];
   };

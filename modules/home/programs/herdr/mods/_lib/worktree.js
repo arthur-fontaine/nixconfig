@@ -7,6 +7,12 @@
 // (isOrchestratorTab); a test keeps them in step.
 export const ORCHESTRATOR_RE = /^Orchestrator$|-(project-)?orchestrator$/;
 
+// The sessions the + popover leaves out of its resume list: orchestrators, and pi-subagents'
+// workers ("general-purpose#534df88b"). A close can't call those resumable.
+export const sessionHidden = (name) => ORCHESTRATOR_RE.test(name ?? "") || /#[0-9a-f]{6,}$/.test(name ?? "");
+// Pi's folder for a cwd's sessions, as nix-new reads it: "/Users/a/x" → "--Users-a-x--".
+export const wtSessionDirName = (path) => `--${String(path).replace(/^\/+|\/+$/g, "").replaceAll("/", "-")}--`;
+
 const wtName = (label) => `${String(label).replace(/[^A-Za-z0-9._-]+/g, "-")}-orchestrator`;
 // As nix-sidebar's orchestratorArgv("worktree", label): Pi named after it, with its role.
 export const wtArgv = (label, home) => ["pi", "--name", wtName(label), "--append-system-prompt", `${home}/.pi/agent/orchestrator/worktree.md`];

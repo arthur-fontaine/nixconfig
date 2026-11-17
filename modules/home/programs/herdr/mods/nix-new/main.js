@@ -9,15 +9,15 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { run, props, closeOverlay, theme, spaces, panes, exec, home, knownAgents, keys, window, shared } from "herdr";
 import { repoOf, createWorktree, defaultBranch, remoteOnly, slug } from "../_lib/repo.js";
-import { ORCHESTRATOR_RE, wtOrchestrator } from "../_lib/worktree.js";
+import { sessionHidden, wtOrchestrator } from "../_lib/worktree.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // Pi's mark as Herdr's program table has it, for when the agent list hasn't answered yet.
 const PI = { icon: "icons/pi.svg", tint: true };
 const HEIGHT = 404;
-// Not the person's own chats: orchestrators ("Orchestrator" before they were named after their
-// worktree, "<worktree>-orchestrator" since), and pi-subagents' workers ("general-purpose#534df88b").
-const hidden = (name) => ORCHESTRATOR_RE.test(name ?? "") || /#[0-9a-f]{6,}$/.test(name ?? "");
+// Not the person's own chats: orchestrators and pi-subagents' workers (_lib/worktree.js). The
+// close rule uses the same one: what isn't listed here can't be called resumable.
+const hidden = sessionHidden;
 
 const git = (on) => async (cwd, args) => {
   const r = await exec("git", args, { cwd, on }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));

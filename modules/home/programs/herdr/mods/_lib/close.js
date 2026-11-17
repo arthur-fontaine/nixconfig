@@ -39,6 +39,22 @@ export function closeQuestion(scope, lost) {
   return { title: `Close ${what}?`, detail: `${list.join(", ")} would end.` };
 }
 
+// Whether the + popover would offer this Pi's session again (nix-new's resume list): its label
+// names a file in the worktree's session folder, and neither its tab nor its session is one the
+// popover hides. world.hidden / world.dirName are that rule, world.tops each pane's git top.
+// false: it wouldn't; null: unknown (a missing input), which asks too.
+function closeResumable(world, p, term) {
+  const file = term?.labels?.["pi.session"];
+  if (!file || typeof world.hidden !== "function" || typeof world.dirName !== "function") return null;
+  const tab = world.spaces.flatMap((s) => s.tabs ?? []).find((t) => t.id === p.tab);
+  if (tab?.named && world.hidden(tab.name)) return false;
+  const parts = String(p.title ?? "").split(" - ");
+  if (parts[0] === "π" && parts.length > 2 && world.hidden(parts.slice(1, -1).join(" - "))) return false;
+  const top = world.tops?.[p.terminal];
+  if (!top) return null;
+  return String(file).split("/").slice(-2, -1)[0] === world.dirName(top);
+}
+
 // What closing a target ends, and the commands that do it, from the herdr state:
 // world { spaces, panes, terminals }; target { pane } | { tab } | { spaces: [ids] }.
 // A tab's only pane closes the tab, a space's only tab closes the space (Herdr does the
@@ -69,7 +85,7 @@ export function closePlan(world, target) {
     if (!p.program) return { kind: "terminal" };
     const agent = Boolean(p.program.agent || p.status);
     const it = { kind: "terminal", shell: Boolean(p.program.shell) && !agent, agent, app: p.app ?? null, status: p.status ?? null, name: p.program.name ?? null };
-    if (agent) it.resumable = p.app === "pi" ? (term(p.terminal)?.labels?.["pi.session"] ? true : null) : false;
+    if (agent) it.resumable = p.app === "pi" ? closeResumable(world, p, term(p.terminal)) : false;
     return it;
   });
   const mine = new Set(panes.map((p) => p.terminal).filter(Boolean));

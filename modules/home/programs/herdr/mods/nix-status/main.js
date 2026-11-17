@@ -13,6 +13,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, agents, panes, focused, theme, run, window, keys, nextCommand, openOverlay, exec, shared, setShared, layout, terminals } from "herdr";
+import { sessionHidden, wtSessionDirName } from "../_lib/worktree.js";
 import { closeAsk, closePlan, closeQuestion, closeTarget } from "../_lib/close.js";
 
 const RANK = { blocked: 2, done: 1 };
@@ -46,12 +47,27 @@ export default class Status extends View {
     });
   }
 
+  // What a close would do, nothing run: the plan and whether it asks. An idle Pi counts as
+  // resumable only when the + popover would offer it (its git top's session folder, not hidden).
+  async closeDecision(target) {
+    const tops = {};
+    for (const p of panes()) {
+      const label = terminals().find((x) => x.address === p.terminal)?.labels?.["pi.session"];
+      if (p.app !== "pi" || !label || !p.cwd) continue;
+      const r = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: p.cwd }).catch(() => null);
+      if (r?.code === 0) tops[p.terminal] = r.stdout.trim();
+    }
+    const plan = closePlan({ spaces: spaces(), panes: panes(), terminals: terminals(), hidden: sessionHidden, dirName: wtSessionDirName, tops }, target);
+    return plan && { plan, ...closeAsk(plan) };
+  }
+
   // A close: the commands at once when nothing would be lost, else one question first (Herdr's
-  // own asks are skipped with confirmed: true, so they never stack on it).
-  close(target) {
-    const plan = closePlan({ spaces: spaces(), panes: panes(), terminals: terminals() }, target);
-    if (!plan) return;
-    const { ask, lost } = closeAsk(plan);
+  // own asks are skipped with confirmed: true, so they never stack on it). Not named close():
+  // that is a View's teardown hook.
+  async closeTarget(target) {
+    const d = await this.closeDecision(target);
+    if (!d) return;
+    const { plan, ask, lost } = d;
     // A question left unanswered (cancelled) never runs later: a new close replaces it.
     setShared("nix.closePending", null);
     if (!ask) { for (const [name, args] of plan.commands) run(name, args); return; }
@@ -63,7 +79,8 @@ export default class Status extends View {
     const { space, cwd, on } = place();
     const f = focused();
     const target = closeTarget(c, { pane: f?.pane, tab: f?.tab, space: space?.id });
-    if (target) return this.close(target);
+    // The target is taken from focus now, before anything is awaited.
+    if (target) return this.closeTarget(target);
     if (c === "close-confirmed") {
       const pending = shared("nix.closePending") ?? [];
       setShared("nix.closePending", null);
