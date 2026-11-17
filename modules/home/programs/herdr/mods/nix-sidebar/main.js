@@ -102,6 +102,13 @@ export default class Sidebar extends View {
         // A row's click and its Orchestrator item, by the worktree's path (keys and scripts).
         else if (command.startsWith("open:")) this.openPath(command.slice(5));
         else if (command.startsWith("orchestrator:")) this.orchestratorAt(command.slice(13));
+        // menu:<x>,<y>:<repo folder>: that project's right-click menu at a point (scripts, checks).
+        else if (command.startsWith("menu:")) {
+          const rest = command.slice(5), i = rest.indexOf(":");
+          const [x, y] = rest.slice(0, i).split(",").map(Number), folder = rest.slice(i + 1);
+          const m = this.lastModel, r = m && [...m.open, ...m.closed].find((x) => JSON.parse(x.key)[1].startsWith(folder));
+          if (r) this.projectMenu(r, m.ps, { x, y });
+        }
         cx.notify();
       }
     });
@@ -512,6 +519,18 @@ export default class Sidebar extends View {
     this.openNew(cx, { repo: r.key, name: r.name, folder: first ? place(first.s, ps) : JSON.parse(r.key)[1], machine: r.on, ...(s && { space: s.id, level: 2 }), ...(trees && { worktrees: trees }) });
   }
 
+  // A project's right-click menu: a popup at the pointer (or a given point), as tall as its
+  // items (28 px each, a separator before each Close, 4 px padding).
+  projectMenu(r, ps, at) {
+    const spaces = r.items.map(({ s }) => s.id), project = r.project?.id ?? null;
+    const closes = (spaces.length ? 1 : 0) + (project ? 1 : 0);
+    const rows = 1 + closes + (!spaces.length && !project ? 1 : 0);
+    openOverlay({ mod: "nix-menu", kind: "popup", width: 260, height: 8 + 28 * rows + 9 * closes, at, props: { tab: "project", target: {
+      key: r.key, spaces, project,
+      newProps: { repo: r.key, name: r.name, folder: r.items[0] ? place(r.items[0].s, ps) : JSON.parse(r.key)[1], machine: r.on, ...(this.trees[r.key] && { worktrees: this.trees[r.key] }) },
+    } } });
+  }
+
   runAll(commands) { for (const [name, args] of commands) run(name, args); }
 
   // The space open on a worktree's path (one of its terminals inside it), if any.
@@ -619,12 +638,7 @@ export default class Sidebar extends View {
       .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
       .on_mouse_down("left", (e) => { this.drag = { key: r.key, y: e.position.y, moved: false }; })
       .on_click((_e, cx) => { if (this.dragged) { this.dragged = false; return; } this.openProject(r, cx); })
-      .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 240, height: 132, props: { tab: "project", target: {
-        key: r.key,
-        spaces: r.items.map(({ s }) => s.id),
-        project: r.project?.id ?? null,
-        newProps: { repo: r.key, name: r.name, folder: r.items[0] ? place(r.items[0].s, ps) : JSON.parse(r.key)[1], machine: r.on, ...(this.trees[r.key] && { worktrees: this.trees[r.key] }) },
-      } } }))
+      .on_mouse_down("right", () => this.projectMenu(r, ps, "pointer"))
       .child(div().id(`fold-${r.key}`).size(20).ml(-3).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.muted)
         .hover((x) => x.bg(t.input + "80").text_color(t.foreground)).active((x) => x.bg(t.input + "b3")).tooltip(folded ? "Unfold" : "Fold")
         .on_click((_e, cx) => { cx.stop_propagation(); fold(cx); })
