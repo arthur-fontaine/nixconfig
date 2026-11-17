@@ -527,7 +527,7 @@ export default class Info extends View {
         .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.chevron));
     };
     const n = `${e.files.length} file${e.files.length === 1 ? "" : "s"}`;
-    const out = [this.section(t, "In this repo", git?.exact ? `${n} · since session start` : n), ...e.files.map(row)];
+    const out = [this.section(t, "In this repo", git?.exact ? `${n} · since session start` : n), ...e.files.map((f) => row(f))];
     if (e.atLeast) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("Some edits kept no file name: there may be more."));
     if (git && !git.exact) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("Line counts need the commit the session started from: git status only."));
     if (e.outside.length) {
