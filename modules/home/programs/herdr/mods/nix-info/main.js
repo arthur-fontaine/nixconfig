@@ -40,6 +40,13 @@ function find(node, id) {
   return null;
 }
 
+// The panel island's inner radius (its radius less its padding): the content rounds by it, so
+// nothing square sits inside a rounded island (0 in a layout without islands).
+function panelRadius() {
+  const node = find(layout(), "panel");
+  return Math.max(0, (Number(node?.radius) || 0) - (Number(node?.padding) || 0));
+}
+
 // The panel only works while it shows.
 function visible() {
   const tree = layout();
@@ -702,7 +709,7 @@ export default class Info extends View {
       : this.detail === "files" ? [chromeTextButton(UI, t, "show-changes", "Show in Changes", () => run("layout.select", { stack: "panel-body", child: "changes" }), "Line counts, staging and commits")] : [];
     const header = chromeHeader(UI, t, { id: "info-head", title, meta: this.detail ? null : meta, back: this.detail ? (cx) => this.back(cx) : null, actions });
     // fill: the corner check's (nix-info.fill:<color>), so the content's own corners show.
-    const root = v_flex().id("info").track_focus(this.handle).size_full().min_h(0).bg(this.fill ?? t.chrome).text_color(t.foreground).text_size(CHROME.text)
+    const root = v_flex().id("info").track_focus(this.handle).size_full().min_h(0).rounded(panelRadius()).overflow_hidden().bg(this.fill ?? t.chrome).text_color(t.foreground).text_size(CHROME.text)
       .on_key_down((e, cx) => this.key(e, cx))
       .child(header);
     if (this.detail === "calls") return root.child(this.callsView(t, f));
