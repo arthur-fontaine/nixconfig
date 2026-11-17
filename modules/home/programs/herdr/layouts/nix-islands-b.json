@@ -232,6 +232,5 @@
   "font": "JetBrains Mono",
   "ui_font": "Inter",
   "padding": 8,
-  "gap": 8,
-  "terminal_menu": "nix-menu"
+  "gap": 8
 }
