@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings } from "herdr";
+import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings, props } from "herdr";
 
 // Pi titles its terminal "π - <session name> - <folder>", or "π - <folder>" before it has one.
 function piSession(title) {
@@ -13,9 +13,9 @@ const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 const PI = { icon: "icons/pi.svg", tint: true };
 
 // Pi's program mark, as Herdr draws it for any agent: its icon, tinted for a one-color glyph.
-function piMark(t, program, on) {
+function piMark(t, program, on, ink) {
   const p = program?.icon ? program : PI;
-  return p.tint ? svg(p.icon).size(14).flex_none().text_color(on ? t.foreground : t.muted) : image(p.icon).size(14).flex_none();
+  return p.tint ? svg(p.icon).size(14).flex_none().text_color(ink ?? (on ? t.foreground : t.muted)) : image(p.icon).size(14).flex_none();
 }
 
 function find(node, id) {
@@ -74,6 +74,10 @@ export default class Tabs extends View {
 
   render() {
     const t = theme();
+    // The tab look, from the layout's block props (the islands variants); none: today's folder tab.
+    //   ink     the active tab is a solid pill, in the primary button's colors (the board's New card)
+    //   handle  the bar sits on the well and the active tab grows out of the panes' island
+    const style = props()?.style ?? null;
     const space = spaces().find(p => p.active);
     const shown = space?.tabs ?? [];
     const stop = (_e, cx) => cx.stop_propagation();
@@ -85,14 +89,19 @@ export default class Tabs extends View {
       // "π - <name> - <folder>" title), a mod's title, or what runs in it, never as Herdr's
       // place number ("1"). Nothing is renamed, so Herdr's numbering still holds.
       const own = panes().filter(p => p.tab === c.id);
+      const ink = c.active && style === "ink" ? t.solid_foreground : null;
       const lead = own.find(p => p.program?.agent) ?? own.find(p => p.focused) ?? own[0];
       const session = lead?.app === "pi" ? piSession(lead.title) : "";
       const name = c.named ? c.name
         : session || (lead?.mod ? lead.title : lead?.program?.shell ? "Terminal" : lead?.program?.name ?? "Terminal");
       // Full height; the active tab takes the terminal's color and covers the bar's bottom
       // hairline, so it joins the pane below it.
-      return h_flex().id(`tab-${c.id}`).h(36).px(12).gap(8).rounded_t(6).items_center().flex_none().text_size(13)
-        .when(c.active, el => el.bg(t.background).border_l(1).border_t(1).border_r(1).border_color(t.border).text_color(t.foreground))
+      return h_flex().id(`tab-${c.id}`).px(12).gap(8).items_center().flex_none().text_size(13)
+        .when(style !== "ink", el => el.h(36).rounded_t(style === "handle" ? 10 : 6))
+        .when(style === "ink", el => el.h(26).self_center().rounded(13))
+        .when(c.active && !style, el => el.bg(t.background).border_l(1).border_t(1).border_r(1).border_color(t.border).text_color(t.foreground))
+        .when(c.active && style === "ink", el => el.bg(t.solid).text_color(t.solid_foreground).font_medium())
+        .when(c.active && style === "handle", el => el.bg(t.background).text_color(t.foreground).font_medium())
         .when(!c.active, el => el.text_color(t.muted).hover(s => s.bg(t.hover)))
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
         .on_mouse_up("left", () => {
@@ -101,13 +110,13 @@ export default class Tabs extends View {
           else run("tab.select", { id: c.id });
         })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "nix-menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: space.id } } }); })
-        .when(lead?.app === "pi", el => el.child(piMark(t, lead?.program, c.active)))
-        .when(lead?.app !== "pi" && Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).flex_none().text_color(t.dim) : image(program.icon).size(14).flex_none()))
+        .when(lead?.app === "pi", el => el.child(piMark(t, lead?.program, c.active, ink)))
+        .when(lead?.app !== "pi" && Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).flex_none().text_color(ink ?? t.dim) : image(program.icon).size(14).flex_none()))
         .child(div().max_w(170).truncate().child(c.zoomed ? `${name} Z` : name))
         .when(c.status === "working", el => el.child(svg(ICON("loader")).size(12).flex_none().text_color(t.working).spin(900)))
         .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(3).bg(t[c.status])))
-        .when(c.active, el => el.child(div().id(`close-${c.id}`).size(18).flex_none().flex().items_center().justify_center().rounded(4).text_color(t.dim)
-          .hover(s => s.bg(t.input + "80").text_color(t.foreground)).active(s => s.bg(t.input + "b3")).tooltip("Close tab").on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg(ICON("x")).size(12))));
+        .when(c.active, el => el.child(div().id(`close-${c.id}`).size(18).flex_none().flex().items_center().justify_center().rounded(4).text_color(ink ?? t.dim)
+          .hover(s => s.bg(ink ? t.muted + "55" : t.input + "80").text_color(ink ?? t.foreground)).active(s => s.bg(t.input + "b3")).tooltip("Close tab").on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg(ICON("x")).size(12))));
     };
     const root = layout(), sidebar = find(root, "sidebar"), w = window();
     // Old saved rails and a dragged-narrow sidebar can be smaller than the window buttons.
@@ -121,18 +130,18 @@ export default class Tabs extends View {
     const panelButton = (id, label, icon) => {
       const on = panel && !panel.hidden && body?.active === id;
       return div().id(`panel-${id}`).size(28).flex_none().flex().items_center().justify_center().rounded(6)
-        .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.dim)
+        .when(on, s => s.bg(t.selected)).when(!on && !style, s => s.bg(t.chrome)).text_color(on ? t.foreground : t.dim)
         .hover(s => s.bg(on ? t.selected : t.hover).text_color(t.foreground)).active(s => s.bg(on ? t.input + "80" : t.selected)).tooltip(label).on_mouse_down("left", stop)
         .on_click(() => {
           if (on) run("layout.hide", { id: "panel" });
           else { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); }
         }).child(svg(ICON(icon)).size(14));
     };
-    return h_flex().relative().size_full().min_w(0).px(8).pl(lightsPadding).gap(4).items_stretch().bg(t.chrome)
+    return h_flex().relative().size_full().min_w(0).px(8).pl(style === "handle" ? Math.max(lightsPadding, 14) : lightsPadding).gap(4).items_stretch().when(style !== "handle", el => el.bg(t.chrome))
       .on_mouse_up("left", () => { this.pressed = null; })
       .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })
       // The bar's bottom hairline, drawn first so the active tab covers it.
-      .child(div().absolute().left_0().right_0().bottom(0).h(1).bg(t.border))
+      .when(!style, el => el.child(div().absolute().left_0().right_0().bottom(0).h(1).bg(t.border)))
       // + right after the last tab, as in a browser; the right group is the panels.
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_stretch().gap(2).overflow_x_scrollbar().children(shown.map(item))
         .child(button("tab-new", svg(ICON("plus")).size(14), (_e, cx) => this.openNew(cx), "New tab")))
