@@ -13,9 +13,9 @@ const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 const PI = { icon: "icons/pi.svg", tint: true };
 
 // Pi's program mark, as Herdr draws it for any agent: its icon, tinted for a one-color glyph.
-function piMark(t, program, on, ink) {
+function piMark(t, program, on) {
   const p = program?.icon ? program : PI;
-  return p.tint ? svg(p.icon).size(14).flex_none().text_color(ink ?? (on ? t.foreground : t.muted)) : image(p.icon).size(14).flex_none();
+  return p.tint ? svg(p.icon).size(14).flex_none().text_color(on ? t.foreground : t.muted) : image(p.icon).size(14).flex_none();
 }
 
 function find(node, id) {
@@ -75,7 +75,6 @@ export default class Tabs extends View {
   render() {
     const t = theme();
     // The tab look, from the layout's block props (the islands variants); none: today's folder tab.
-    //   ink     the active tab is a solid pill, in the primary button's colors (the board's New card)
     //   handle  the bar sits on the well and the active tab grows out of the panes' island
     const style = props()?.style ?? null;
     const space = spaces().find(p => p.active);
@@ -89,7 +88,6 @@ export default class Tabs extends View {
       // "π - <name> - <folder>" title), a mod's title, or what runs in it, never as Herdr's
       // place number ("1"). Nothing is renamed, so Herdr's numbering still holds.
       const own = panes().filter(p => p.tab === c.id);
-      const ink = c.active && style === "ink" ? t.solid_foreground : null;
       const lead = own.find(p => p.program?.agent) ?? own.find(p => p.focused) ?? own[0];
       const session = lead?.app === "pi" ? piSession(lead.title) : "";
       const name = c.named ? c.name
@@ -97,10 +95,8 @@ export default class Tabs extends View {
       // Full height; the active tab takes the terminal's color and covers the bar's bottom
       // hairline, so it joins the pane below it.
       return h_flex().id(`tab-${c.id}`).px(12).gap(8).items_center().flex_none().text_size(13)
-        .when(style !== "ink", el => el.h(36).rounded_t(style === "handle" ? 10 : 6))
-        .when(style === "ink", el => el.h(26).self_center().rounded(13))
+        .h(36).rounded_t(style === "handle" ? 10 : 6)
         .when(c.active && !style, el => el.bg(t.background).border_l(1).border_t(1).border_r(1).border_color(t.border).text_color(t.foreground))
-        .when(c.active && style === "ink", el => el.bg(t.solid).text_color(t.solid_foreground).font_medium())
         // Capped in a neutral line (no accent): it keeps the handle clear on a dark well.
         .when(c.active && style === "handle", el => el.bg(t.background).border_t(2).border_color(t.input).text_color(t.foreground).font_medium())
         .when(!c.active, el => el.text_color(t.muted).hover(s => s.bg(t.hover)))
@@ -111,13 +107,13 @@ export default class Tabs extends View {
           else run("tab.select", { id: c.id });
         })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "nix-menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: space.id } } }); })
-        .when(lead?.app === "pi", el => el.child(piMark(t, lead?.program, c.active, ink)))
-        .when(lead?.app !== "pi" && Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).flex_none().text_color(ink ?? t.dim) : image(program.icon).size(14).flex_none()))
+        .when(lead?.app === "pi", el => el.child(piMark(t, lead?.program, c.active)))
+        .when(lead?.app !== "pi" && Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).flex_none().text_color(t.dim) : image(program.icon).size(14).flex_none()))
         .child(div().max_w(170).truncate().child(c.zoomed ? `${name} Z` : name))
         .when(c.status === "working", el => el.child(svg(ICON("loader")).size(12).flex_none().text_color(t.working).spin(900)))
         .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(3).bg(t[c.status])))
-        .when(c.active, el => el.child(div().id(`close-${c.id}`).size(18).flex_none().flex().items_center().justify_center().rounded(4).text_color(ink ?? t.dim)
-          .hover(s => s.bg(ink ? t.muted + "55" : t.input + "80").text_color(ink ?? t.foreground)).active(s => s.bg(t.input + "b3")).tooltip("Close tab").on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg(ICON("x")).size(12))));
+        .when(c.active, el => el.child(div().id(`close-${c.id}`).size(18).flex_none().flex().items_center().justify_center().rounded(4).text_color(t.dim)
+          .hover(s => s.bg(t.input + "80").text_color(t.foreground)).active(s => s.bg(t.input + "b3")).tooltip("Close tab").on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run("tab.close", { id: c.id }); }).child(svg(ICON("x")).size(12))));
     };
     const root = layout(), sidebar = find(root, "sidebar"), w = window();
     // Old saved rails and a dragged-narrow sidebar can be smaller than the window buttons.
