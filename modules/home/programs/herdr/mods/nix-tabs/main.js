@@ -122,7 +122,8 @@ export default class Tabs extends View {
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "nix-menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: space.id } } }); })
         .when(lead?.app === "pi", el => el.child(piMark(t, lead?.program, c.active)))
         .when(lead?.app !== "pi" && Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).flex_none().text_color(t.dim) : image(program.icon).size(14).flex_none()))
-        .child(div().max_w(170).truncate().child(c.zoomed ? `${name} Z` : name))
+        // A folder path keeps its end (what tells two tabs apart).
+        .child(div().max_w(170).text_ellipsis_start().child(c.zoomed ? `${name} Z` : name))
         .when(c.status === "working", el => el.child(svg(ICON("loader")).size(12).flex_none().text_color(t.working).spin(900)))
         .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(3).bg(t[c.status])))
         // × on every tab, shown on hover (always on the active one); its room is kept so a
@@ -153,6 +154,8 @@ export default class Tabs extends View {
     return h_flex().relative().size_full().min_w(0).px(8).pl(style === "handle" ? Math.max(lightsPadding, 14) : lightsPadding).gap(4).items_stretch().when(style !== "handle", el => el.bg(t.chrome))
       // Released off the tabs: the drag is dropped. The wheel scrolls the strip (no tab switch).
       .on_mouse_up("left", (_e, cx) => { if (this.pressed) { this.pressed = null; this.slot = null; cx.notify(); } })
+      // Released outside the window's bar: no release reaches it, so leaving it ends the drag.
+      .on_hover((on, cx) => { if (!on && this.pressed) { this.pressed = null; this.slot = null; cx.notify(); } })
       // The bar's bottom hairline, drawn first so the active tab covers it.
       .when(!style, el => el.child(div().absolute().left_0().right_0().bottom(0).h(1).bg(t.border)))
       // + right after the last tab, as in a browser; the right group is the panels.
