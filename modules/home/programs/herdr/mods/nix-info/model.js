@@ -623,6 +623,24 @@ export function infoKeep(c, kind) {
   return c.nested ? { ...c, nested: matched } : c;
 }
 
+const INFO_DETAILS = ["context", "activity", "lines"];
+const INFO_FILTERS = ["all", "bash", "read", "edit", "ask", "errors"];
+
+// The panel's state after a nix-info.<verb> command (keys, scripts): { detail, kind, sel, all },
+// or null for a command it doesn't know. detail:<key> ("detail:" the overview), kind:<key>,
+// select:<call id> ("select:" none), all, back (as Esc).
+export function infoViewCommand(view, command) {
+  const home = { detail: null, kind: "all", sel: null, all: false };
+  const i = command.indexOf(":"), verb = i < 0 ? command : command.slice(0, i), arg = i < 0 ? null : command.slice(i + 1);
+  if (verb === "detail" && arg === "") return home;
+  if (verb === "detail") return INFO_DETAILS.includes(arg) ? { ...home, detail: arg } : null;
+  if (verb === "kind") return INFO_FILTERS.includes(arg) ? { ...view, detail: "activity", kind: arg, sel: null, all: false } : null;
+  if (verb === "select" && arg !== null) return arg ? { ...view, detail: view.detail ?? "activity", sel: arg } : { ...view, sel: null };
+  if (command === "all") return { ...view, all: true };
+  if (command === "back") return view.sel ? { ...view, sel: null } : home;
+  return null;
+}
+
 // The rows listed: each call at level 0, a script's calls under it at level 1, in call order.
 export function infoRows(calls) {
   return calls.flatMap((c) => [{ ...c, level: 0 }, ...(c.nested ?? []).map((n) => ({

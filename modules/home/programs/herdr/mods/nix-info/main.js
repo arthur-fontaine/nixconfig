@@ -6,10 +6,10 @@
 // a selected call opens below the list with its arguments, result and timing.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify } from "herdr";
+import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand } from "./model.js";
 import { tipText } from "../_lib/tip.js";
 
 // The editor (../_lib/editor.js) gets the herdr functions it uses.
@@ -98,6 +98,13 @@ export default class Info extends View {
     this.ids = []; // the listed calls' ids, in order, for ↑/↓
     this.area = 0; // height of the list + inspector area
     this.handle = cx.focus_handle();
+    // nix-info.detail:<key>, .kind:<key>, .select:<id>, .all, .back: any state by key or script.
+    cx.spawn(async (cx) => {
+      for (;;) {
+        const next = infoViewCommand({ detail: this.detail, kind: this.kind, sel: this.sel, all: this.all }, await nextCommand());
+        if (next) { Object.assign(this, next); cx.notify(); }
+      }
+    });
   }
 
   open(key, cx) {
