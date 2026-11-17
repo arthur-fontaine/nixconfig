@@ -109,8 +109,8 @@ export default class Tabs extends View {
         .when(c.active && !style, el => el.bg(t.background).border_l(1).border_t(1).border_r(1).border_color(t.border).text_color(t.foreground))
         .when(c.active && style === "handle", el => el.bg(t.background).text_color(t.foreground).font_medium())
         .when(!c.active, el => el.text_color(t.muted).when(style !== "handle", e => e.hover(s => s.bg(t.hover))))
-        // Handle style: the hovered tab takes a fill a step off the well (tab_hover), quieter than the shown one.
-        .when(!c.active && style === "handle" && this.hovered === c.id, el => el.bg(t.tab_hover ?? t.hover).text_color(t.foreground))
+        // Handle style: the hovered tab takes a fill a step off the well (tab_hover), quieter than the shown one (its label stays muted).
+        .when(!c.active && style === "handle" && this.hovered === c.id, el => el.bg(t.tab_hover ?? t.hover))
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = { id: c.id, moved: false }; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
         // Dragging: the pressed tab fades, a line shows the gap it lands in (the pointer's side).
         .on_mouse_move((e, cx) => {
