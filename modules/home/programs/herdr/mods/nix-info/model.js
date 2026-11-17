@@ -675,7 +675,7 @@ export function infoKeep(c, kind) {
   if (infoFailedKind(kind) ? !c.error : !kinds.includes(c.kind) && !matched.length) return null;
   // steps keeps them all: an untitled script is named after all its steps, not the shown ones.
   // context: kept only for the steps that match (R2-2: its text muted, counted apart).
-  const context = !(infoFailedKind(kind) ? c.error : kinds.includes(c.kind)) || undefined;
+  const context = !(infoFailedKind(kind) ? c.failed ?? c.error : kinds.includes(c.kind)) || undefined;
   return c.nested ? { ...c, nested: matched, steps: c.steps ?? c.nested, context } : c;
 }
 

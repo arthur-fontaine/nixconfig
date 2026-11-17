@@ -73,6 +73,10 @@ test("a parent kept only for its matching steps is marked as context", () => {
   const s = script({ nested: [step(), step({ id: "s/2", kind: "edit" })] });
   assert.equal(infoKeep(s, "bash").context, true);
   assert.equal(infoKeep(step(), "bash").context, undefined);
+  // Under "failed", a script that went on after its failed step didn't fail itself (D6).
+  const went = script({ error: true, failed: false, stepFailed: true, nested: [step({ error: true }), step({ id: "s/2" })] });
+  assert.equal(infoKeep(went, "failed").context, true);
+  assert.equal(infoKeep({ ...went, failed: true }, "failed").context, undefined);
 });
 
 test("list durations agree with the call view: <0.1s under 100 ms, blank without timing", () => {

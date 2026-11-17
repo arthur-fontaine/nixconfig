@@ -132,6 +132,8 @@ export default class Info extends View {
   // State changes here and in the loop; render() only reads (prepare() derives what it shows).
   apply(next) {
     const back = this.detail === "call" && next.detail === "calls";
+    // Onto the list from elsewhere, or another filter: its top, not where it was left.
+    const top = next.detail === "calls" && !back && (this.detail !== "calls" || next.kind !== this.kind);
     Object.assign(this, next);
     this.prepare();
     // Edited files: git is read now, not at the next tick.
@@ -139,6 +141,7 @@ export default class Info extends View {
     // Back onto the list: scrolled to the call it came from, once the list is drawn again (a
     // scroll asked for while it isn't is lost); the loop does it on its next poll.
     if (back) { const i = this.ids.indexOf(this.sel); this.scrollTo = i >= 0 ? i : null; }
+    else if (top) this.scrollTo = 0;
   }
 
   back(cx) { this.command("back", cx); }
@@ -234,7 +237,7 @@ export default class Info extends View {
       for (;;) {
         // The selection is checked every POLL (memory only), the file read every TICK or
         // as soon as another pane is selected.
-        if (this.scrollTo != null && this.detail === "calls") { this.scroll.scroll_to_item(this.scrollTo, "center"); this.scrollTo = null; cx.notify(); }
+        if (this.scrollTo != null && this.detail === "calls") { this.scroll.scroll_to_item(this.scrollTo, this.scrollTo ? "center" : "top"); this.scrollTo = null; cx.notify(); }
         const p = visible() ? selectedPane() : undefined;
         const moved = p !== undefined && (p?.pane !== this.pane?.pane || p?.status !== this.pane?.status);
         if (p !== undefined && (moved || Date.now() - readAt >= TICK)) {
@@ -389,13 +392,15 @@ export default class Info extends View {
     const cut = rel ? rel.lastIndexOf("/") : -1;
     const untitled = c.untitled && c.nested?.length ? infoStepsLabel(c.steps ?? c.nested) : null;
     const prose = c.kind === "ask" || c.kind === "agent" || (c.kind === "code" && !untitled && !/^(\w+)(: |\s×)/.test(c.arg ?? ""));
+    // A parent kept only for its matching steps reads as context (R2-2).
+    const fg = c.context ? t.muted : t.foreground;
     const text = more ? div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(more)
       : path ? h_flex().flex_1().min_w(0).gap(6).items_baseline()
-        .child(div().flex_none().max_w("70%").truncate().text_color(t.foreground).child(cut < 0 ? rel : rel.slice(cut + 1)))
+        .child(div().flex_none().max_w("70%").truncate().text_color(fg).child(cut < 0 ? rel : rel.slice(cut + 1)))
         .child(div().flex_1().min_w(0).text_ellipsis_start().text_size(12).text_color(t.muted).child(cut < 0 ? "" : rel.slice(0, cut)))
       : untitled ? div().flex_1().min_w(0).truncate().text_color(t.muted).child(untitled)
-      : prose ? div().flex_1().min_w(0).truncate().text_color(t.foreground).child(c.arg || c.name)
-      : div().flex_1().min_w(0).truncate().font_family(MONO()).text_size(12).text_color(t.foreground).child(c.arg || c.name);
+      : prose ? div().flex_1().min_w(0).truncate().text_color(fg).child(c.arg || c.name)
+      : div().flex_1().min_w(0).truncate().font_family(MONO()).text_size(12).text_color(fg).child(c.arg || c.name);
     const KIND = { code: "Script", bash: "Bash", read: "Read", edit: "Edit", write: "Write", ask: "Question", fetch: "Fetch", agent: "Agent" };
     return chromeRow(UI, t, `call-${c.id}`, { on, onClick: inList ? null : onClick, clickable: inList || Boolean(onClick) })
       .when(Boolean(c.full || c.arg) && !more, (e) => e.tooltip(tipText(c.merged ? `${c.tip}\n${c.full || c.arg}` : `${KIND[c.kind] ?? c.name}: ${c.full || c.arg}`)))
@@ -410,7 +415,8 @@ export default class Info extends View {
       .when(Boolean(c.failed), (e) => e.child(div().size(6).flex_none().rounded(3).bg(t.blocked)))
       .when(!c.failed && Boolean(c.stepFailed), (e) => e.child(div().id(`hollow-${c.id}`).size(6).flex_none().rounded(3).border_1().border_color(t.blocked).tooltip("Went on after a failed step")))
       .when(!more, (e) => e.child(div().flex_none().min_w(28).text_right().text_size(12).text_color(t.muted)
-        .child(state === "running" ? this.spinner(t) : state === "no-result" ? "No result" : infoDuration(c.duration))))
+        .when(state === "done" && (c.duration === null || c.duration === undefined), (x) => x.id(`time-${c.id}`).tooltip("No timing recorded"))
+        .child(state === "running" ? this.spinner(t) : state === "no-result" ? "No result" : infoRowDuration(c.duration))))
       .when(Boolean(onClick) || inList, (e) => e.child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.dim)));
   }
 
@@ -550,13 +556,13 @@ export default class Info extends View {
         .child(chromeTextButton(UI, t, "show-all-calls", "Show all calls", (_e, cx) => this.command("kind:all", cx)));
     return v_flex().flex_1().min_h(0).px(CHROME.insetX).py(CHROME.insetY)
       .child(h_flex().flex_none().flex_wrap().gap(2).pb(4).children(CHIPS.filter(([k]) => k === "all" || k === this.kind || n[k] > 0).map(chip)))
-      .child(this.section(t, this.kind === "all" ? "All calls" : label, `${shown.length} shown`))
+      .child(this.section(t, this.kind === "all" ? "All calls" : label, infoListMeta(shown.length, rows.length, rows.filter((r) => r.context).length)))
       .child(list);
   }
 
   showAllAction(t, f) {
     const rows = this.listRows(f);
-    return rows.length > SHOWN && !this.all ? [chromeTextButton(UI, t, "show-all", `Show all ${rows.length}`, (_e, cx) => this.command("all", cx), "The list shows the latest 200")] : [];
+    return rows.length > SHOWN && !this.all ? [chromeTextButton(UI, t, "show-all", infoShowAll(rows.length), (_e, cx) => this.command("all", cx), "The list shows the latest 200 rows")] : [];
   }
 
   // ---- a call, pushed over its list (D7) ---------------------------------------------------
@@ -577,9 +583,9 @@ export default class Info extends View {
     const c = this.selected(f);
     if (!c) return [div().px(CHROME.headerX).py(12).text_size(12).text_color(t.dim).child("This call isn't in the session any more.")];
     const state = infoCallState(c, this.pane?.status === "working");
-    const took = infoDuration(c.duration) || "<0.1s";
+    const took = infoRowDuration(c.duration);
     const meta = state === "running" ? "Running" : state === "no-result" ? "No result"
-      : [`Took ${took}`, c.startedExact ? `started ${infoClock(c.startedExact, false)}` : null, c.level === 0 && c.finished ? `finished ${infoClock(c.finished, false)}` : null].filter(Boolean).join(" · ");
+      : [took ? `Took ${took}` : "No timing recorded", c.startedExact ? `started ${infoClock(c.startedExact, false)}` : null, c.level === 0 && c.finished ? `finished ${infoClock(c.finished, false)}` : null].filter(Boolean).join(" · ");
     const untitled = c.untitled && c.nested?.length ? infoStepsLabel(c.steps ?? c.nested) : null;
     const title = c.path ? this.rel(c.path) : untitled ?? c.arg ?? c.name;
     const args = c.args ?? {};
@@ -771,7 +777,7 @@ export default class Info extends View {
     if (this.detail === "files") return root.child(v_flex().id("info-files").flex_1().min_h(0).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY).children(this.filesView(t)));
     const top = this.overview(t, f, now);
     if (!this.session || !f.started) return root.child(v_flex().flex_none().children(top));
-    const calls = f.total ? `${f.total} call${f.total === 1 ? "" : "s"}${f.errors ? ` · ${f.errors} failed` : ""}` : null;
+    const calls = f.total ? `${infoNum(f.total)} call${f.total === 1 ? "" : "s"}${f.errors ? ` · ${infoNum(f.errors)} failed` : ""}` : null;
     return root.child(v_flex().flex_none().children(top))
       .child(v_flex().id("info-recent").flex_1().min_h(0).mt(12).border_t(1).border_color(t.border).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY)
         .child(this.section(t, "Recent calls", calls, true, f.total ? (_e, cx) => this.command("detail:calls", cx) : null))
