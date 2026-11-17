@@ -93,6 +93,9 @@ function script(code, nested, { title = null, ms = 3000, threw = false } = {}) {
   const c = { id: id(), name: "codemode", arguments: { code } };
   assistant([c], { grow: 1400 });
   const calls = nested.map((x, i) => ({ id: c.id + "/" + (i + 1), ...x }));
+  // bash-changes records a script's changes in its repo too (as for bash): its result's fileChanges.
+  const touched = {};
+  for (const x of calls) if ((x.name === "edit" || x.name === "write") && x.status !== "error") touched[x.arguments.path.slice(repo.length + 1)] ??= read(x.arguments.path.slice(repo.length + 1));
   for (const x of calls) {
     if (x.status === "error") continue;
     if (x.name === "edit") doEdit(x.arguments.path.slice(repo.length + 1), x.arguments.edits[0].oldText, x.arguments.edits[0].newText);
@@ -103,7 +106,7 @@ function script(code, nested, { title = null, ms = 3000, threw = false } = {}) {
   const details = { autoMode: false, calls: calls.map((x) => ({ id: x.id, name: x.name, status: x.status ?? "ok", durationMs: x.ms ?? 120,
     args: JSON.stringify(x.arguments).slice(0, x.cut ? 160 : 4000), ...(x.error ? { error: x.error } : {}) })),
     callOutputs: Object.fromEntries(calls.map((x) => [x.id, { lines: (x.out ?? "ok").split("\n"), total: (x.out ?? "ok").split("\n").length }])),
-    ...(title ? { title } : {}) };
+    ...(title ? { title } : {}), ...(Object.keys(touched).length ? { fileChanges: changes(touched) } : {}) };
   result(c, { text: threw ? "Error: tools.bash failed" : calls.map((x) => x.out ?? "ok").join("\n"), ms, isError: threw, details });
   // Pi's nestedCalls sits on the message itself.
   const last = JSON.parse(out.pop()); last.message.nestedCalls = nestedCalls; put(last);

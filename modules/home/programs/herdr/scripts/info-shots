@@ -18,16 +18,20 @@ root=${HERDR_SANDBOX:-/tmp/herdr-sandbox}; root=$(cd "$root" && pwd -P)
 mkdirp() { mkdir -p "$1"; }; mkdirp "$out"
 ls_() { "$S" app ls; }
 
-gen=$root/info-$(date +%s)
+# The repo stays at one path (the space's folder); the session files go to a new one each run.
+fixture=$root/info-fixture
+"$here/info-session" "$fixture" >/dev/null
+gen=$root/info-sessions/$(date +%s)
 mkdir -p "$gen"
-"$here/info-session" "$gen" >/dev/null
+mv "$fixture/session.jsonl" "$fixture/running.jsonl" "$gen/"
+ln -sfn "$fixture/repo" "$gen/repo"
 echo "session: $gen/session.jsonl"
 state=$root/info-pi-state; echo idle >"$state"
 
 space=$(ls_ | jq -r '.spaces[] | select(.name == "info-shots") | .id' | head -1)
 if [ -z "$space" ]; then
-  space=$("$S" do space.new --name info-shots --folder "$gen/repo" | jq -r .space)
-  "$S" do tab.new --name pi --folder "$gen/repo" --argv "$(jq -cn --arg p "$here/info-fake-pi" --arg s "$state" '[$p, "π - tide-tables-parser - repo", $s]')" >/dev/null
+  space=$("$S" do space.new --name info-shots --folder "$fixture/repo" | jq -r .space)
+  "$S" do tab.new --name pi --folder "$fixture/repo" --argv "$(jq -cn --arg p "$here/info-fake-pi" --arg s "$state" '[$p, "π - tide-tables-parser - repo", $s]')" >/dev/null
   sleep 1.5
 fi
 tabs=$(ls_ | jq -c --arg s "$space" '.spaces[] | select(.id == $s) | .tabs')
@@ -50,6 +54,7 @@ shoot() { # <state> <theme>
   sleep 1.3
   local f=$out/$prefix-$1-$2.png
   "$S" shot "$f" >/dev/null
+  # A failed check is reported in the summary, not fatal: the other states still get shot.
   { echo "== $1 $2"; python3 "$here/info-panel.py" "$f" "$(well "$2")" "${f%.png}-panel.png" || true; } >>"$corners"
   echo "$f"
 }
@@ -93,4 +98,4 @@ fi
 act nix-info.detail:
 "$S" appearance dark
 echo "corners: $corners"
-grep -c "content SQUARE\|island SQUARE" "$corners" | sed 's/^/square corners: /' || true
+echo "square corners: $(grep -c "SQUARE" "$corners" || true); unreadable shots: $(grep -c "isn't the well" "$corners" || true); content corners that can't tell: $(grep -c "same fill" "$corners" || true)"
