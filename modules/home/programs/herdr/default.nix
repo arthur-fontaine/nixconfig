@@ -117,7 +117,9 @@ let
     "cmd-shift-k" = "nix-status.kanban";
   };
   shared = {
-    layout = "nix";
+    # Islands "Handle": the panes, sidebar and panel as islands on a neutral well (k31).
+    # nix.json stays deployed beside it, the layout it was made from.
+    layout = "nix-islands-b";
     # The Files and Changes panels the tab bar offers (picked in the welcome).
     "workspace.panels" = [ "changes" "files" "info" "games" ];
   };
@@ -166,6 +168,10 @@ in
     # The layout's light and dark themes.
     "herdr-app/themes/nix-light.json".source = ./themes/nix-light.json;
     "herdr-app/themes/nix-dark.json".source = ./themes/nix-dark.json;
+    "herdr-app/layouts/nix-islands-b.json".source = ./layouts/nix-islands-b.json;
+    # nix-islands-b's: the nix themes plus the well's color.
+    "herdr-app/themes/nix-islands-b-light.json".source = ./themes/nix-islands-b-light.json;
+    "herdr-app/themes/nix-islands-b-dark.json".source = ./themes/nix-islands-b-dark.json;
     # nix-editor's backend: the config `nvim --embed` starts with.
     "herdr-app/nix-editor/init.lua".source = ./nix-editor/init.lua;
     # nix-diff's backend: init.lua without language servers, and the live diff of each file.
