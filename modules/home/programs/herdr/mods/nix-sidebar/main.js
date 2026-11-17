@@ -8,6 +8,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, terminals, machines, run, openOverlay, exec, theme, window, layout, watchFolder, setAgentOrder, pickFolder, home, shared, setShared, focused, nextCommand } from "herdr";
 import { ORCHESTRATOR_RE, wtClick, wtOrchestrator } from "../_lib/worktree.js";
+import { tabLabel } from "../_lib/tabs.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // Pi's mark as Herdr's program table has it, for rows with no program at hand (workers).
@@ -76,12 +77,6 @@ function ago(ms) {
   const m = Math.floor((Date.now() - ms) / 60000);
   return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
 }
-// Pi titles its terminal "π - <session name> - <folder>", or "π - <folder>" before it has one.
-function piSession(title) {
-  const parts = (title ?? "").split(" - ");
-  return parts[0] === "π" && parts.length > 2 ? parts.slice(1, -1).join(" - ") : "";
-}
-
 export default class Sidebar extends View {
   init(_props, cx) {
     this.git = {}; // where() -> { repo, common, name, branch, ahead, behind, dirty, linked } | null
@@ -370,12 +365,9 @@ export default class Sidebar extends View {
   tabInfo(tab, ps) {
     const own = ps.filter((p) => p.tab === tab.id);
     const lead = own.find((p) => p.program?.agent) ?? own.find((p) => p.focused) ?? own[0];
-    const session = lead?.app === "pi" ? piSession(lead.title) : "";
-    const label = !tab.named && session ? session
-      : tab.named ? tab.name
-      : lead?.mod ? lead.title
-      : lead?.program?.shell ? "Terminal"
-      : lead?.program?.name ?? "Terminal";
+    // As the tab bar names it (_lib/tabs.js), relative to the space's folder.
+    const space = spaces().find((s) => (s.tabs ?? []).some((x) => x.id === tab.id));
+    const label = tabLabel({ named: tab.named, name: tab.name, lead, folder: space?.folder });
     return { lead, label };
   }
 

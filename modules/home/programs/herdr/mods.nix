@@ -6,6 +6,7 @@
   nix-sidebar = {
     shared = [
       "worktree.js"
+      "tabs.js"
     ];
   };
   nix-files = { shared = [ "editor.js" ]; };
@@ -21,6 +22,7 @@
   };
   nix-tabs = {
     shared = [
+      "tabs.js"
     ];
   };
   nix-status = {

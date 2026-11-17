@@ -1,12 +1,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings, props } from "herdr";
-
-// Pi titles its terminal "π - <session name> - <folder>", or "π - <folder>" before it has one.
-function piSession(title) {
-  const parts = (title ?? "").split(" - ");
-  return parts[0] === "π" && parts.length > 2 ? parts.slice(1, -1).join(" - ") : "";
-}
+import { tabLabel, tabSlot, tabMoveIndex } from "../_lib/tabs.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // Pi's mark as Herdr's program table has it, for when the pane's program isn't at hand.
@@ -29,7 +24,9 @@ function find(node, id) {
 
 export default class Tabs extends View {
   init() {
-    this.pressed = null;
+    this.pressed = null; // the tab pressed: { id, moved }
+    this.hovered = null;
+    this.slot = null; // while dragging: the gap it would land in, 0..n
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
   }
 
@@ -84,36 +81,55 @@ export default class Tabs extends View {
       .when(Boolean(tip), el => el.tooltip(tip)).on_mouse_down("left", stop).on_click(action).child(label);
     const item = (c, i) => {
       const program = panes().find(p => p.tab === c.id && p.program?.agent)?.program ?? panes().find(p => p.tab === c.id)?.program;
-      // A tab as the sidebar names it: an unnamed one reads as its agent's session (Pi's
-      // "π - <name> - <folder>" title), a mod's title, or what runs in it, never as Herdr's
-      // place number ("1"). Nothing is renamed, so Herdr's numbering still holds.
+      // Named as in the sidebar (_lib/tabs.js): its agent's session, a mod's title, the program
+      // running, else the folder in the worktree. Nothing is renamed, Herdr's numbering holds.
       const own = panes().filter(p => p.tab === c.id);
       const lead = own.find(p => p.program?.agent) ?? own.find(p => p.focused) ?? own[0];
-      const session = lead?.app === "pi" ? piSession(lead.title) : "";
-      const name = c.named ? c.name
-        : session || (lead?.mod ? lead.title : lead?.program?.shell ? "Terminal" : lead?.program?.name ?? "Terminal");
+      const name = tabLabel({ named: c.named, name: c.name, lead, folder: space.folder });
+      const dragging = this.pressed?.moved && this.pressed.id === c.id;
+      const shownClose = c.active || this.hovered === c.id;
+      const line = (side) => div().absolute().top(6).bottom(6).w(2).rounded(1).bg(t.foreground).when(side === "left", el => el.left(-3)).when(side === "right", el => el.right(-3));
       // Full height; the active tab takes the terminal's color and covers the bar's bottom
       // hairline, so it joins the pane below it.
-      return h_flex().id(`tab-${c.id}`).px(12).gap(8).items_center().flex_none().text_size(13)
+      return h_flex().id(`tab-${c.id}`).relative().px(12).gap(8).items_center().flex_none().text_size(13)
+        .when(dragging, el => el.opacity(0.45))
+        .on_hover((on, cx) => { const next = on ? c.id : this.hovered === c.id ? null : this.hovered; if (next !== this.hovered) { this.hovered = next; cx.notify(); } })
         .h(36).rounded_t(style === "handle" ? 10 : 6)
         .when(c.active && !style, el => el.bg(t.background).border_l(1).border_t(1).border_r(1).border_color(t.border).text_color(t.foreground))
         // Capped in a neutral line (no accent): it keeps the handle clear on a dark well.
         .when(c.active && style === "handle", el => el.bg(t.background).border_t(2).border_color(t.input).text_color(t.foreground).font_medium())
         .when(!c.active, el => el.text_color(t.muted).hover(s => s.bg(t.hover)))
-        .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
-        .on_mouse_up("left", () => {
-          const from = this.pressed; this.pressed = null;
-          if (from !== null && from !== i) run("tab.move", { id: shown[from].id, index: space.tabs.findIndex(x => x.id === c.id) + 1 });
-          else run("tab.select", { id: c.id });
+        .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = { id: c.id, moved: false }; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
+        // Dragging: the pressed tab fades, a line shows the gap it lands in (the pointer's side).
+        .on_mouse_move((e, cx) => {
+          if (!this.pressed) return;
+          const slot = tabSlot(i, e.local_position.x, e.bounds.width);
+          if (!this.pressed.moved && this.pressed.id === c.id && slot >= i && slot <= i + 1) return;
+          if (slot !== this.slot || !this.pressed.moved) { this.pressed.moved = true; this.slot = slot; cx.notify(); }
         })
+        .on_mouse_up("left", (_e, cx) => {
+          const p = this.pressed, slot = this.slot;
+          this.pressed = null; this.slot = null;
+          if (!p?.moved) { run("tab.select", { id: c.id }); return; }
+          const index = tabMoveIndex(space.tabs.map(x => x.id), shown.map(x => x.id), p.id, slot);
+          if (index) run("tab.move", { id: p.id, index });
+          cx.notify();
+        })
+        // A middle click closes, as in a browser.
+        .on_mouse_up("middle", (_e, cx) => { cx.stop_propagation(); run(`nix-status.close-tab:${c.id}`); })
+        .when(this.pressed?.moved && this.slot === i, el => el.child(line("left")))
+        .when(this.pressed?.moved && this.slot === i + 1 && i === shown.length - 1, el => el.child(line("right")))
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "nix-menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: space.id } } }); })
         .when(lead?.app === "pi", el => el.child(piMark(t, lead?.program, c.active)))
         .when(lead?.app !== "pi" && Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).flex_none().text_color(t.dim) : image(program.icon).size(14).flex_none()))
         .child(div().max_w(170).truncate().child(c.zoomed ? `${name} Z` : name))
         .when(c.status === "working", el => el.child(svg(ICON("loader")).size(12).flex_none().text_color(t.working).spin(900)))
         .when(c.status === "blocked" || c.status === "done", el => el.child(div().size(6).rounded(3).bg(t[c.status])))
-        .when(c.active, el => el.child(div().id(`close-${c.id}`).size(18).flex_none().flex().items_center().justify_center().rounded(4).text_color(t.dim)
-          .hover(s => s.bg(t.input + "80").text_color(t.foreground)).active(s => s.bg(t.input + "b3")).tooltip("Close tab").on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run(`nix-status.close-tab:${c.id}`); }).child(svg(ICON("x")).size(12))));
+        // × on every tab, shown on hover (always on the active one); its room is kept so a
+        // hover never shifts the tabs.
+        .child(div().id(`close-${c.id}`).size(18).flex_none().flex().items_center().justify_center().rounded(4).text_color(t.dim)
+          .when(!shownClose, el => el.invisible())
+          .hover(s => s.bg(t.input + "80").text_color(t.foreground)).active(s => s.bg(t.input + "b3")).tooltip("Close tab").on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); run(`nix-status.close-tab:${c.id}`); }).child(svg(ICON("x")).size(12)));
     };
     const root = layout(), sidebar = find(root, "sidebar"), w = window();
     // Old saved rails and a dragged-narrow sidebar can be smaller than the window buttons.
@@ -135,8 +151,8 @@ export default class Tabs extends View {
         }).child(svg(ICON(icon)).size(14));
     };
     return h_flex().relative().size_full().min_w(0).px(8).pl(style === "handle" ? Math.max(lightsPadding, 14) : lightsPadding).gap(4).items_stretch().when(style !== "handle", el => el.bg(t.chrome))
-      .on_mouse_up("left", () => { this.pressed = null; })
-      .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })
+      // Released off the tabs: the drag is dropped. The wheel scrolls the strip (no tab switch).
+      .on_mouse_up("left", (_e, cx) => { if (this.pressed) { this.pressed = null; this.slot = null; cx.notify(); } })
       // The bar's bottom hairline, drawn first so the active tab covers it.
       .when(!style, el => el.child(div().absolute().left_0().right_0().bottom(0).h(1).bg(t.border)))
       // + right after the last tab, as in a browser; the right group is the panels.
