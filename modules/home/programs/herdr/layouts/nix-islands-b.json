@@ -1,0 +1,226 @@
+{
+  "id": "root",
+  "type": "row",
+  "titlebar": "none",
+  "traffic_lights": [
+    20,
+    24
+  ],
+  "background": "canvas",
+  "terminal_padding": [
+    12,
+    16
+  ],
+  "children": [
+    {
+      "id": "sidebar",
+      "type": "column",
+      "size": {
+        "px": 256
+      },
+      "min": 44,
+      "max": 480,
+      "background": "chrome",
+      "resizable": false,
+      "children": [
+        {
+          "id": "head",
+          "type": "block",
+          "size": {
+            "px": 44
+          },
+          "window_drag": true,
+          "content": {
+            "mod": "nix-head"
+          }
+        },
+        {
+          "id": "sidebar-body",
+          "type": "stack",
+          "size": {
+            "weight": 1
+          },
+          "min": 120,
+          "active": "sidebar-tree",
+          "header": {
+            "content": {
+              "mod": "nix-head",
+              "props": {
+                "switcher": true
+              }
+            },
+            "height": 36,
+            "position": "top",
+            "reveal": "always"
+          },
+          "children": [
+            {
+              "id": "sidebar-tree",
+              "type": "block",
+              "content": {
+                "mod": "nix-sidebar"
+              }
+            },
+            {
+              "id": "sidebar-kanban",
+              "type": "block",
+              "content": {
+                "mod": "nix-kanban"
+              }
+            }
+          ]
+        },
+        {
+          "id": "sidebar-footer",
+          "type": "block",
+          "size": {
+            "px": 36
+          },
+          "content": {
+            "mod": "nix-head",
+            "props": {
+              "footer": true
+            }
+          }
+        }
+      ],
+      "radius": 14,
+      "border": {
+        "width": 1,
+        "color": "border"
+      }
+    },
+    {
+      "id": "work",
+      "type": "column",
+      "resizable": false,
+      "children": [
+        {
+          "id": "tabs",
+          "type": "block",
+          "size": {
+            "px": 36
+          },
+          "window_drag": true,
+          "content": {
+            "mod": "nix-tabs",
+            "props": {
+              "style": "handle"
+            }
+          }
+        },
+        {
+          "id": "work-body",
+          "type": "row",
+          "children": [
+            {
+              "id": "main",
+              "type": "block",
+              "content": {
+                "tab": "active",
+                "pane": {
+                  "gap": 1,
+                  "radius": 0,
+                  "background": "background",
+                  "lone": false,
+                  "border": {
+                    "width": 0,
+                    "color": "border"
+                  },
+                  "focus": {
+                    "width": 1,
+                    "color": "input"
+                  },
+                  "header": {
+                    "content": {
+                      "mod": "nix-pane"
+                    },
+                    "height": 28,
+                    "position": "top",
+                    "reveal": "always"
+                  }
+                }
+              },
+              "radius": 14,
+              "background": "background"
+            },
+            {
+              "id": "panel",
+              "type": "column",
+              "hidden": false,
+              "size": {
+                "px": 360
+              },
+              "min": 300,
+              "max": 900,
+              "children": [
+                {
+                  "id": "panel-body",
+                  "type": "stack",
+                  "active": "changes",
+                  "children": [
+                    {
+                      "id": "files",
+                      "type": "block",
+                      "content": {
+                        "mod": "nix-files"
+                      }
+                    },
+                    {
+                      "id": "changes",
+                      "type": "block",
+                      "content": {
+                        "mod": "nix-changes"
+                      }
+                    },
+                    {
+                      "id": "info",
+                      "type": "block",
+                      "content": {
+                        "mod": "nix-info"
+                      }
+                    },
+                    {
+                      "id": "games",
+                      "type": "block",
+                      "content": {
+                        "mod": "nix-games"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "background": "chrome",
+              "radius": 14,
+              "border": {
+                "width": 1,
+                "color": "border"
+              }
+            }
+          ],
+          "gap": 8
+        },
+        {
+          "id": "status",
+          "type": "block",
+          "size": {
+            "px": 24
+          },
+          "content": {
+            "mod": "nix-status"
+          },
+          "radius": 10
+        }
+      ],
+      "gap": 0
+    }
+  ],
+  "theme": {
+    "light": "nix-islands-b-light",
+    "dark": "nix-islands-b-dark"
+  },
+  "font": "JetBrains Mono",
+  "ui_font": "Inter",
+  "padding": 8,
+  "gap": 8
+}
