@@ -81,8 +81,7 @@ function hookComponent() {
 	const render = (proto[ORIGINAL_RENDER] ??= proto.render);
 	proto.render = function (width) {
 		const lines = render.call(this, width);
-		if (!order.has(this)) return lines;
-		const id = `thinking-row:${order.get(this)}`;
+		const id = `thinking-row:${order.get(this) ?? 0}`;
 		const out = pulseLines(lines, () => {
 			pulsing.add(this);
 			return dotFor?.(id) ?? "⦁";
