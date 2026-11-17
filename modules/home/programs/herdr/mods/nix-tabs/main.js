@@ -1,7 +1,7 @@
 import { View, div, svg, image } from "gpui-kit";
-import { h_flex, ScrollHandle } from "gpui-base";
+import { h_flex } from "gpui-base";
 import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings, props } from "herdr";
-import { tabLabel, tabLabelIsPath, tabSlot, tabMoveIndex, tabWheel } from "../_lib/tabs.js";
+import { tabLabel, tabLabelIsPath, tabSlot, tabMoveIndex } from "../_lib/tabs.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // Pi's mark as Herdr's program table has it, for when the pane's program isn't at hand.
@@ -28,8 +28,6 @@ export default class Tabs extends View {
     this.hovered = null;
     this.slot = null; // while dragging: the gap it would land in, 0..n
     this.ghostX = null; // while dragging: the pointer's x in the bar, where the ghost tab is drawn
-    this.scroll = ScrollHandle.new(); // the strip, stepped a tab at a time by a vertical wheel
-    this.wheel = { acc: 0, index: 0 };
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
   }
 
@@ -165,19 +163,12 @@ export default class Tabs extends View {
     const ghost = this.pressed?.moved && this.ghostX !== null ? shown.find(x => x.id === this.pressed.id) : null;
     // Handle style starts the strip 24 in: the island's 14 corner, then the first tab's 10 fillet on flat top.
     return h_flex().id("tab-bar").relative().size_full().min_w(0).px(8).pl(style === "handle" ? Math.max(lightsPadding, 24) : lightsPadding).gap(4).items_stretch().when(style !== "handle", el => el.bg(t.chrome))
-      // Released off the tabs: the drag is dropped. The wheel scrolls the strip (no tab switch).
+      // Released off the tabs: the drag is dropped.
       .on_mouse_up("left", (_e, cx) => { if (this.pressed) { this.pressed = null; this.slot = null; this.ghostX = null; cx.notify(); } })
       // Released outside the window's bar: no release reaches it, so leaving it ends the drag.
       .on_hover((on, cx) => { if (!on && this.pressed) { this.pressed = null; this.slot = null; this.ghostX = null; cx.notify(); } })
       // The dragged tab follows the pointer (only over the bar: moves reach it only there).
       .on_mouse_move((e, cx) => { if (this.pressed?.moved) { this.ghostX = e.local_position.x; cx.notify(); } })
-      // A vertical wheel steps the strip a tab at a time (Herdr's scroller takes horizontal swipes
-      // itself, and can only be moved to a child): coarse, by design of the API.
-      .on_scroll_wheel(e => {
-        const next = tabWheel(this.wheel, e.delta.y, e.delta.x, shown.length);
-        this.wheel = { acc: next.acc, index: next.index };
-        if (next.step) this.scroll.scroll_to_item(next.index);
-      })
       // The bar's bottom hairline, drawn first so the active tab covers it.
       .when(!style, el => el.child(div().absolute().left_0().right_0().bottom(0).h(1).bg(t.border)))
       // The ghost: no id and no handlers, so the release still reaches the tabs under it.
@@ -187,7 +178,7 @@ export default class Tabs extends View {
       // + right after the last tab, as in a browser; the right group is the panels.
       // Handle style: tabs touch (their fillets), and no scrollbar is painted over the junction.
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_stretch().gap(style === "handle" ? 0 : 2)
-        .when(style === "handle", el => el.overflow_x_scroll()).when(style !== "handle", el => el.overflow_x_scrollbar()).track_scroll(this.scroll).children(shown.map(item))
+        .when(style === "handle", el => el.overflow_x_scroll()).when(style !== "handle", el => el.overflow_x_scrollbar()).children(shown.map(item))
         .child(button("tab-new", svg(ICON("plus")).size(14), (_e, cx) => this.openNew(cx), "New tab")))
       .child(h_flex().flex_none().self_center().gap(2)
         .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "file")))
