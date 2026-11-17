@@ -135,6 +135,8 @@ export default class Info extends View {
     const back = this.detail === "call" && next.detail === "calls";
     Object.assign(this, next);
     this.prepare();
+    // Edited files: git is read now, not at the next tick.
+    if (next.detail === "files") this.wake?.();
     // Back onto the list: scrolled to the call it came from, once the list is drawn again (a
     // scroll asked for while it isn't is lost); the loop does it on its next poll.
     if (back) { const i = this.ids.indexOf(this.sel); this.scrollTo = i >= 0 ? i : null; }
@@ -459,7 +461,9 @@ export default class Info extends View {
   filesView(t) {
     const s = this.session;
     if (!s) return [];
-    const e = infoEdited(s, this.root()), g = this.git?.key === s.file ? this.git.files : {};
+    // git's figures of another session (the one shown before) aren't this one's: not loaded yet.
+    const git = this.git?.key === s.file ? this.git : null;
+    const e = infoEdited(s, this.root()), g = git?.files ?? {};
     const color = { A: t.ansi2, D: t.ansi1, U: t.ansi5, R: t.ansi4 };
     const row = (f) => {
       const st = g[f.rel];
@@ -470,13 +474,13 @@ export default class Info extends View {
           .child(div().flex_1().min_w(0).text_ellipsis_start().text_size(12).text_color(t.muted).child(f.dir)))
         .when(st?.added !== null && st?.added !== undefined, (x) => x.child(div().flex_none().text_size(12).text_color(t.ansi2).child(`+${st.added}`)))
         .when(Boolean(st?.removed), (x) => x.child(div().flex_none().text_size(12).text_color(t.ansi1).child(`−${st.removed}`)))
-        .when(!st, (x) => x.child(div().flex_none().text_size(12).text_color(t.dim).child(this.git ? "unchanged" : "")))
+        .when(!st, (x) => x.child(div().flex_none().text_size(12).text_color(t.dim).child(git ? "unchanged" : "")))
         .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.dim));
     };
     const n = `${e.files.length} file${e.files.length === 1 ? "" : "s"}`;
-    const out = [this.section(t, "In this repo", this.git?.exact ? `${n} · lines since the session began` : n), ...e.files.map(row)];
+    const out = [this.section(t, "In this repo", git?.exact ? `${n} · lines since the session began` : n), ...e.files.map(row)];
     if (e.atLeast) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("Some edits kept no file name: there may be more."));
-    if (this.git && !this.git.exact) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("Line counts need the commit the session started from: git status only."));
+    if (git && !git.exact) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("Line counts need the commit the session started from: git status only."));
     if (e.outside.length) {
       const open = this.outside;
       out.push(div().pt(8).child(chromeRow(UI, t, "outside", { onClick: (_e, cx) => this.command(open ? "close:outside" : "open:outside", cx) })
