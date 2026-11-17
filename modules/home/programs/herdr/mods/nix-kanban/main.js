@@ -10,7 +10,8 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, settings, run, props, shared, setShared, spaces, openOverlay, closeOverlay, notify, pickFolder, layout, nextCommand, exec, appHome } from "herdr";
-import { KNOWN_EXCLUSIVE, estimateDraft, estimateEdits, isEdited, resourceName, apiBase, fileSize, isImage, pickedPaths, pastedName, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces, SIDE_ORDER, isFolded, waitLabel, waitLabels, firstLine, paneRadius } from "./model.js";
+import { KNOWN_EXCLUSIVE, estimateDraft, estimateEdits, isEdited, resourceName, apiBase, fileSize, isImage, pickedPaths, pastedName, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces, SIDE_ORDER, isFolded, waitLabel, waitLabels, firstLine } from "./model.js";
+import { paneRadius } from "../_lib/pane.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // An image attachment's thumbnail height in the card dialog.

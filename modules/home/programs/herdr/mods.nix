@@ -13,7 +13,7 @@
   nix-changes = { };
   # The diff tab, editable: edit.js (its figures), and the editor's grid.js (key notation) and
   # nvim.js (its Neovim, started on diff.lua) joined in.
-  nix-diff = { shared = [ "editor.js" ]; modules = [ "model.js" "syntax.js" "edit.js" "../nix-editor/grid.js" "../nix-editor/nvim.js" ]; };
+  nix-diff = { shared = [ "editor.js" "pane.js" ]; modules = [ "model.js" "syntax.js" "edit.js" "../nix-editor/grid.js" "../nix-editor/nvim.js" ]; };
   nix-worktree = { shared = [ "repo.js" ]; };
   nix-menu = {
     shared = [
@@ -50,7 +50,7 @@
   };
   # The code editor: a renderer for a headless Neovim; grid.js (its UI as a grid) and
   # nvim.js (msgpack-RPC to it) joined in.
-  nix-editor = { modules = [ "grid.js" "nvim.js" ]; };
+  nix-editor = { shared = [ "pane.js" ]; modules = [ "grid.js" "nvim.js" ]; };
   # The Info panel: the selected Pi session and the Claude usage; model.js (the figures) joined in.
   nix-info = { shared = [ "editor.js" ]; modules = [ "model.js" ]; };
   # The Games panel: micro-breaks while an agent works; model.js (the rules and the agent
@@ -58,5 +58,5 @@
   nix-games = { modules = [ "../nix-info/model.js" "model.js" ]; };
   # The kanban (the Kanban sidebar, the board as a tab, its dialogs and menu), on the
   # herdr-kanban daemon below; model.js (its figures) joined in.
-  nix-kanban = { modules = [ "model.js" ]; };
+  nix-kanban = { shared = [ "pane.js" ]; modules = [ "model.js" ]; };
 }
