@@ -45,5 +45,5 @@ export function chromeSection(ui, t, id, label, meta = null, onClick = null) {
     .when(Boolean(onClick), (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)).on_click(onClick))
     .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(t.muted).child(label))
     .when(Boolean(meta), (e) => e.child(div().flex_none().text_size(12).text_color(t.muted).child(meta)))
-    .when(Boolean(onClick), (e) => e.child(svg(CHROME_ICON("chevron-right")).size(12).flex_none().text_color(t.dim)));
+    .when(Boolean(onClick), (e) => e.child(svg(CHROME_ICON("chevron-right")).size(12).flex_none().text_color(t.chevron ?? t.dim)));
 }

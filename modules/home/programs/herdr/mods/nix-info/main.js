@@ -329,15 +329,19 @@ export default class Info extends View {
   // from 80 %, error from 95 %; the pace notch. `expand`: the Context meter's chevron and click.
   meter(t, id, { label, ratio, right, pace = null, tip = null, expand = null }) {
     const tone = infoMeterTone(ratio ?? 0);
-    const fill = tone === "error" ? t.blocked : tone === "warning" ? t.ansi3 : t.foreground + "73";
+    const fill = tone === "error" ? t.blocked : tone === "warning" ? t.ansi3 : t.tones.fill;
     const r = Math.max(0, Math.min(1, ratio ?? 0));
     const head = h_flex().gap(6).items_center().text_size(12)
-      .when(Boolean(expand), (e) => e.child(svg(ICON(expand?.open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.dim)))
+      .when(Boolean(expand), (e) => e.child(svg(ICON(expand?.open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.chevron)))
       .child(div().flex_none().text_color(t.muted).child(label))
       .child(div().flex_none().font_medium().text_color(tone === "normal" ? t.foreground : fill).child(pct(ratio)))
       .child(div().flex_1().min_w(0).truncate().text_right().text_color(t.muted).child(right ?? ""));
-    const bar = div().relative().h(4).w_full().rounded(2).bg(t.raised).child(div().h(4).rounded(2).bg(fill).w(`${(r * 100).toFixed(1)}%`))
-      .when(pace !== null && pace !== undefined, (e) => e.child(div().absolute().top(0).h(4).w(1).bg(t.foreground + "4d").left(`${(Math.max(0, Math.min(1, pace)) * 100).toFixed(1)}%`)));
+    // R2-4: the pace notch is 8 pt tall on the 4 pt bar, so 2 pt of it shows on the island above
+    // and below whatever the fill.
+    // Beside the bar, not in it: the rounded bar clips what it holds.
+    const bar = div().relative().h(8).w_full()
+      .child(div().absolute().top(2).left(0).right(0).h(4).rounded(2).bg(t.tones.track).child(div().h(4).rounded(2).bg(fill).w(`${(r * 100).toFixed(1)}%`)))
+      .when(pace !== null && pace !== undefined, (e) => e.child(div().absolute().top(0).h(8).w(1).bg(t.tones.notch).left(`${(Math.max(0, Math.min(1, pace)) * 100).toFixed(1)}%`)));
     return v_flex().id(id).px(CHROME.rowX).py(4).gap(5).rounded(CHROME.radius)
       .when(Boolean(tip), (e) => e.tooltip(tip))
       .when(Boolean(expand), (e) => e.cursor_pointer().hover((x) => x.bg(t.hover)).on_click(expand.onClick))
@@ -383,7 +387,7 @@ export default class Info extends View {
       .child(svg(ICON("file-text")).size(14).flex_none().text_color(t.dim))
       .child(div().flex_1().min_w(0).truncate().text_color(go ? t.foreground : t.muted).child(text))
       .when(e.outside.length > 0, (x) => x.child(div().flex_none().text_size(12).text_color(t.dim).child(`+${e.outside.length} outside`)))
-      .when(Boolean(go), (x) => x.child(svg(ICON("chevron-right")).size(12).flex_none().text_color(t.dim))));
+      .when(Boolean(go), (x) => x.child(svg(ICON("chevron-right")).size(12).flex_none().text_color(t.chevron))));
   }
 
   // D5: a call as a row: [disclosure] icon, the one thing that tells it apart (a path sans as
@@ -421,12 +425,12 @@ export default class Info extends View {
     const KIND = { code: "Script", bash: "Bash", read: "Read", edit: "Edit", write: "Write", ask: "Question", fetch: "Fetch", agent: "Agent" };
     return chromeRow(UI, t, `call-${c.id}`, { on, onClick: inList ? null : onClick, clickable: inList || Boolean(onClick) })
       .when(Boolean(c.full || c.arg) && !more, (e) => e.tooltip(tipText(c.merged ? `${c.tip}\n${c.full || c.arg}` : `${KIND[c.kind] ?? c.name}: ${c.full || c.arg}`)))
-      .when(c.level === 1, (e) => e.child(div().w(10).h_full().flex_none().child(div().ml(4).w(1).h_full().bg(t.border))))
+      .when(c.level === 1, (e) => e.child(div().w(10).h_full().flex_none().child(div().ml(4).w(1).h_full().bg(t.tones.guide))))
       .child(div().w(10).flex_none().flex().items_center().justify_center()
         // R2-1: a script merged with its one step: the script's marker, muted, no action of its own.
         .when(Boolean(c.merged), (e) => e.child(svg(ICON(TOOL_ICON.code)).size(10).text_color(t.dim)))
         .when(Boolean(disclose), (e) => e.id(`toggle-${c.id}`).cursor_pointer().when(!inList, (x) => x.on_click(disclose.onClick))
-          .child(svg(ICON(disclose.open ? "chevron-down" : "chevron-right")).size(10).text_color(t.dim))))
+          .child(svg(ICON(disclose.open ? "chevron-down" : "chevron-right")).size(10).text_color(t.chevron))))
       .when(!more, (e) => e.child(svg(ICON(TOOL_ICON[c.kind] ?? "box")).size(14).flex_none().text_color(t.dim)))
       .child(text)
       .when(Boolean(c.failed), (e) => e.child(div().size(6).flex_none().rounded(3).bg(t.blocked)))
@@ -434,7 +438,7 @@ export default class Info extends View {
       .when(!more, (e) => e.child(div().flex_none().min_w(28).text_right().text_size(12).text_color(t.muted)
         .when(state === "done" && (c.duration === null || c.duration === undefined), (x) => x.id(`time-${c.id}`).tooltip("No timing recorded"))
         .child(state === "running" ? this.spinner(t) : state === "no-result" ? "No result" : infoRowDuration(c.duration))))
-      .when(Boolean(onClick) || inList, (e) => e.child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.dim)));
+      .when(Boolean(onClick) || inList, (e) => e.child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.chevron)));
   }
 
   // O1: the last 8 calls, a script's steps under it (the first 3, then "+N steps").
@@ -501,7 +505,7 @@ export default class Info extends View {
         .when(st?.added !== null && st?.added !== undefined, (x) => x.child(div().flex_none().text_size(12).text_color(t.ansi2).child(`+${st.added}`)))
         .when(Boolean(st?.removed), (x) => x.child(div().flex_none().text_size(12).text_color(t.ansi1).child(`−${st.removed}`)))
         .when(!st, (x) => x.child(div().flex_none().text_size(12).text_color(t.dim).child(git ? "unchanged" : "")))
-        .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.dim));
+        .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.chevron));
     };
     const n = `${e.files.length} file${e.files.length === 1 ? "" : "s"}`;
     const out = [this.section(t, "In this repo", git?.exact ? `${n} · lines since the session began` : n), ...e.files.map(row)];
@@ -510,12 +514,12 @@ export default class Info extends View {
     if (e.outside.length) {
       const open = this.outside;
       out.push(div().pt(8).child(chromeRow(UI, t, "outside", { onClick: (_e, cx) => this.command(open ? "close:outside" : "open:outside", cx) })
-        .child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.dim))
+        .child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.chevron))
         .child(div().flex_1().text_size(12).font_medium().text_color(t.muted).child(`Outside this repo (${e.outside.length})`))));
       const home = (p) => p.replace(/^\/Users\/[^/]+/, "~");
       if (open) for (const f of e.outside) out.push(chromeRow(UI, t, `outside-${f.path}`, { onClick: (ev) => openInEditor(HERDR, f.path, { side: ev.modifiers.alt }) }).pl(CHROME.rowX + 18).tooltip(f.path)
         .child(div().flex_1().min_w(0).text_ellipsis_start().text_size(12).text_color(t.foreground).child(home(f.path)))
-        .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.dim)));
+        .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.chevron)));
     }
     return out;
   }
@@ -664,7 +668,7 @@ export default class Info extends View {
   // ---- inspector: the selected call in full ----------------------------------------------
 
   code(t, children) {
-    return v_flex().mx(CHROME.headerX).px(10).py(8).rounded(CHROME.radius).bg(t.background).when(infoLight(t), (e) => e.border_1().border_color(t.border))
+    return v_flex().mx(CHROME.headerX).px(10).py(8).rounded(CHROME.radius).bg(t.tones.code).when(infoLight(t), (e) => e.border_1().border_color(t.border))
       .font_family(MONO()).text_size(12).line_height("18px").children(children);
   }
 
@@ -774,7 +778,8 @@ export default class Info extends View {
     // The view outlives layout edits, so a changed props.detail is taken here.
     const asked = props()?.detail ?? null;
     if (asked !== this.asked) { this.asked = asked; this.detail = asked; }
-    const t = theme(), now = Date.now();
+    // R2-4: the quiet colours (meters, chevrons, guides, code) from the theme, to contrast targets.
+    const base = theme(), tones = infoTones(base), t = { ...base, tones, chevron: tones.chevron }, now = Date.now();
     const f = this.figures(now);
     // The header names the model, not the session again (D8).
     const s = this.session;
