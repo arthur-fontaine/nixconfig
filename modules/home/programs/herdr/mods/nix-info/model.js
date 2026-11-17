@@ -49,6 +49,7 @@ export function infoNewSession(file) {
     files: new Map(), // path → { added, removed }
     written: new Map(), // path → content of its last write, for diffing the next one
     pendingCompaction: false,
+    untitled: 0, // codemode calls without a title of their own (details.title)
   };
 }
 
@@ -191,8 +192,9 @@ function infoNestedArg(m, cwd) {
   return infoCallLabel(calls[0].name, args && typeof args === "object" ? args : {}, cwd);
 }
 
-// sha256 as hex, of a string's UTF-8 (a lone surrogate as U+FFFD, as Node encodes it): the
-// panel's runtime has no crypto, and bash-titles keys its cache by this hash.
+// sha256 as hex, of a string's UTF-8 (a lone surrogate as U+FFFD, as Node encodes it), which
+// bash-titles keys its cache by. Here rather than Herdr's crypto: this file is joined into two
+// bundles with its imports dropped, and runs under node --test as is.
 const INFO_PRIMES = [];
 for (let n = 2; INFO_PRIMES.length < 64; n++) if (INFO_PRIMES.every((p) => n % p)) INFO_PRIMES.push(n);
 const infoFrac = (x) => ((x - Math.floor(x)) * 4294967296) >>> 0;
@@ -326,6 +328,7 @@ function apply(state, entry) {
       state.tools.set(b.id, { ...infoTool(b, state.cwd), started: ms(m.timestamp) ?? t, duration: null, error: null, call: b,
         args: infoCapValue(b.arguments ?? {}), result: null, resultCut: false, finished: null });
       state.order.push(b.id);
+      if (b.name === "codemode") state.untitled++;
     }
   } else if (m.role === "toolResult") {
     const call = state.tools.get(m.toolCallId);
@@ -339,7 +342,11 @@ function apply(state, entry) {
     // Pi's edit result carries the diff with line numbers: the inspector shows it as is.
     const diff = m.details?.diff;
     if (typeof diff === "string") call.diff = infoParseDiff(diff.length > RESULT_CAP ? diff.slice(0, RESULT_CAP) : diff);
-    if (call.name === "codemode") call.arg = infoNestedArg(m, state.cwd) ?? call.arg;
+    if (call.name === "codemode") {
+      call.arg = infoNestedArg(m, state.cwd) ?? call.arg;
+      const title = m.details?.title;
+      if (typeof title === "string" && title.trim() && call.title === undefined) { call.title = title.trim(); state.untitled--; }
+    }
     // Lines count once the edit or write went through.
     if (!call.error) countLines(state, call.call);
     delete call.call;
@@ -472,13 +479,14 @@ export function infoCache(state) {
   return { last: last ? hit(last) : null, session: hit(state.totals), read: state.totals.cacheRead, written: state.totals.cacheWrite, input: state.totals.input, output: state.totals.output };
 }
 
-// Tool calls newest first; `running` = no result yet. `titles`: bash-titles.json, whose title
-// names a codemode call before its own arg (one ending in "…" was cut by an old limit: none).
+// Tool calls newest first; `running` = no result yet. A codemode call is named by its result's
+// details.title, else by `titles` (bash-titles.json, for older sessions and running scripts; a
+// title ending in "…" was cut by an old limit: none), else by its own arg.
 export function infoTools(state, titles = null) {
   return state.order.slice().reverse().map((id) => {
     const c = state.tools.get(id);
-    let arg = c.arg;
-    if (titles && c.name === "codemode") {
+    let arg = c.title ?? c.arg;
+    if (titles && c.name === "codemode" && c.title === undefined) {
       c.titleKey ??= infoScriptKey(c.full);
       const title = titles[c.titleKey];
       if (typeof title === "string" && title && !title.endsWith("…")) arg = title;
@@ -486,6 +494,11 @@ export function infoTools(state, titles = null) {
     return { id: c.id, kind: c.kind, name: c.name, arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null,
       args: c.args, result: c.result, resultCut: c.resultCut, finished: c.finished, diff: c.diff ?? null };
   });
+}
+
+// Whether bash-titles.json could name a call: some codemode call has no title of its own.
+export function infoNeedsTitles(state) {
+  return state.untitled > 0;
 }
 
 export function infoRunning(state) {

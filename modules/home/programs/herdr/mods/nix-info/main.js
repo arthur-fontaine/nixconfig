@@ -9,7 +9,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoLastCall, infoLines, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoLastCall, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
 
 // The editor (../_lib/editor.js) gets the herdr functions it uses.
 const HERDR = { spaces, panes, run, shared, setShared, notify };
@@ -80,7 +80,7 @@ export default class Info extends View {
     this.usage = null;
     this.windows = {}; // model id → context window
     this.titles = null; // bash-titles.json: codemode scripts' titles by key
-    this.titlesText = null;
+    this.titlesStamp = null; // its mtime and size when last read
     this.resolved = new Map(); // terminal + title → session file
     this.loop = false;
     // "context" | "activity" | "lines"; a layout may open on one (props.detail).
@@ -172,15 +172,22 @@ export default class Info extends View {
     return changed;
   }
 
+  // bash-titles.json (some 300 KB): read again only when its mtime or size changed. Herdr's fs
+  // has no stat, hence the process.
+  async readTitles() {
+    const file = `${home()}/.pi/agent/bash-titles.json`;
+    const r = await exec("stat", ["-f", "%m %z", file]).catch(() => null);
+    const stamp = r?.code === 0 ? r.stdout.trim() : null;
+    if (stamp === this.titlesStamp) return;
+    this.titlesStamp = stamp;
+    const text = stamp ? await readFile(file, "utf8").catch(() => null) : null;
+    try { this.titles = text ? JSON.parse(text) : null; } catch { this.titles = null; }
+  }
+
   async readUsage() {
     const text = await readFile(`${home()}/.pi/agent/claude-usage.json`, "utf8").catch(() => null);
     try { this.usageRecord = text ? JSON.parse(text) : null; } catch { this.usageRecord = null; }
-    // Pi's bash-titles writes it whole (a rename): parsed again only when it changed.
-    const titles = await readFile(`${home()}/.pi/agent/bash-titles.json`, "utf8").catch(() => null);
-    if (titles !== this.titlesText) {
-      this.titlesText = titles;
-      try { this.titles = titles ? JSON.parse(titles) : null; } catch { this.titles = null; }
-    }
+    if (this.session && infoNeedsTitles(this.session)) await this.readTitles();
     if (!Object.keys(this.windows).length) {
       const store = await readFile(`${home()}/.pi/agent/models-store.json`, "utf8").catch(() => null);
       try {

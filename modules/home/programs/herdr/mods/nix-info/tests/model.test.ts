@@ -4,7 +4,7 @@ import {
   infoCache, infoCategory, infoCommand, infoFiles, infoLastCall, infoContext, infoDuration, infoFeed, infoLineDiff, infoLines, infoNewSession, infoParseTitle,
   infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length,
   infoCapValue, infoClock, infoEditDiff, infoJsonLines, infoParseDiff, infoResultLines, RESULT_CAP,
-  infoPace, FIVE_HOURS, SEVEN_DAYS, infoTokensLeft, infoScriptKey,
+  infoPace, FIVE_HOURS, SEVEN_DAYS, infoTokensLeft, infoScriptKey, infoNeedsTitles,
 } from "../model.js";
 import { keyOf, scriptKey } from "../../../../pi/extensions/bash-titles/titles.ts";
 
@@ -272,5 +272,30 @@ test("the script key is bash-titles' own", () => {
     const code = "é" + "a".repeat(n - 2);
     assert.equal(infoScriptKey(code), keyOf(scriptKey(code)), String(n));
   }
+});
+
+
+test("a codemode result's details.title names the call, before bash-titles.json", () => {
+  const code = "const a = await tools.bash({ command: 'ls' });\nconst b = await tools.read({ path: 'x' });";
+  const s = infoNewSession("f");
+  infoFeed(s, assistant("2026-11-03T10:00:05.000Z", { input: 1, output: 1 }, [codemode("t", code), codemode("blank", "return 1"), codemode("run", "return 2")])
+    + result("2026-11-03T10:00:06.000Z", "t", { details: { title: "Lists the files and reads x", calls: [] }, ...nested("t", [["bash", { command: "ls" }], ["read", { path: "x" }]]) })
+    + result("2026-11-03T10:00:06.000Z", "blank", { details: { title: "  " } }));
+  const titles = { [infoScriptKey(code)]: "An older title from the file", [infoScriptKey("return 2")]: "Returns two" };
+  assert.deepEqual(rows(s, titles).reverse(), [["t", "code", "Lists the files and reads x"], ["blank", "code", "return 1"], ["run", "code", "Returns two"]]);
+  assert.deepEqual(rows(s).reverse(), [["t", "code", "Lists the files and reads x"], ["blank", "code", "return 1"], ["run", "code", "return 2"]]);
+});
+
+test("bash-titles.json is needed only while a codemode call has no title of its own", () => {
+  const s = infoNewSession("f");
+  infoFeed(s, SESSION);
+  assert.equal(infoNeedsTitles(s), false);
+  infoFeed(s, assistant("2026-11-03T10:02:00.000Z", { input: 1, output: 1 }, [codemode("x", "return 1")]));
+  assert.equal(infoNeedsTitles(s), true);
+  infoFeed(s, result("2026-11-03T10:02:01.000Z", "x", { details: { title: "Returns one" } }));
+  assert.equal(infoNeedsTitles(s), false);
+  // An older session: results without a title keep needing the file.
+  infoFeed(s, assistant("2026-11-03T10:03:00.000Z", { input: 1, output: 1 }, [codemode("y", "return 2")]) + result("2026-11-03T10:03:01.000Z", "y", nested("y", [])));
+  assert.equal(infoNeedsTitles(s), true);
 });
 
