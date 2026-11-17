@@ -141,7 +141,7 @@ export function infoTool(raw, cwd) {
     case "Agent":
       return { ...base, kind: "agent", arg: firstLine([a.subagent_type, a.description ?? a.prompt].filter(Boolean).join(": ")) };
     case "codemode":
-      return { ...base, kind: "code", arg: infoScriptArg(String(a.code ?? ""), cwd), full: String(a.code ?? "") };
+      return { ...base, kind: "code", ...infoScriptCall(String(a.code ?? ""), cwd), full: String(a.code ?? "") };
     default:
       return { ...base, kind: call.name, arg: firstLine(Object.values(a).find((v) => typeof v === "string") ?? "") };
   }
@@ -156,10 +156,11 @@ function infoCallNames(names) {
   return [...n].map(([k, c]) => (c > 1 ? `${k} ×${c}` : k)).join(", ");
 }
 
-// One call as "bash: git status", "read: src/a.ts"; its kind alone when it has no argument.
+// One call as its argument ("git status", "src/a.ts"), its kind alone when it has none; the kind
+// goes apart (argKind), never as a prefix (R2-3).
 function infoCallLabel(name, args, cwd) {
   const t = infoTool({ name, arguments: args }, cwd);
-  return t.arg ? `${t.kind}: ${t.arg}` : t.kind;
+  return { arg: t.arg || t.kind, argKind: t.kind };
 }
 
 const INFO_ARG_KEYS = ["command", "path", "url", "urls", "query", "question"];
@@ -179,14 +180,20 @@ function infoCodeArgs(text) {
 // A script's arg before it has a result: its calls when the code names several, the one call
 // with its literal argument, else its first line that isn't a comment or a lone bracket.
 export function infoScriptArg(code, cwd) {
+  return infoScriptCall(code, cwd).arg;
+}
+
+// The same with the kind of what the arg names: a call's kind, "calls" for a list of them, "code"
+// for a line of the code.
+function infoScriptCall(code, cwd) {
   const calls = [...code.matchAll(INFO_TOOL_CALL)];
-  if (calls.length > 1) return infoCallNames(calls.map((m) => m[1]));
+  if (calls.length > 1) return { arg: infoCallNames(calls.map((m) => m[1])), argKind: "calls" };
   if (calls.length === 1) {
     const args = infoCodeArgs(code.slice(calls[0].index));
     if (args) return infoCallLabel(calls[0][1], args, cwd);
   }
   const line = code.split("\n").map((l) => l.trim()).find((l) => l && !/^(\/\/|\/\*|\*)/.test(l) && /[\w"'`]/.test(l));
-  return line ?? firstLine(code).trim();
+  return { arg: line ?? firstLine(code).trim(), argKind: "code" };
 }
 
 // details.calls' arguments: JSON cut at some length, so read by regex when they don't parse.
@@ -226,7 +233,7 @@ function infoNestedCalls(m) {
 
 // A finished script's arg from the calls it made; null when it made none (it threw first).
 function infoNestedArg(calls, cwd) {
-  if (calls.length > 1) return infoCallNames(calls.map((c) => c.name));
+  if (calls.length > 1) return { arg: infoCallNames(calls.map((c) => c.name)), argKind: "calls" };
   return calls.length ? infoCallLabel(calls[0].name, calls[0].args, cwd) : null;
 }
 
@@ -469,7 +476,8 @@ function apply(state, entry) {
     const covered = infoCountChanges(state, m.toolCallId, m.details?.fileChanges);
     if (call.name === "codemode") {
       const calls = infoNestedCalls(m);
-      call.arg = infoNestedArg(calls, state.cwd) ?? call.arg;
+      const named = infoNestedArg(calls, state.cwd);
+      if (named) { call.arg = named.arg; call.argKind = named.argKind; }
       // A failed nested call is an error, though the script caught it and went on.
       call.error ||= calls.some((c) => c.error);
       const outputs = m.details?.callOutputs ?? {};
@@ -486,7 +494,7 @@ function apply(state, entry) {
         if (wants) state.untitledNested++;
         // An edit or write that kept no arguments and no readable path: its file is unknown.
         const lost = !c.pathKnown && (c.name === "edit" || c.name === "write");
-        return { id: typeof c.id === "string" ? c.id : `${m.toolCallId}/${i + 1}`, name: c.name, kind: t.kind, arg: lost ? "File not recorded" : c.title ?? t.arg, full: lost ? "Pi kept neither this call's arguments nor its path" : t.full ?? t.arg, path: lost ? null : infoAbs(t.path, state.cwd), wants,
+        return { id: typeof c.id === "string" ? c.id : `${m.toolCallId}/${i + 1}`, name: c.name, kind: t.kind, arg: lost ? "File not recorded" : c.title ?? t.arg, titled: Boolean(c.title), placeholder: lost, full: lost ? "Pi kept neither this call's arguments nor its path" : t.full ?? t.arg, path: lost ? null : infoAbs(t.path, state.cwd), wants,
           error: c.error, duration: c.duration, args: infoCapValue(c.args, INFO_NESTED_ARG_CAP),
           result: text.slice(0, INFO_NESTED_ARG_CAP), resultCut: text.length > INFO_NESTED_ARG_CAP || (!c.error && out?.total > lines.length) };
       });
@@ -643,8 +651,8 @@ export function infoTools(state, titles = null) {
     const fromFile = (key) => { const x = titles?.[key]; return typeof x === "string" && x && !x.endsWith("…") ? x : null; };
     let arg = c.title ?? c.lateTitle ?? c.arg;
     if (c.titleKey && !c.titled) arg = fromFile(c.titleKey) ?? arg;
-    const nested = titles && c.nested ? c.nested.map((sub) => (sub.titleKey && fromFile(sub.titleKey) ? { ...sub, arg: fromFile(sub.titleKey) } : sub)) : c.nested;
-    return { id: c.id, kind: c.kind, name: c.name, arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null,
+    const nested = titles && c.nested ? c.nested.map((sub) => (sub.titleKey && fromFile(sub.titleKey) ? { ...sub, arg: fromFile(sub.titleKey), titled: true } : sub)) : c.nested;
+    return { id: c.id, kind: c.kind, name: c.name, arg, argKind: c.argKind ?? null, titled: arg !== c.arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null,
       threw: c.threw ?? null, nested: nested ?? null,
       // D6: a call failed (filled dot) when it failed itself; a script that went on after a
       // failed step didn't (hollow dot).
@@ -666,7 +674,9 @@ export function infoKeep(c, kind) {
   const matched = c.nested?.filter(pick) ?? [];
   if (infoFailedKind(kind) ? !c.error : !kinds.includes(c.kind) && !matched.length) return null;
   // steps keeps them all: an untitled script is named after all its steps, not the shown ones.
-  return c.nested ? { ...c, nested: matched, steps: c.steps ?? c.nested } : c;
+  // context: kept only for the steps that match (R2-2: its text muted, counted apart).
+  const context = !(infoFailedKind(kind) ? c.error : kinds.includes(c.kind)) || undefined;
+  return c.nested ? { ...c, nested: matched, steps: c.steps ?? c.nested, context } : c;
 }
 
 const INFO_LISTS = ["calls", "files"];
@@ -704,9 +714,105 @@ export function infoViewCommand(view, command, ids = []) {
 // The rows listed: each call at level 0, a script's calls under it at level 1, in call order.
 export function infoRows(calls) {
   return calls.flatMap((c) => [{ ...c, level: 0 }, ...(c.nested ?? []).map((n) => ({
-    id: n.id, parent: c.id, level: 1, name: n.name, kind: n.kind, arg: n.arg, full: n.full, path: n.path, duration: n.duration,
+    id: n.id, parent: c.id, level: 1, name: n.name, kind: n.kind, arg: n.arg, titled: Boolean(n.titled), placeholder: Boolean(n.placeholder), full: n.full, path: n.path, duration: n.duration,
     error: n.error, threw: n.error, failed: n.error, stepFailed: false, startedExact: null, untitled: false, running: false, started: null, finished: null, args: n.args, result: n.result, resultCut: n.resultCut, diff: null, nested: null,
   }))]);
+}
+
+// R2-1: an untitled script that finished with one step, as one row: the script's id, time and
+// state, the step's kind and text (its type rule). Null for any other call. Decided on all its
+// steps (steps, under a filter), so a filter never merges a script of several.
+export function infoMergedRow(c) {
+  const all = c.steps ?? c.nested;
+  if (c.kind !== "code" || !c.untitled || c.running || all?.length !== 1) return null;
+  const [s] = all;
+  const tip = c.failed && s.error ? "Script and its step failed" : `Script with 1 step${s.duration !== null && s.duration !== undefined ? ` · step took ${infoRowDuration(s.duration)}` : ""}`;
+  return { ...c, level: 0, merged: true, kind: s.kind, name: s.name, arg: s.arg, full: s.full, path: s.path, titled: Boolean(s.titled), placeholder: Boolean(s.placeholder),
+    argKind: null, untitled: false, nested: null, steps: null, tip };
+}
+
+// The rows a list shows (Calls, Recent calls): a merged row for a one-step script, else the call
+// and its steps unless collapsed. infoRows stays unmerged: counts, chips and the call view use it.
+export function infoListRows(calls, collapsed = []) {
+  return calls.flatMap((c) => {
+    const merged = infoMergedRow(c);
+    if (merged) return [merged];
+    return collapsed.includes(c.id) || !c.nested?.length ? [{ ...c, level: 0 }] : infoRows([c]);
+  });
+}
+
+// 1467 → "1,467".
+export function infoNum(n) {
+  return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+// The Calls meta (R2-2), in rows: "200 of 216 rows", "3 rows · 1 for context".
+export function infoListMeta(shown, total, context = 0) {
+  const rows = shown === total ? `${infoNum(total)} row${total === 1 ? "" : "s"}` : `${infoNum(shown)} of ${infoNum(total)} rows`;
+  return context ? `${rows} · ${infoNum(context)} for context` : rows;
+}
+
+export function infoShowAll(total) {
+  return `Show all ${infoNum(total)} rows`;
+}
+
+// A list row's time, as the call view says it: "<0.1s" for an instant call, blank without timing.
+export function infoRowDuration(msec) {
+  if (msec === null || msec === undefined) return "";
+  return msec < 100 ? "<0.1s" : infoDuration(msec);
+}
+
+// R2-6: a file as its name and a short folder. In the repo the last folder segment; outside, its
+// anchor (/ or ~) and last segment: "/tmp/…/scratch". tip: the repo-relative or whole path.
+export function infoFolder(path, root, home) {
+  const p = String(path ?? "");
+  const cut = p.lastIndexOf("/"), name = p.slice(cut + 1), dir = cut < 0 ? "" : p.slice(0, cut);
+  if (root && p.startsWith(root + "/")) {
+    const rel = p.slice(root.length + 1);
+    const segs = rel.split("/").slice(0, -1);
+    return { name, folder: segs.at(-1) ?? "", tip: rel };
+  }
+  const inHome = home && (dir === home || dir.startsWith(home + "/"));
+  const anchor = inHome ? "~" : "";
+  const segs = (inHome ? dir.slice(home.length) : dir).split("/").filter(Boolean);
+  const folder = !segs.length ? anchor || "/"
+    : inHome ? (segs.length === 1 ? `~/${segs[0]}` : `~/…/${segs.at(-1)}`)
+    : segs.length <= 2 ? `/${segs.join("/")}` : `/${segs[0]}/…/${segs.at(-1)}`;
+  return { name, folder, tip: p };
+}
+
+// ---- R2-4: quiet colours from the theme, to contrast targets ------------------------------
+
+const rgb = (hex) => { const h = String(hex).replace("#", ""); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
+const lum = (hex) => {
+  const [r, g, b] = rgb(hex).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+// WCAG's contrast ratio of two #rrggbb colours.
+export function infoContrast(a, b) {
+  const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
+const mix = (a, b, f) => "#" + rgb(a).map((v, i) => Math.round(v + (rgb(b)[i] - v) * f).toString(16).padStart(2, "0")).join("");
+// The least of the foreground mixed into `base` that reaches `ratio` against `against`.
+const toward = (base, fg, against, ratio) => {
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 24; i++) { const f = (lo + hi) / 2; if (infoContrast(mix(base, fg, f), against) >= ratio) hi = f; else lo = f; }
+  return mix(base, fg, hi);
+};
+
+// critique-2 §6's targets, met in any theme (a little over each, against rounding): meter track
+// ≥ 1.25:1 to the island, fill ≥ 3.5:1 to the track, pace notch and chevrons ≥ 3:1 to the island
+// (as drawn),
+// tree guide ≈ 1.4:1; code blocks one step above the island (its surface).
+export function infoTones(t) {
+  const track = toward(t.chrome, t.foreground, t.chrome, 1.3);
+  return {
+    track, fill: toward(track, t.foreground, track, 3.6),
+    notch: toward(t.chrome, t.foreground, t.chrome, 3.4), // A 10 pt chevron's antialiased strokes measure about a quarter under its colour: 4.5 for ≥ 3.
+    chevron: toward(t.chrome, t.foreground, t.chrome, 4.5),
+    guide: toward(t.chrome, t.foreground, t.chrome, 1.4), code: t.surface,
+  };
 }
 
 // Calls made, nested included, and those that failed themselves (D6).
@@ -798,7 +904,7 @@ export function infoGitFiles(numstat, nameStatus, untracked = [], untrackedLines
 // the overview's recent calls with the steps it shows (3 each, none of a collapsed script).
 export function infoNavIds(view, listed, recent) {
   if (view.detail === "calls" || (view.detail === "call" && view.from === "calls")) return listed.map((r) => r.id);
-  return recent.flatMap((c) => [c.id, ...(view.collapsed.includes(c.id) ? [] : (c.nested ?? []).slice(0, 3).map((n) => n.id))]);
+  return recent.flatMap((c) => [c.id, ...(infoMergedRow(c) || view.collapsed.includes(c.id) ? [] : (c.nested ?? []).slice(0, 3).map((n) => n.id))]);
 }
 
 export function infoStepsLabel(nested) {

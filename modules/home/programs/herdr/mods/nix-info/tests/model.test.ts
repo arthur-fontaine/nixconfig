@@ -225,9 +225,9 @@ test("a codemode call is a short kind; while it runs, its arg comes from the cod
     codemode("plain", "// @options: {\"timeout_ms\": 1000}\n\nconst xs = [1, 2, 3];\nreturn xs.map((x) => x * 2)"),
   ]));
   assert.deepEqual(rows(s).reverse(), [
-    ["one", "code", "bash: git status -sb"],
-    ["path", "code", "read: src/a.ts"],
-    ["vars", "code", "bash: ls $P ${dir}"],
+    ["one", "code", "git status -sb"],
+    ["path", "code", "src/a.ts"],
+    ["vars", "code", "ls $P ${dir}"],
     ["many", "code", "bash ×2, read"],
     ["plain", "code", "const xs = [1, 2, 3];"],
   ]);
@@ -249,9 +249,9 @@ test("a finished codemode call is named by the calls it made", () => {
     + result("2026-11-03T10:00:06.000Z", "details", { details: { calls: [{ id: "details/1", name: "bash", args: '{"command":"git log --oneline -20; ls modules/home/programs/pi modules/home/progr...', status: "ok" }] } })
     + result("2026-11-03T10:00:06.000Z", "threw", { isError: true, ...nested("threw", []) }));
   assert.deepEqual(rows(s).reverse(), [
-    ["one", "code", "bash: pnpm test --filter x"],
+    ["one", "code", "pnpm test --filter x"],
     ["many", "code", "edit ×3, bash"],
-    ["details", "code", "bash: git log --oneline -20; ls modules/home/programs/pi modules/home/progr..."],
+    ["details", "code", "git log --oneline -20; ls modules/home/programs/pi modules/home/progr..."],
     ["threw", "code", "const r = await tools.bash({ command: cmd });"],
   ]);
 });
@@ -438,7 +438,7 @@ test("the kind filters keep a script for the calls it made, with only those unde
     [1, nofc + "/2", "bash", "sed -n 112,118p modules/home/programs/herdr/mods/nix-tabs/main.js"],
     [0, edit, "code", "write ×2, read, bash"],
     [1, edit + "/4", "bash", "git add mods.nix default.nix && git diff --cached --stat"],
-    [0, fail, "code", "bash: which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"],
+    [0, fail, "code", "which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"],
     [1, fail + "/1", "bash", "which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"],
   ]);
   assert.deepEqual(kept("read"), [[0, edit, "code", "write ×2, read, bash"], [1, edit + "/2", "read", "modules/home/programs/herdr/default.nix"]]);
@@ -451,7 +451,7 @@ test("the kind filters keep a script for the calls it made, with only those unde
   assert.deepEqual(kept("edit").map((r) => r[1]), ["again", "again/1", "again/2", nofc, nofc + "/1", edit, edit + "/1", edit + "/3"]);
   assert.deepEqual(kept("errors"), [
     [0, "again", "code", "edit ×2"], [1, "again/2", "edit", "x.ts"],
-    [0, fail, "code", "bash: which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"],
+    [0, fail, "code", "which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"],
     [1, fail + "/1", "bash", "which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"],
   ]);
   assert.deepEqual(kept("ask"), []);
