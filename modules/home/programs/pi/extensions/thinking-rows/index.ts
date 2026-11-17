@@ -6,7 +6,7 @@
 // comes, unless a click said otherwise.
 import { AssistantMessageComponent, type ExtensionAPI, type Theme } from "@earendil-works/pi-coding-agent";
 import { type Fade, fadeOf, faint } from "./faint.ts";
-import { displayMessage, isDisplayed, paintRow, renderMarkdown, rowText, type Message, type Row } from "./row.ts";
+import { displayMessage, isDisplayed, paintRow, PULSE, type Pulse, pulseLines, renderMarkdown, rowText, runningDot, type Message, type Row } from "./row.ts";
 
 // Pi's own method, kept globally from the first load: a reload (/reload, a rebuild picked up
 // without restarting) wraps it again with its own code, rather than keeping the first load's.
@@ -14,8 +14,10 @@ const ORIGINAL = Symbol.for("pi-extension-thinking-rows.original");
 const OVERRIDES = Symbol.for("pi-extension-thinking-rows.opened");
 const SOURCE = Symbol.for("pi-extension-thinking-rows.source");
 const LATEST = Symbol.for("pi-extension-thinking-rows.latest");
+const ORIGINAL_RENDER = Symbol.for("pi-extension-thinking-rows.original-render");
 type Update = (message: Message, streaming?: boolean) => void;
-type Proto = { updateContent: Update; [ORIGINAL]?: Update };
+type Render = (width: number) => string[];
+type Proto = { updateContent: Update; render: Render; [ORIGINAL]?: Update; [ORIGINAL_RENDER]?: Render };
 type Self = {
 	thinkingVisibilityOverrides?: Map<number, boolean>;
 	/** Runs the user opened (true) or closed (false) by a click, over the default. */
@@ -28,6 +30,10 @@ type Self = {
 const shared = globalThis as unknown as { [LATEST]?: { self: Self; at: number } };
 const order = new WeakMap<object, number>();
 let drawn = 0;
+// A running row's dot for the message drawn as `id`, set once the theme is known.
+let dotFor: ((id: string) => string) | undefined;
+const pulsing = new WeakSet<object>();
+const pulse = () => (globalThis as Record<symbol, Pulse | undefined>)[PULSE];
 
 const runsOf = (message: Message) =>
 	message.content.reduce((n, b, i, all) => n + (b.type === "thinking" && all[i - 1]?.type !== "thinking" ? 1 : 0), 0);
@@ -68,6 +74,22 @@ function hookComponent() {
 		}
 		return original.call(this, displayMessage(message, Boolean(streaming), open), streaming);
 	};
+
+	// A running row's dot, painted as the message is drawn: Pi draws it on each of compact-tools'
+	// frames while the dot asks for them, as it draws a running tool row.
+	if (typeof proto.render !== "function") return;
+	const render = (proto[ORIGINAL_RENDER] ??= proto.render);
+	proto.render = function (width) {
+		const lines = render.call(this, width);
+		if (!order.has(this)) return lines;
+		const id = `thinking-row:${order.get(this)}`;
+		const out = pulseLines(lines, () => {
+			pulsing.add(this);
+			return dotFor?.(id) ?? "⦁";
+		});
+		if (out === lines && pulsing.delete(this)) pulse()?.stop(id);
+		return out;
+	};
 }
 
 export default function (pi: ExtensionAPI) {
@@ -84,6 +106,10 @@ export default function (pi: ExtensionAPI) {
 		if (fade?.key !== key) fade = { key, value: fadeOf(t as never, 0.3) };
 		const dim = (text: string) => (fade?.value ? faint(text, fade.value) : text);
 		return paintRow(row, t, dim);
+	};
+	dotFor = (id) => {
+		const dim = (text: string) => (fade?.value ? faint(text, fade.value) : text);
+		return runningDot(pulse(), theme, id, dim);
 	};
 	pi.registerMarkdownTransformer((markdown, { messageType }) =>
 		messageType === "assistant-thinking" ? renderMarkdown(markdown, style) : markdown,

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { displayMessage, duration, paintRow, renderMarkdown, rowText, tokens } from "../row.ts";
+import { faint as toolFaint, fadeOf as toolFadeOf } from "../../tool-rows-faint/faint.ts";
+import { fadeOf, faint } from "../faint.ts";
+import { displayMessage, duration, paintRow, pulseLines, renderMarkdown, RUNNING_DOT, runningDot, rowText, tokens } from "../row.ts";
 
 const sig = { thinkingSignature: "x".repeat(10) };
 
@@ -83,5 +85,31 @@ test("an opened run's thinking gets past compact-tools' summary, after the row's
 test("the row is painted in a tool row's colors, its figures as a tool row's details", () => {
 	const tags = { fg: (token: string, text: string) => `<${token}>${text}</>`, bold: (text: string) => `<b>${text}</b>` };
 	assert.equal(paintRow({ running: false, tokens: 86, ms: 2000 }, tags), "\x1b[22;23m<success>⦁</> <toolTitle><b>Thinking</b></><toolOutput> (86 tokens · 2s)</>");
-	assert.equal(paintRow({ running: true }, tags, (text) => `~${text}~`), "\x1b[22;23m~<muted>⦁</> <toolTitle><b>Thinking</b></><toolOutput>…</>~");
+	// Running: a mark where the dot goes, painted when the row is drawn (pulseLines).
+	assert.equal(paintRow({ running: true }, tags, (text) => `~${text}~`), `\x1b[22;23m~<muted>${RUNNING_DOT}</> <toolTitle><b>Thinking</b></><toolOutput>…</>~`);
+});
+
+// A theme as Pi's in true color, for both fades.
+const theme = { getFgAnsi: (token: string) => (token === "text" ? "\x1b[38;2;222;224;225m" : "\x1b[38;2;119;126;133m"), appearance: "dark" };
+
+test("a running row's dot is compact-tools' running dot for this frame, faded as tool-rows-faint fades a tool row", () => {
+	const frames = ["\x1b[38;2;60;64;70m⦁\x1b[39m", "\x1b[38;2;120;126;133m⦁\x1b[39m"];
+	let frame = 0;
+	const painted: string[] = [];
+	const pulse = { paint: (_theme: unknown, id: string) => (painted.push(id), frames[frame]!), stop() {} };
+	const fade = (text: string) => faint(text, fadeOf(theme, 0.3)!);
+	const toolRow = (dot: string) => toolFaint(dot, toolFadeOf(theme, 0.3)!);
+	assert.equal(runningDot(pulse, theme, "thinking:1", fade), toolRow(frames[0]!));
+	frame = 1;
+	assert.equal(runningDot(pulse, theme, "thinking:1", fade), toolRow(frames[1]!));
+	assert.deepEqual(painted, ["thinking:1", "thinking:1"]);
+	// Without compact-tools, the dot stays as the row painted it (muted).
+	assert.equal(runningDot(undefined, theme, "thinking:1", fade), "⦁");
+});
+
+test("the mark is replaced in the drawn lines, which are left alone without one", () => {
+	const lines = [` \x1b[38;2;1;2;3m${RUNNING_DOT}\x1b[39m Thinking…`, "text"];
+	assert.deepEqual(pulseLines(lines, () => "<dot>"), [" \x1b[38;2;1;2;3m<dot>\x1b[39m Thinking…", "text"]);
+	const none = ["a", "b"];
+	assert.equal(pulseLines(none, () => { throw new Error("not painted"); }), none);
 });

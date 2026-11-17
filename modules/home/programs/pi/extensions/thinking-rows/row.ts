@@ -106,8 +106,35 @@ export function paintRow(
 	theme: { fg(token: string, text: string): string; bold(text: string): string },
 	fade: (text: string) => string = (text) => text,
 ): string {
-	const dot = theme.fg(row.running ? "muted" : "success", "⦁");
+	const dot = row.running ? theme.fg("muted", RUNNING_DOT) : theme.fg("success", "⦁");
 	return PLAIN + fade(`${dot} ${theme.fg("toolTitle", theme.bold("Thinking"))}${theme.fg("toolOutput", rowDetail(row))}`);
+}
+
+/**
+ * Where a running row's dot goes. Pi's Markdown keeps what it is given, so the dot is painted as the
+ * row is drawn (pulseLines), with the frame of compact-tools' running tool dots. One column wide, as
+ * "⦁" is; from Unicode's private use area, so no text has it.
+ */
+export const RUNNING_DOT = "\uE000";
+
+/** compact-tools' running dot, shared on globalThis (patches/pi-compact-tools-shared-pulse.patch). */
+export const PULSE = Symbol.for("pi-compact-tools.running-dot");
+export interface Pulse {
+	/** The dot for this frame; drawing it keeps `id` animating, as a drawn running tool row is. */
+	paint(theme: unknown, id: string): string;
+	stop(id: string): void;
+}
+
+/** A running row's dot: the running tool dot faded as tool-rows-faint fades a tool row, or "⦁". */
+export function runningDot(pulse: Pulse | undefined, theme: unknown, id: string, fade: (text: string) => string): string {
+	return pulse && theme ? fade(pulse.paint(theme, id)) : "⦁";
+}
+
+/** Drawn lines with each mark replaced by `dot()`; the same array when there is none. */
+export function pulseLines(lines: string[], dot: () => string): string[] {
+	if (!lines.some((line) => line.includes(RUNNING_DOT))) return lines;
+	const painted = dot();
+	return lines.map((line) => (line.includes(RUNNING_DOT) ? line.split(RUNNING_DOT).join(painted) : line));
 }
 
 /** How the row is painted: as a tool row is, when the theme is known. */

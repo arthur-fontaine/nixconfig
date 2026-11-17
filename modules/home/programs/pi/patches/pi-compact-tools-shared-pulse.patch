@@ -1,0 +1,22 @@
+A running dot other extensions can draw: compact-tools shares on globalThis
+(Symbol.for("pi-compact-tools.running-dot")) paint(theme, id), the running tool
+dot at the tool rows' frame, which keeps id animating while it is drawn, and
+stop(id). thinking-rows paints its running Thinking row's dot with it.
+
+diff --git a/extensions/compact-tools.ts b/extensions/compact-tools.ts
+index 40b2fa0..4043ab7 100644
+--- a/extensions/compact-tools.ts
++++ b/extensions/compact-tools.ts
+@@ -73,6 +73,12 @@ import {
+ const PREVIEW_DIFF_CONTEXT_LINES = 1;
+ 
+ const runtime = new ToolRuntime();
++// The running dot for rows drawn outside the tool renderers (thinking-rows'): the same pulse at the
++// same frame, and drawing it keeps the frames coming, as a drawn running tool row does.
++(globalThis as Record<symbol, unknown>)[Symbol.for("pi-compact-tools.running-dot")] = {
++	paint: (theme: Theme, id: string) => paintIndicator(theme, "running", runtime.syncIndicator(id, true, () => {})),
++	stop: (id: string) => void runtime.syncIndicator(id, false, () => {}),
++};
+ const nestedSummaries = new NestedCallSummaries();
+ let registeredConfiguration: string | undefined;
+ /**

@@ -165,7 +165,9 @@ let
   # title syntax-highlighting hands it, and its output sits apart from the calls listed above
   # it: dim behind its own "│", two lines cut to the row, then "… +N lines", then the stats. Loaded
   # from the extensions folder, not as a package, for its place among them (see
-  # extensionsManifest). Its imports are Pi's own packages; its theme isn't loaded.
+  # extensionsManifest). Its imports are Pi's own packages; its theme isn't loaded. With
+  # patches/pi-compact-tools-shared-pulse.patch, its running dot is shared on globalThis, so
+  # thinking-rows' running Thinking row pulses as a running tool row does.
   piCompactTools = pkgs.runCommand "pi-compact-tools-0.16.7-patched" { } ''
     mkdir -p $out
     tar xzf ${
@@ -176,6 +178,7 @@ let
     } -C $out --strip-components=1
     patch -d $out -p1 < ${./patches/pi-compact-tools-claude-bash.patch}
     patch -d $out -p1 < ${./patches/pi-compact-tools-claude-codemode.patch}
+    patch -d $out -p1 < ${./patches/pi-compact-tools-shared-pulse.patch}
   '';
   # Tool rows as Claude Code draws them. compact-tools rewrites the file (/compact-tools),
   # so it is merged, not replaced.
