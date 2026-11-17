@@ -7,8 +7,8 @@ const tabBase = (p) => String(p).replace(/\/+$/, "").split("/").pop() || "/";
 // ({ app, title, mod, cwd, program }); folder: its worktree's (or space's) folder.
 export function tabLabel({ named, name, lead, folder }) {
   const pi = lead?.app === "pi";
-  // "Pi" is what tabs started from + were named before k31: it reads as unnamed.
-  if (named && !(pi && name === "Pi")) return name;
+  // "Pi" is what tabs started from + were named before k31: it reads as unnamed, whatever runs now.
+  if (named && name !== "Pi") return name;
   if (pi) {
     const parts = String(lead.title ?? "").split(" - ");
     return parts[0] === "π" && parts.length > 2 ? parts.slice(1, -1).join(" - ") : "Pi";
@@ -23,10 +23,10 @@ export function tabLabel({ named, name, lead, folder }) {
   return tabBase(cwd);
 }
 
-// Where a tab dragged to pointer x lands: the gap between shown tabs nearest to it
-// (0: before the first, n: after the last). rects: the shown tabs' { left, width }.
-export function tabDropAt(rects, x) {
-  return rects.filter((r) => r.left + r.width / 2 < x).length;
+// Where a dragged tab lands, from the tab under the pointer (its index among the shown tabs,
+// the pointer along it, its length): the gap on the pointer's side of it, 0..n.
+export function tabSlot(index, at, length) {
+  return at < length / 2 ? index : index + 1;
 }
 
 // The drop slot as `tab.move`'s index: the tab's final place among all its space's tabs,

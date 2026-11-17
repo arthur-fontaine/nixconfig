@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { tabLabel, tabDropAt, tabMoveIndex } from "../tabs.js";
+import { tabLabel, tabSlot, tabMoveIndex } from "../tabs.js";
 
 const W = "/r/wt-a";
 const sh = (cwd, name = "zsh") => ({ cwd, title: "", program: { shell: true, agent: false, name } });
@@ -21,14 +21,16 @@ test("tabs: an idle shell at the worktree's root shows the worktree's folder", (
 test("tabs: an idle shell elsewhere shows that folder's name", () => assert.equal(tabLabel({ named: false, name: "2", lead: sh("/tmp/x"), folder: W }), "x"));
 test("tabs: nothing known reads Terminal", () => assert.equal(tabLabel({ named: false, name: "3", lead: null, folder: W }), "Terminal"));
 
-const rects = [{ left: 0, width: 100 }, { left: 102, width: 80 }, { left: 184, width: 120 }];
-test("tabs: the drop slot is the gap nearest the pointer", () => {
-  assert.equal(tabDropAt(rects, -5), 0);
-  assert.equal(tabDropAt(rects, 40), 0);
-  assert.equal(tabDropAt(rects, 60), 1);
-  assert.equal(tabDropAt(rects, 150), 2);
-  assert.equal(tabDropAt(rects, 400), 3);
+// Bounds only come with the hovered tab's own events: its index, the pointer in it, its length.
+test("tabs: the drop slot is the gap on the pointer's side of the hovered tab", () => {
+  assert.equal(tabSlot(0, 10, 100), 0);
+  assert.equal(tabSlot(0, 60, 100), 1);
+  assert.equal(tabSlot(2, 49, 100), 2);
+  assert.equal(tabSlot(2, 50, 100), 3);
+  assert.equal(tabSlot(1, -4, 80), 1);
 });
+test("tabs: a shell tab named Pi before k31 shows what runs now", () =>
+  assert.equal(tabLabel({ named: true, name: "Pi", lead: { cwd: "/r/wt-a", program: { shell: true, agent: false, name: "zsh" } }, folder: "/r/wt-a" }), "wt-a"));
 // tab.move's index is the final position from 1 (probed in the sandbox).
 test("tabs: a drop slot becomes tab.move's final position, through hidden tabs", () => {
   const all = ["a", "b", "c", "d"], shown = ["a", "c", "d"]; // b is settled
