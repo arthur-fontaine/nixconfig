@@ -65,6 +65,8 @@ test("edited files: in the repo only, outside ones apart, 'at least' when a writ
   const cut = feed(assistant(at("00:02"), [{ id: "c", name: "codemode", arguments: { code: "x" } }])
     + result(at("00:03"), "c", { nestedCalls: { calls: [{ id: "c/1", name: "write", status: "ok", argumentsBytes: 9000 }] }, details: { calls: [{ id: "c/1", name: "write", args: "{\"path\":\"/repo/sr" }] } }));
   assert.deepEqual(infoEdited(cut, "/repo"), { files: [], outside: [], atLeast: true });
+  const lost = infoRows(infoTools(cut)).find((r) => r.id === "c/1");
+  assert.deepEqual([lost.arg, lost.path], ["File not recorded", null]);
   // A failed edit didn't edit anything.
   const s = feed(assistant(at("00:02"), [{ id: "x", name: "edit", arguments: { path: "/repo/z.js", edits: [{ oldText: "a", newText: "b" }] } }])
     + result(at("00:03"), "x", { isError: true }));

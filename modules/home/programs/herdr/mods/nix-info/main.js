@@ -9,7 +9,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel } from "./model.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
 
@@ -101,6 +101,8 @@ export default class Info extends View {
     this.asked = undefined;
     this.all = false; // every tool call rendered, not just the latest 200
     this.kind = "all"; // the activity detail's filter
+    Object.assign(this, { from: null, collapsed: [], context: false, outside: false, fill: null });
+    this.roots = new Map(); // cwd → its git top (or the cwd), for repo-relative paths
     this.sel = null; // the tool call shown in the inspector
     this.ids = []; // the listed calls' ids, in order, for ↑/↓
     this.area = 0; // height of the list + inspector area
@@ -108,7 +110,8 @@ export default class Info extends View {
     // nix-info.detail:<key>, .kind:<key>, .select:<id>, .all, .back: any state by key or script.
     cx.spawn(async (cx) => {
       for (;;) {
-        const next = infoViewCommand({ detail: this.detail, kind: this.kind, sel: this.sel, all: this.all }, await nextCommand(), this.ids);
+        const view = Object.fromEntries(Object.keys(INFO_VIEW).map((k) => [k, this[k]]));
+        const next = infoViewCommand(view, await nextCommand(), this.ids);
         if (next) { Object.assign(this, next); cx.notify(); }
       }
     });
@@ -234,6 +237,10 @@ export default class Info extends View {
           let changed = moved;
           this.pane = p;
           const file = p ? await this.fileOf(p) : null;
+          if (p?.cwd && !this.roots.has(p.cwd)) {
+            const r = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: p.cwd }).catch(() => null);
+            this.roots.set(p.cwd, r?.code === 0 ? r.stdout.trim() : p.cwd);
+          }
           if (!file && this.session) { this.session = null; changed = true; }
           if (file && (await this.read(file))) changed = true;
           if (Date.now() - usageAt > USAGE_EVERY) { usageAt = Date.now(); await this.readUsage(); changed = true; }
@@ -323,6 +330,143 @@ export default class Info extends View {
 
   section(t, label, meta, _top = true, onClick = null) {
     return chromeSection(UI, t, `section-${label}`, label, meta, onClick);
+  }
+
+  // ---- redesign pieces (decisions.md) ---------------------------------------------------
+
+  // The tab's working clock: Herdr's, since when an agent in it works.
+  workingSince() {
+    for (const sp of spaces()) for (const tab of sp.tabs ?? []) if (tab.id === this.pane?.tab) return tab.working_since ?? null;
+    return null;
+  }
+
+  root() {
+    const cwd = this.session?.cwd ?? this.pane?.cwd;
+    return (cwd && this.roots.get(cwd)) ?? cwd ?? null;
+  }
+
+  // D1: π, the session's name, a spinner while working; the status line under it.
+  statusBlock(t, f, now) {
+    const s = this.session;
+    const status = this.pane?.status ?? null;
+    const line = s ? infoStatusLine({ status, since: this.workingSince(), state: s, tools: f.tools ?? [], now }) : { tone: "idle", text: "Loading session…" };
+    const tip = s ? `${s.prompts} prompt${s.prompts === 1 ? "" : "s"}, ${s.replies} repl${s.replies === 1 ? "y" : "ies"}${s.started ? ` · started ${infoAge(now - s.started)} ago` : ""}` : null;
+    const color = line.tone === "waiting" ? t.blocked : line.tone === "working" ? t.foreground : t.muted;
+    return v_flex().id("status").px(CHROME.headerX).pt(12).gap(2).when(Boolean(tip), (e) => e.tooltip(tip))
+      .child(h_flex().gap(8).items_center().child(this.piMark(t))
+        .child(div().flex_1().min_w(0).truncate().font_medium().text_color(t.foreground).child(s?.name ?? infoParseTitle(this.pane?.title)?.name ?? "Pi"))
+        .when(line.tone === "working", (e) => e.child(this.spinner(t, 13))))
+      .child(div().pl(22).min_w(0).truncate().text_size(12).text_color(color).child(line.text));
+  }
+
+  // D2: label + % and a right text on one line, a full-width 4 px bar under; neutral, warning
+  // from 80 %, error from 95 %; the pace notch. `expand`: the Context meter's chevron and click.
+  meter(t, id, { label, ratio, right, pace = null, tip = null, expand = null }) {
+    const tone = infoMeterTone(ratio ?? 0);
+    const fill = tone === "error" ? t.blocked : tone === "warning" ? t.ansi3 : t.foreground + "73";
+    const r = Math.max(0, Math.min(1, ratio ?? 0));
+    const head = h_flex().gap(6).items_center().text_size(12)
+      .when(Boolean(expand), (e) => e.child(svg(ICON(expand?.open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.dim)))
+      .child(div().flex_none().text_color(t.muted).child(label))
+      .child(div().flex_none().font_medium().text_color(tone === "normal" ? t.foreground : fill).child(pct(ratio)))
+      .child(div().flex_1().min_w(0).truncate().text_right().text_color(t.muted).child(right ?? ""));
+    const bar = div().relative().h(4).w_full().rounded(2).bg(t.raised).child(div().h(4).rounded(2).bg(fill).w(`${(r * 100).toFixed(1)}%`))
+      .when(pace !== null && pace !== undefined, (e) => e.child(div().absolute().top(0).h(4).w(1).bg(t.foreground + "4d").left(`${(Math.max(0, Math.min(1, pace)) * 100).toFixed(1)}%`)));
+    return v_flex().id(id).px(CHROME.rowX).py(4).gap(5).rounded(CHROME.radius)
+      .when(Boolean(tip), (e) => e.tooltip(tip))
+      .when(Boolean(expand), (e) => e.cursor_pointer().hover((x) => x.bg(t.hover)).on_click(expand.onClick))
+      .child(head).child(bar);
+  }
+
+  limits(t, f, now) {
+    const s = this.session, u = f.usage, out = [];
+    if (s && f.started) {
+      const c = f.context, cache = f.cache;
+      const known = Boolean(this.windows[s.model]);
+      out.push(this.meter(t, "meter-context", { label: "Context", ratio: c.ratio, right: `${infoTokens(c.used)} / ${infoTokens(c.window)}`,
+        tip: known ? `${infoTokens(c.window)} window for ${s.model}` : `Window size unknown for ${s.model}: 1M assumed`,
+        expand: { open: this.context, onClick: (_e, cx) => { this.context = !this.context; cx.notify(); } } }));
+      if (this.context) {
+        const comp = c.compactions ? `Compacted ${c.compactions === 1 ? "once" : `${c.compactions} times`}${s.lastCompaction ? `, ${infoAge(now - s.lastCompaction)} ago` : ""}` : "Not compacted yet";
+        out.push(v_flex().id("context-more").pl(CHROME.rowX + 16).pb(4).gap(2).text_size(12).text_color(t.muted)
+          .child(div().child(`Cache hits ${pct(cache.session)} (last request ${pct(cache.last)})`))
+          .child(div().child(`Cache: ${infoTokens(cache.read)} read, ${infoTokens(cache.written)} written`))
+          .child(div().child(comp)));
+      }
+    }
+    const win = (key, label, w, length) => {
+      if (!w) return null;
+      const left = infoTokensLeft(w.left, key === "week" ? "weekly" : "5-hour");
+      const resets = w.resetsAt ? `resets in ${key === "week" ? days(w.resetsAt - now) : infoSpan(w.resetsAt - now)}` : "";
+      const right = [infoPaceText(w.ahead), resets, u.stale ? `as of ${infoAge(now - (u.at ?? now))} ago` : null].filter(Boolean).join(" · ");
+      return this.meter(t, `meter-${key}`, { label, ratio: w.ratio, right, pace: w.pace, tip: left?.tip ?? null });
+    };
+    if (u) out.push(...[win("five", "5-hour limit", u.fiveHour), win("week", "Week", u.sevenDay)].filter(Boolean));
+    else out.push(div().px(CHROME.rowX).py(4).text_size(12).text_color(t.dim).child("Limits not reported yet"));
+    return v_flex().id("limits").px(CHROME.insetX).pt(12).gap(4).children(out);
+  }
+
+  // O3: "Edited N files ›" (in the repo; "at least" when an edit kept no path).
+  editedRow(t) {
+    const e = this.session ? infoEdited(this.session, this.root()) : null;
+    if (!e) return null;
+    const n = e.files.length;
+    const text = !n && !e.atLeast ? "No files edited yet" : `Edited ${e.atLeast ? "at least " : ""}${n} file${n === 1 ? "" : "s"}`;
+    const go = n || e.outside.length || e.atLeast ? (_e, cx) => { this.detail = "files"; this.from = null; this.handle.focus(); cx.notify(); } : null;
+    return div().px(CHROME.insetX).pt(8).child(chromeRow(UI, t, "edited", { onClick: go })
+      .child(svg(ICON("file-text")).size(14).flex_none().text_color(t.dim))
+      .child(div().flex_1().min_w(0).truncate().text_color(go ? t.foreground : t.muted).child(text))
+      .when(e.outside.length > 0, (x) => x.child(div().flex_none().text_size(12).text_color(t.dim).child(`+${e.outside.length} outside`)))
+      .when(Boolean(go), (x) => x.child(svg(ICON("chevron-right")).size(12).flex_none().text_color(t.dim))));
+  }
+
+  // D5: a call as a row: [disclosure] icon, the one thing that tells it apart (a path sans as
+  // name + folder, a command or code mono, a title or question sans), the failure dot (filled:
+  // it failed; hollow: a script went on after a failed step), the duration, a chevron.
+  callRow(t, c, { on = false, onClick = null, disclose = null, more = null } = {}) {
+    const state = infoCallState(c, this.pane?.status === "working");
+    const path = (c.kind === "read" || c.kind === "edit" || c.kind === "write") && c.path;
+    const root = this.root();
+    const rel = path && root && c.path.startsWith(root + "/") ? c.path.slice(root.length + 1) : c.arg;
+    const cut = rel ? rel.lastIndexOf("/") : -1;
+    const untitled = c.untitled && c.nested?.length ? infoStepsLabel(c.nested) : null;
+    const prose = c.kind === "ask" || c.kind === "agent" || (c.kind === "code" && !untitled && !/^(\w+)(: |\s×)/.test(c.arg ?? ""));
+    const text = more ? div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(more)
+      : path ? h_flex().flex_1().min_w(0).gap(6).items_baseline()
+        .child(div().flex_none().max_w("70%").truncate().text_color(t.foreground).child(cut < 0 ? rel : rel.slice(cut + 1)))
+        .child(div().flex_1().min_w(0).text_ellipsis_start().text_size(12).text_color(t.muted).child(cut < 0 ? "" : rel.slice(0, cut)))
+      : untitled ? div().flex_1().min_w(0).truncate().text_color(t.muted).child(untitled)
+      : prose ? div().flex_1().min_w(0).truncate().text_color(t.foreground).child(c.arg || c.name)
+      : div().flex_1().min_w(0).truncate().font_family(MONO()).text_size(12).text_color(t.foreground).child(c.arg || c.name);
+    const KIND = { code: "Script", bash: "Bash", read: "Read", edit: "Edit", write: "Write", ask: "Question", fetch: "Fetch", agent: "Agent" };
+    return chromeRow(UI, t, `call-${c.id}`, { on, onClick })
+      .when(Boolean(c.full || c.arg) && !more, (e) => e.tooltip(tipText(`${KIND[c.kind] ?? c.name}: ${c.full || c.arg}`)))
+      .when(c.level === 1, (e) => e.child(div().w(10).h_full().flex_none().child(div().ml(4).w(1).h_full().bg(t.border))))
+      .child(div().w(10).flex_none().flex().items_center().justify_center()
+        .when(Boolean(disclose), (e) => e.id(`toggle-${c.id}`).cursor_pointer().on_click(disclose.onClick)
+          .child(svg(ICON(disclose.open ? "chevron-down" : "chevron-right")).size(10).text_color(t.dim))))
+      .when(!more, (e) => e.child(svg(ICON(TOOL_ICON[c.kind] ?? "box")).size(14).flex_none().text_color(t.dim)))
+      .child(text)
+      .when(Boolean(c.failed), (e) => e.child(div().size(6).flex_none().rounded(3).bg(t.blocked)))
+      .when(!c.failed && Boolean(c.stepFailed), (e) => e.child(div().id(`hollow-${c.id}`).size(6).flex_none().rounded(3).border_1().border_color(t.blocked).tooltip("Went on after a failed step")))
+      .when(!more, (e) => e.child(div().flex_none().min_w(28).text_right().text_size(12).text_color(t.muted)
+        .child(state === "running" ? this.spinner(t) : state === "no-result" ? "No result" : infoDuration(c.duration))))
+      .when(Boolean(onClick), (e) => e.child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.dim)));
+  }
+
+  // O1: the last 8 calls, a script's steps under it (the first 3, then "+N steps").
+  recentCalls(t, f) {
+    const rows = [];
+    for (const c of [...(f.running ?? []), ...(f.history ?? [])].slice(0, 8)) {
+      const open = !this.collapsed.includes(c.id);
+      rows.push(this.callRow(t, { ...c, level: 0 }, { on: this.sel === c.id, onClick: (_e, cx) => this.select(c.id, cx),
+        disclose: c.nested?.length ? { open, onClick: (_e, cx) => { cx.stop_propagation(); this.collapsed = open ? [...this.collapsed, c.id] : this.collapsed.filter((x) => x !== c.id); cx.notify(); } } : null }));
+      if (!open || !c.nested?.length) continue;
+      const steps = infoRows([c]).slice(1);
+      for (const n of steps.slice(0, 3)) rows.push(this.callRow(t, n, { on: this.sel === n.id, onClick: (_e, cx) => this.select(n.id, cx) }));
+      if (steps.length > 3) rows.push(this.callRow(t, { id: `${c.id}-more`, level: 1 }, { more: `+${steps.length - 3} steps`, onClick: (_e, cx) => this.select(c.id, cx) }));
+    }
+    return rows;
   }
 
   // A tool call row; `big` is the detail view's taller row.
@@ -475,7 +619,7 @@ export default class Info extends View {
     const running = working ? tools.filter((c) => c.running) : [];
     const history = tools.filter((c) => !running.some((r) => r.id === c.id));
     return {
-      usage, window, working, running, history,
+      usage, window, working, running, history, tools,
       context: infoContext(s, window), cache: infoCache(s), lines: infoLines(s),
       ...(() => { const n = infoCounts(tools); return { errors: n.failed, total: n.calls }; })(),
       started: s.started !== null && s.requests.length + s.messages > 0,
@@ -497,41 +641,16 @@ export default class Info extends View {
         .children(this.usageRows(t, u, now)));
   }
 
+  // D1–D4, O1–O3: status, limits, edited files, recent calls; spacing instead of dividers but one
+  // above the calls.
   overview(t, f, now) {
-    const s = this.session;
-    const rows = [];
     if (!this.pane) {
-      rows.push(div().px(16).py(14).border_b(1).border_color(t.border).text_size(13).text_color(t.dim).child("No Pi session in this tab"));
-      rows.push(this.usageTile(t, f, now));
-      return rows;
+      return [div().px(CHROME.headerX).py(14).text_size(13).text_color(t.dim).child("No Pi session in this tab"), this.limits(t, f, now)];
     }
-    const meta = s && f.started ? [[s.model ?? "model"], " · thinking ", [s.thinking ?? "—"], " · ", [`${s.messages} msgs`], " · ", [infoAge(now - s.started)]] : ["…"];
-    rows.push(v_flex().px(CHROME.headerX).py(10).gap(4).border_b(1).border_color(t.border)
-      .child(h_flex().gap(8).items_center().child(this.piMark(t))
-        .child(div().flex_1().min_w(0).truncate().text_size(14).font_medium().text_color(t.foreground).child(s?.name ?? infoParseTitle(this.pane.title)?.name ?? "Pi"))
-        .when(Boolean(f.working), (e) => e.child(this.spinner(t, 14))))
-      .child(this.mixed(t, meta)));
-    rows.push(this.usageTile(t, f, now));
-    if (!s || !f.started) {
-      for (const key of ["context", "activity", "lines"]) rows.push(this.tile(t, key, LABELS[key], this.figure(t, "—", t.muted), "", null, this.mixed(t, ["…"])));
-      return rows;
-    }
-    const c = f.context, cache = f.cache;
-    rows.push(this.tile(t, "context", "Context window", this.figure(t, c.used === null ? "—" : pct(c.ratio)),
-      `${c.used === null ? "—" : infoTokens(c.used)} of ${infoTokens(c.window)} tokens`,
-      this.bar(t, c.ratio, contextColor(t, c.ratio)),
-      this.mixed(t, [c.compactions ? [`${c.compactions} compaction${c.compactions > 1 ? "s" : ""}`] : "no compaction yet", " · cache hits ", [pct(cache.session)]])));
-    const last = infoLastCall(s);
-    rows.push(this.tile(t, "activity", "Agent activity",
-      this.figure(t, f.running.length ? `${f.running.length} running` : "Idle"),
-      f.running.length ? "" : last ? `last call ${infoAge(now - last)} ago` : "no tool calls yet", null, null));
-    const l = f.lines, added = l.rows.reduce((n, r) => n + r.added, 0), removed = l.rows.reduce((n, r) => n + r.removed, 0);
-    rows.push(this.tile(t, "lines", "Lines changed",
-      l.files ? h_flex().gap(8).child(this.figure(t, `+${added}`, t.ansi2)).child(this.figure(t, `−${removed}`, t.ansi1)) : this.figure(t, "—", t.muted),
-      l.files ? `${l.files} file${l.files > 1 ? "s" : ""}` : "", null,
-      this.mixed(t, l.rows.length ? l.rows.flatMap((r, i) => [i ? " · " : "", `${r.category} `, [`+${r.added}`]]).filter(Boolean) : ["No edits yet"])));
-    rows.push(div().px(CHROME.insetX).pt(CHROME.insetY).child(this.section(t, "Tool calls", f.total ? `${f.total} calls${f.errors ? ` · ${f.errors} failed` : ""}` : "", false)));
-    return rows;
+    const top = [this.statusBlock(t, f, now), this.limits(t, f, now)];
+    const edited = this.editedRow(t);
+    if (edited) top.push(edited);
+    return top;
   }
 
   kv(t, key, value, extra) {
@@ -637,8 +756,10 @@ export default class Info extends View {
     }
     const top = this.overview(t, f, now);
     if (!this.session || !f.started) return root.child(v_flex().flex_none().children(top));
+    const calls = f.total ? `${f.total} call${f.total === 1 ? "" : "s"}${f.errors ? ` · ${f.errors} failed` : ""}` : null;
     return root.child(v_flex().flex_none().children(top))
-      .child(area("info-tools-area", v_flex().id("info-tools").flex_1().min_h(0).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY)
-        .children(f.total ? this.toolList(t, f.running, f.history, now, false) : [div().px(16).py(12).text_size(12).text_color(t.dim).child("No tool calls yet")])));
+      .child(v_flex().id("info-recent").flex_1().min_h(0).mt(12).border_t(1).border_color(t.border).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY)
+        .child(this.section(t, "Recent calls", calls, true, f.total ? (_e, cx) => { this.detail = "calls"; this.from = null; this.handle.focus(); cx.notify(); } : null))
+        .children(f.total ? this.recentCalls(t, f) : [div().px(CHROME.rowX).py(8).text_size(12).text_color(t.dim).child("Calls appear here as the agent works.")]));
   }
 }

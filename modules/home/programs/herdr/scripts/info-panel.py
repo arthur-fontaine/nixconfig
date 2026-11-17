@@ -15,14 +15,18 @@ if not near(im.getpixel((W - 4, 4)), well, 6):
     print(f"the window's corner isn't the well {sys.argv[2]}: {im.getpixel((W - 4, 4))}"); sys.exit(2)
 x0 = x1
 while x0 > 0 and not near(im.getpixel((x0 - 1, cy)), well): x0 -= 1
-# Clear of the rounded corners and of a toast over the panel's middle.
-cx = x0 + 40
 # The edge is where 4 well pixels in a row start: one antialiased pixel inside can match the well.
-wellrun = lambda y, d: all(0 <= y + d * k < H and near(im.getpixel((cx, y + d * k)), well) for k in range(4))
-y0 = cy
-while y0 > 0 and not wellrun(y0 - 1, -1): y0 -= 1
-y1 = cy
-while y1 < H - 1 and not wellrun(y1 + 1, 1): y1 += 1
+# Three columns clear of the corners; the tightest box wins (a long tab strip, a toast or the panel
+# buttons can touch the island at one of them).
+wellrun = lambda x, y, d: all(0 <= y + d * k < H and near(im.getpixel((x, y + d * k)), well) for k in range(4))
+def edges(x):
+    a = cy
+    while a > 0 and not wellrun(x, a - 1, -1): a -= 1
+    b = cy
+    while b < H - 1 and not wellrun(x, b + 1, 1): b += 1
+    return a, b
+found = [edges(x) for x in (x0 + 40, (x0 + x1) // 2, x1 - 40)]
+y0 = max(a for a, _ in found); y1 = min(b for _, b in found)
 print(f"panel x{x0}-{x1} y{y0}-{y1} ({x1 - x0 + 1}x{y1 - y0 + 1} px)")
 im.crop((x0, y0, x1 + 1, y1 + 1)).save(sys.argv[3])
 bad = 0

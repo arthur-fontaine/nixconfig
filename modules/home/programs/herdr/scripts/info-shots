@@ -53,10 +53,10 @@ edit_call=$(jq -r 'select(.message.role == "assistant") | .message.content[] | s
 act() { "$S" act "$@" >/dev/null; }
 show() { "$S" do tab.select --id "$(tab_of "$1")" >/dev/null; }
 panel() { "$S" do layout.show --id panel >/dev/null; "$S" do layout.select --stack panel-body --child "$1" >/dev/null; }
-# A mod just redeployed (sandbox sync) reads each session and the usage again: each stand-in
-# shown once, given time, before the first shot.
+# A mod just redeployed or restyled (sync, appearance) reads each session and the usage again:
+# each stand-in shown once, given time, before the first shot.
 panel info
-for name in pi-empty pi-cc pi-dead pi-run pi; do show "$name"; sleep 2.5; done
+warm() { for name in pi-empty pi-cc pi-dead pi-run pi; do show "$name"; sleep 2; done; }
 
 well() { jq -r .colors.well "$here/../themes/nix-islands-b-$1.json"; }
 corners=$out/$prefix-corners.txt; : >"$corners"
@@ -108,7 +108,7 @@ state_() { # <state> <theme>
 }
 
 for theme in dark light; do
-  "$S" appearance "$theme"; sleep 1.5
+  "$S" appearance "$theme"; sleep 1.5; warm; show pi; sleep 3
   for s in "${states[@]}"; do state_ "$s" "$theme"; done
 done
 show pi; act nix-info.reset
