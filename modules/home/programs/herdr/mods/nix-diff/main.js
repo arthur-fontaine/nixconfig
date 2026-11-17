@@ -9,7 +9,8 @@
 // Esc leaves the text, ⌘-click opens the file in the editor.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } from "gpui-base";
-import { props, exec, readTextFile, watchFolder, theme, settings, shared, setShared, spaces, panes, run, notify, home, appHome } from "herdr";
+import { props, exec, readTextFile, watchFolder, theme, settings, shared, setShared, spaces, panes, run, notify, home, appHome, layout } from "herdr";
+import { paneRadius } from "../_lib/pane.js";
 import { addedFile, parsePatch, rowsOf } from "./model.js";
 import { languageOf, splitAt, tokenize } from "./syntax.js";
 import { columnAt, cutAt, editableFiles, liveFile, selectedCols, CELL } from "./edit.js";
@@ -352,7 +353,8 @@ export default class Diff extends View {
     const add = this.view.reduce((n, f) => n + f.add, 0), del = this.view.reduce((n, f) => n + f.del, 0);
     const allFolded = this.files.length > 0 && this.files.every((f) => this.folded.has(f.path));
     const unsaved = this.view.filter((f) => f.modified).length;
-    const bar = h_flex().h(36).flex_none().px(12).gap(8).items_center().bg(t.chrome).border_b(1).border_color(t.border)
+    // Its frame's radius doesn't clip it (_lib/pane.js): the bar rounds its own top.
+    const bar = h_flex().h(36).flex_none().px(12).gap(8).items_center().bg(t.chrome).border_b(1).border_color(t.border).rounded_t(paneRadius(layout()))
       .child(svg(ICON(this.commit ? "git-branch" : "git-compare")).size(14).flex_none().text_color(t.muted))
       .child(div().font_medium().min_w(0).truncate().child(this.commit ? (this.meta?.subject ?? this.commit.slice(0, 7)) : "Uncommitted Changes"))
       .child(div().flex_none().text_size(11).text_color(t.dim).child(`${this.files.length} ${this.files.length === 1 ? "file" : "files"}`))
