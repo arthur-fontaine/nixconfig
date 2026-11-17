@@ -44,3 +44,14 @@ test("the panel's loop is spawned in init() with its own cx, never from render()
   assert.doesNotMatch(body("render"), /start\(/);
   assert.doesNotMatch(src, /this\.cx\b/);
 });
+
+// Herdr runtime behaviour, not reproducible in Node: an exec() started while the mod reloads or
+// tabs are relabelled sometimes never settles, and the loop awaiting it stopped for good (the
+// panel stuck on its first frame, no limits). Every exec and readFile in main.js goes through
+// this.bounded(), which gives up after a few seconds; this keeps it that way.
+test("the panel never awaits a bare exec() or readFile(): each is bounded", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const src = await readFile(new URL("../main.js", import.meta.url), "utf8");
+  const bare = src.split("\n").filter((l) => /\b(exec|readFile)\(/.test(l) && !/bounded\(/.test(l) && !/^\s*(\/\/|import)/.test(l));
+  assert.deepEqual(bare, []);
+});

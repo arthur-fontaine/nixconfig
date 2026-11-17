@@ -19,6 +19,7 @@ const HERDR = { spaces, panes, run, shared, setShared, notify };
 
 const TICK = 1000;
 const POLL = 100;
+const BOUND = 8000;
 // Sessions kept read, for switching between panes.
 const KEPT = 6;
 const USAGE_EVERY = 5000;
@@ -173,7 +174,7 @@ export default class Info extends View {
       + ' [ -z "$2" ] && { echo "$f"; break; };'
       + ` n=$(grep -o '"type":"session_info"[^}]*"name":"[^"]*"' "$f" | tail -1 | sed 's/.*"name":"//; s/"$//');`
       + ' [ "$n" = "$2" ] && { echo "$f"; break; }; done';
-    const r = await exec("sh", ["-c", script, "sh", dir, name]).catch(() => null);
+    const r = await this.bounded(exec("sh", ["-c", script, "sh", dir, name]));
     const file = r?.stdout?.trim() || null;
     if (file) this.resolved.set(key, file);
     return file;
@@ -192,7 +193,7 @@ export default class Info extends View {
     const s = this.session;
     let changed = false;
     for (let i = 0; i < 16; i++) {
-      const r = await exec("sh", ["-c", CHUNK, "sh", file, String(s.offset + 1)]).catch(() => null);
+      const r = await this.bounded(exec("sh", ["-c", CHUNK, "sh", file, String(s.offset + 1)]));
       if (this.session !== s) return false;
       const text = r?.code === 0 ? r.stdout : "";
       if (!text) break;
@@ -207,20 +208,20 @@ export default class Info extends View {
   // has no stat, hence the process.
   async readTitles() {
     const file = `${home()}/.pi/agent/bash-titles.json`;
-    const r = await exec("stat", ["-f", "%m %z", file]).catch(() => null);
+    const r = await this.bounded(exec("stat", ["-f", "%m %z", file]));
     const stamp = r?.code === 0 ? r.stdout.trim() : null;
     if (stamp === this.titlesStamp) return;
     this.titlesStamp = stamp;
-    const text = stamp ? await readFile(file, "utf8").catch(() => null) : null;
+    const text = stamp ? await this.bounded(readFile(file, "utf8")) : null;
     try { this.titles = text ? JSON.parse(text) : null; } catch { this.titles = null; }
   }
 
   async readUsage() {
-    const text = await readFile(`${home()}/.pi/agent/claude-usage.json`, "utf8").catch(() => null);
+    const text = await this.bounded(readFile(`${home()}/.pi/agent/claude-usage.json`, "utf8"));
     try { this.usageRecord = text ? JSON.parse(text) : null; } catch { this.usageRecord = null; }
     if (this.session && infoNeedsTitles(this.session)) await this.readTitles();
     if (!Object.keys(this.windows).length) {
-      const store = await readFile(`${home()}/.pi/agent/models-store.json`, "utf8").catch(() => null);
+      const store = await this.bounded(readFile(`${home()}/.pi/agent/models-store.json`, "utf8"));
       try {
         for (const provider of Object.values(JSON.parse(store ?? "{}"))) for (const m of provider?.models ?? []) if (m.contextWindow) this.windows[m.id] = m.contextWindow;
       } catch {}
@@ -233,6 +234,10 @@ export default class Info extends View {
   // command came: the panel stayed on "Loading session…".
   start(cx) {
     cx.spawn(async (cx) => {
+      // An exec or readFile Herdr never settles (seen when the mod reloads as tabs are relabelled)
+      // would stop this loop for good: each gives up after BOUND, as if it had failed, and the
+      // next tick tries again. A late result is dropped.
+      this.bounded = (promise) => Promise.race([Promise.resolve(promise).catch(() => null), new Promise((r) => cx.timer.after(BOUND, () => r(null)))]);
       let usageAt = 0, readAt = 0;
       for (;;) {
         // The selection is checked every POLL (memory only), the file read every TICK or
@@ -248,7 +253,7 @@ export default class Info extends View {
           this.pane = p;
           const file = p ? await this.fileOf(p) : null;
           if (p?.cwd && !this.roots.has(p.cwd)) {
-            const r = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: p.cwd }).catch(() => null);
+            const r = await this.bounded(exec("git", ["rev-parse", "--show-toplevel"], { cwd: p.cwd }));
             this.roots.set(p.cwd, r?.code === 0 ? r.stdout.trim() : p.cwd);
           }
           if (!file && this.session) { this.session = null; changed = true; }
@@ -458,7 +463,7 @@ export default class Info extends View {
   async loadGit() {
     const s = this.session, root = this.root();
     const key = s.file;
-    const git = (...a) => exec("git", a, { cwd: root }).catch(() => null);
+    const git = (...a) => this.bounded(exec("git", a, { cwd: root }));
     const out = (r) => (r?.code === 0 ? r.stdout : "");
     let files = {}, exact = false;
     const base = s.started ? out(await git("rev-list", "-1", `--before=${new Date(s.started).toISOString()}`, "HEAD")).trim() : "";
@@ -468,7 +473,7 @@ export default class Info extends View {
       const edited = new Set(infoEdited(s, root).files.map((f) => f.rel));
       const lines = {};
       for (const p of untracked.filter((p) => edited.has(p)).slice(0, 50)) {
-        const r = await exec("wc", ["-l", p], { cwd: root }).catch(() => null);
+        const r = await this.bounded(exec("wc", ["-l", p], { cwd: root }));
         if (r?.code === 0) lines[p] = Number(r.stdout.trim().split(/\s+/)[0]) || 0;
       }
       files = infoGitFiles(out(await git("diff", "--numstat", base)), out(await git("diff", "--name-status", base)), untracked, lines);
