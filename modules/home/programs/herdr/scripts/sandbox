@@ -13,6 +13,7 @@
 #   sandbox fixture       a throwaway repo (k31-fixture) with two worktrees, for destructive tests
 #   sandbox keys          merge default.nix's keys into the keys.json Herdr wrote
 #   sandbox act <cmd> ... herdr-app do, only while the shown space is one `do` made
+#   sandbox adopt         record the spaces a mod opened on the fixture (only those), for act and down
 #   sandbox down          close what `do` created, kill only the recorded PID, remove the home
 set -euo pipefail
 
@@ -140,6 +141,16 @@ case $cmd in
     [ ! -e "$home/keys.error" ] || { cat "$home/keys.error" >&2; exit 1; }
     jq -c '.global | with_entries(select(.value|tostring|test("^nix-")))' "$home/keys.json"
     ;;
+  adopt)
+    # Spaces the mods opened (a worktree click) aren't from `do`: taken in only when every
+    # terminal of theirs sits in the fixture.
+    # herdr-app ls has no folders for terminals: hc has them.
+    cwds=$(hc ls --json | jq -c '[.terminals[] | {key: .address, value: .cwd}] | from_entries')
+    app ls | jq -r --arg f "$fixture" --argjson cwd "$cwds" '.spaces[] | select((.folder // "") | startswith($f))
+      | select([.tabs[].terminals[]? | select(.terminal) | ($cwd[.terminal] // "") | startswith($f)] | all) | .id' |
+      while read -r id; do grep -q "^space $id$" "$created" || echo "space $id" >>"$created"; done
+    grep '^space' "$created"
+    ;;
   act)
     # Mod commands carry no target: they act on what the sandbox shows. Only ever on our own.
     shown=$(app status | jq -r .space)
@@ -167,5 +178,5 @@ case $cmd in
     rm -rf "$root"
     echo "down"
     ;;
-  *) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

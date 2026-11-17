@@ -6,7 +6,8 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, openOverlay, theme, keys, terminals, spaces, panes, exec, setShared } from "herdr";
+import { run, props, closeOverlay, openOverlay, theme, keys, terminals, spaces, panes, exec, setShared, home } from "herdr";
+import { wtOrchestrator } from "../_lib/worktree.js";
 
 // Where a space is now: its first terminal's live folder, else where it was made.
 function place(s) {
@@ -14,12 +15,12 @@ function place(s) {
   return panes().find((p) => tabs.has(p.tab) && p.cwd)?.cwd || s.folder;
 }
 
-// A space's checkout: "main" (a repo's own), "linked" (a worktree), or null.
+// A space's checkout: "main" (a repo's own), "linked" (a worktree), or null; and its top folder.
 async function checkout(folder, on) {
   const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: folder, on });
   const common = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: folder, on });
   if (top.code !== 0 || common.code !== 0) return null;
-  return common.stdout.trim() === `${top.stdout.trim()}/.git` ? "main" : "linked";
+  return { kind: common.stdout.trim() === `${top.stdout.trim()}/.git` ? "main" : "linked", top: top.stdout.trim() };
 }
 
 function items(p, git) {
@@ -64,8 +65,9 @@ function items(p, git) {
     case "space":
       return [
         ["Rename", "space.rename", { id: tg.id }],
+        ...(git ? [["Orchestrator", "orchestrator", { space: tg.id, top: git.top }]] : []),
         ...(git ? [["New worktree", "worktree", { space: tg.id, action: "new" }], ["Open worktree", "worktree", { space: tg.id, action: "open" }]] : []),
-        ...(git === "linked" ? [["Remove worktree", "worktree", { space: tg.id, action: "remove" }]] : []),
+        ...(git?.kind === "linked" ? [["Remove worktree", "worktree", { space: tg.id, action: "remove" }]] : []),
         ["Close", "space.close", { id: tg.id }],
       ];
     default:
@@ -81,7 +83,7 @@ function items(p, git) {
 }
 
 function menuIcon(command) {
-  const name = command.endsWith(".close") ? "x" : command === "project.forget" ? "minus" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.help" ? "terminal" : command === "app.theme" ? "settings" : command === "pane.split" ? "split-right" : command === "pane.zoom" ? "zoom" : "terminal";
+  const name = command === "orchestrator" ? "radio" : command.endsWith(".close") ? "x" : command === "project.forget" ? "minus" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.help" ? "terminal" : command === "app.theme" ? "settings" : command === "pane.split" ? "split-right" : command === "pane.zoom" ? "zoom" : "terminal";
   return `mods/nix-head/icons/${name}.svg`;
 }
 
@@ -118,6 +120,13 @@ export default class Menu extends View {
     if (it[1] === "project.close" || it[1] === "project.forget") {
       for (const id of it[2].spaces ?? []) run("space.close", { id });
       setShared("nix-sidebar.forget", { key: it[2].key, n: Date.now() });
+      return;
+    }
+    // The worktree's orchestrator: the one in the space, else a new one named after its folder.
+    if (it[1] === "orchestrator") {
+      const space = spaces().find((s) => s.id === it[2].space) ?? null;
+      const top = it[2].top;
+      for (const [name, args] of wtOrchestrator({ space, label: top.replace(/\/+$/, "").split("/").pop(), folder: top, home: home(), machine: space?.machine ?? null })) run(name, args);
       return;
     }
     if (it[1] === "worktree" && it[2].action === "new-project") return openOverlay({ mod: "nix-new", kind: "dialog", width: 360, height: 404, props: it[2].props });

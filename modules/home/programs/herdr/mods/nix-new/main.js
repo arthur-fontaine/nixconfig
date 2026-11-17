@@ -9,6 +9,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { run, props, closeOverlay, theme, spaces, panes, exec, home, knownAgents, keys, window, shared } from "herdr";
 import { repoOf, createWorktree, defaultBranch, remoteOnly, slug } from "../_lib/repo.js";
+import { ORCHESTRATOR_RE, wtOrchestrator } from "../_lib/worktree.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // Pi's mark as Herdr's program table has it, for when the agent list hasn't answered yet.
@@ -16,7 +17,7 @@ const PI = { icon: "icons/pi.svg", tint: true };
 const HEIGHT = 404;
 // Not the person's own chats: orchestrators ("Orchestrator" before they were named after their
 // worktree, "<worktree>-orchestrator" since), and pi-subagents' workers ("general-purpose#534df88b").
-const hidden = (name) => /^Orchestrator$|-(project-)?orchestrator$|#[0-9a-f]{6,}$/.test(name ?? "");
+const hidden = (name) => ORCHESTRATOR_RE.test(name ?? "") || /#[0-9a-f]{6,}$/.test(name ?? "");
 
 const git = (on) => async (cwd, args) => {
   const r = await exec("git", args, { cwd, on }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
@@ -251,7 +252,7 @@ export default class New extends View {
     const all = this.sessions.get(this.here.path);
     const sessions = all === undefined ? undefined
       : (q ? all.filter((s) => s.label.toLowerCase().includes(q)) : all.slice(0, 40)).map((s) => ({ kind: "session", ...s }));
-    return { actions: [{ kind: "pi" }, { kind: "terminal" }], sessions, total: all?.length ?? 0 };
+    return { actions: [{ kind: "pi" }, { kind: "terminal" }, { kind: "orchestrator" }], sessions, total: all?.length ?? 0 };
   }
 
   items() {
@@ -322,6 +323,12 @@ export default class New extends View {
     if (!target) return;
     if (target.kind === "pi") return this.start({ argv: this.pi(), name: this.agent?.name ?? "Pi" });
     if (target.kind === "terminal") return this.start({});
+    // The worktree's orchestrator: focused when it's there, else started (one per worktree).
+    if (target.kind === "orchestrator") {
+      const h = this.here, space = h.space ? spaces().find((s) => s.id === h.space) ?? null : null;
+      for (const [name, args] of wtOrchestrator({ space, label: base(h.path), folder: h.path, home: this.userHome ?? home(), machine: this.on })) run(name, args);
+      return this.close();
+    }
     if (target.kind === "session") {
       const open = this.openTab(target);
       if (open) { run("space.select", { id: open.space }); run("tab.select", { id: open.tab }); return this.close(); }
@@ -404,6 +411,8 @@ export default class New extends View {
     }
     if (r.kind === "pi")
       return el.h(30).text_size(12.5).text_color(t.foreground).child(this.tile(t, true)).child(div().flex_1().child(`New ${this.agent?.name ?? "Pi"} session`)).child(hint("↵"));
+    if (r.kind === "orchestrator")
+      return el.h(30).text_size(12.5).text_color(t.foreground).child(svg(ICON("radio")).size(13).flex_none().text_color(t.muted)).child(div().flex_1().child("Orchestrator")).child(hint(""));
     if (r.kind === "terminal")
       return el.h(30).text_size(12.5).text_color(t.foreground).child(svg(ICON("terminal")).size(13).flex_none().text_color(t.muted)).child(div().flex_1().child("Terminal")).child(hint("⇧↵"));
     if (r.kind === "session") {

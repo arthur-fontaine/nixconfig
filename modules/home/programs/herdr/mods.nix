@@ -5,6 +5,7 @@
   # The patched copies of shipped mods, and nix-diff (the diff tab nix-changes opens).
   nix-sidebar = {
     shared = [
+      "worktree.js"
     ];
   };
   nix-files = { shared = [ "editor.js" ]; };
@@ -15,6 +16,7 @@
   nix-worktree = { shared = [ "repo.js" ]; };
   nix-menu = {
     shared = [
+      "worktree.js"
     ];
   };
   nix-tabs = {
@@ -34,6 +36,7 @@
   nix-new = {
     shared = [
       "repo.js"
+      "worktree.js"
     ];
   };
   # The code editor: a renderer for a headless Neovim; grid.js (its UI as a grid) and

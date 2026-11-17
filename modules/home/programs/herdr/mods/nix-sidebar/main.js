@@ -2,11 +2,12 @@
 // each worktree's tabs (agents by their session name, terminals, diffs). What
 // needs you is pinned on top. A repo's checkouts without a space fold under it,
 // and repos seen once stay listed, folded, until forgotten. Outside git a space
-// is a plain folder row. Click to go there; + on a repo makes a worktree, + on a
-// worktree starts Pi or a terminal in it; right-click a worktree for its menu.
+// is a plain folder row. Click to go there (nothing starts); + on a repo makes a worktree, + on a
+// worktree starts Pi, a terminal or its orchestrator; right-click a worktree for its menu.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, terminals, machines, run, openOverlay, exec, theme, window, layout, watchFolder, setAgentOrder, pickFolder, home, shared, setShared, focused, nextCommand } from "herdr";
+import { ORCHESTRATOR_RE, wtClick, wtOrchestrator } from "../_lib/worktree.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // Pi's mark as Herdr's program table has it, for rows with no program at hand (workers).
@@ -60,14 +61,15 @@ function distinctNames(commons) {
   return new Map(commons.map((c) => [c, name(c)]));
 }
 // The orchestrators: a Pi chat per worktree, and one per project, that steers the others
-// with hc (role prompts in ~/.pi/agent/orchestrator/). A click opens one, or starts it the
-// first time; nothing else here depends on them.
+// with hc (role prompts in ~/.pi/agent/orchestrator/). A project's click opens its one, or
+// starts it (the kanban dispatches to it); a worktree's starts only when asked (its + or menu).
 // Each is named after what it orchestrates ("records-access-orchestrator", "monorepo-project-
 // orchestrator"): the tab, Pi's session, and what workers and other orchestrators see in hc and
 // intercom, whose @mentions end at a space. Tabs from before, named "Orchestrator", still count.
 const orchestratorName = (scope, label) => `${label.replace(/[^A-Za-z0-9._-]+/g, "-")}-${scope === "project" ? "project-orchestrator" : "orchestrator"}`;
 const orchestratorArgv = (scope, label) => ["pi", "--name", orchestratorName(scope, label), "--append-system-prompt", `${home()}/.pi/agent/orchestrator/${scope}.md`];
-const isOrchestrator = (tab) => tab.named && /^Orchestrator$|-(project-)?orchestrator$/.test(tab.name ?? "");
+// ORCHESTRATOR_RE (_lib/worktree.js) is kanban/src/herdr.ts's isOrchestratorTab, tested so.
+const isOrchestrator = (tab) => tab.named && ORCHESTRATOR_RE.test(tab.name ?? "");
 // Repo key → the space its project orchestrator lives in.
 const projectSpaces = () => shared("nix.orchestrators") ?? {};
 function ago(ms) {
@@ -102,6 +104,9 @@ export default class Sidebar extends View {
       for (;;) {
         const command = await nextCommand();
         if (command === "filter") this.input.focus();
+        // A row's click and its Orchestrator item, by the worktree's path (keys and scripts).
+        else if (command.startsWith("open:")) this.openPath(command.slice(5));
+        else if (command.startsWith("orchestrator:")) this.orchestratorAt(command.slice(13));
         cx.notify();
       }
     });
@@ -474,8 +479,8 @@ export default class Sidebar extends View {
     return list.map((x) => x.status).filter((st) => rank[st]).sort((a, b) => rank[b] - rank[a])[0] ?? null;
   }
 
-  // A checkout with workers but no space: a worktree row whose click makes its space with the
-  // orchestrator in it, and whose + opens on what to start there.
+  // A checkout with workers but no space: a worktree row whose click opens its space on a plain
+  // shell, and whose + opens on what to start there.
   checkoutRows(r, c, t) {
     const id = `checkout-${c.path}`, fkey = `co:${c.path}`, folded = this.folded.has(fkey);
     const list = r.workers.get(c.path) ?? [];
@@ -484,7 +489,7 @@ export default class Sidebar extends View {
     const status = this.urgent(list);
     const rows = [this.hoverable(id, h_flex().h(28).pl(24).pr(10).gap(7).items_center().rounded(6).cursor_pointer()
       .hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)).tooltip(c.path)
-      .on_click(() => run("space.new", { folder: c.path, machine: r.on ?? "", tab: orchestratorName("worktree", base(c.path)), argv: orchestratorArgv("worktree", base(c.path)) }))
+      .on_click(() => this.runAll(wtClick({ space: null, path: c.path, machine: r.on })))
       .child(div().id(`fold-${fkey}`).size(18).mx(-3).flex_none().flex().items_center().justify_center().text_color(t.dim)
         .rounded(4).hover((x) => x.text_color(t.foreground).bg(t.input + "80")).active((x) => x.bg(t.input + "b3"))
         .on_click((_e, cx) => { cx.stop_propagation(); this.toggle(this.folded, "folded", fkey, cx); })
@@ -515,14 +520,20 @@ export default class Sidebar extends View {
     this.openNew(cx, { repo: r.key, name: r.name, folder: first ? place(first.s, ps) : JSON.parse(r.key)[1], machine: r.on, ...(s && { space: s.id, level: 2 }), ...(trees && { worktrees: trees }) });
   }
 
-  // A worktree's click: its orchestrator tab, started the first time, named after the
-  // worktree's folder (`top`), not the subfolder a terminal moved to.
-  openOrchestrator(s, folder, top) {
-    run("space.select", { id: s.id });
-    const tab = (s.tabs ?? []).find(isOrchestrator);
-    if (tab) run("tab.select", { id: tab.id });
-    const label = base(top ?? folder);
-    if (!tab) run("tab.new", { space: s.id, name: orchestratorName("worktree", label), folder, argv: orchestratorArgv("worktree", label) });
+  runAll(commands) { for (const [name, args] of commands) run(name, args); }
+
+  // The space open on a worktree's path (one of its terminals inside it), if any.
+  spaceAt(path) {
+    const ps = panes();
+    return spaces().find((s) => { const at = place(s, ps); return at && (at === path || at.startsWith(path + "/")); }) ?? null;
+  }
+
+  // A worktree's click: its space as it was left; without one, a space on a plain shell.
+  openPath(path) { this.runAll(wtClick({ space: this.spaceAt(path), path, machine: null })); }
+
+  // Its orchestrator: the one there, else a new one named after the worktree's folder.
+  orchestratorAt(path) {
+    this.runAll(wtOrchestrator({ space: this.spaceAt(path), label: base(path), folder: path, home: home(), machine: null }));
   }
 
   // A project's click: its orchestrator lives in a space of its own, at the repo's root.
@@ -555,6 +566,8 @@ export default class Sidebar extends View {
       .on_click(() => { run("space.select", { id: s.id }); run("tab.select", { id: tab.id }); })
       .child(this.picture(lead, t, 14, on))
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(on ? t.foreground : t.muted).child(label))
+      // A worktree's orchestrator is a tab like the others, with a mark.
+      .when(isOrchestrator(tab), (e) => e.child(svg(ICON("radio")).size(11).flex_none().text_color(t.dim).tooltip("This worktree's orchestrator")))
       .when(this.hovered === id, (e) => e.child(this.small(`close-${tab.id}`, "x", "Close", () => run("tab.close", { id: tab.id }), t)))
       .when(this.hovered !== id && Boolean(time) && tab.status !== "idle", (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(ago(time))))
       .when(Boolean(this.status(t, tab.status)), (e) => e.child(this.status(t, tab.status))));
@@ -569,14 +582,13 @@ export default class Sidebar extends View {
     const title = g ? (g.branch ?? "detached") : s.name;
     if (this.filter && !this.first && this.matches(title)) this.first = { space: s.id };
     if (this.filter && !this.firstAny) this.firstAny = { space: s.id };
-    // The worktree row stands for its orchestrator: its tab isn't listed, its workers are.
-    const orchestrator = (s.tabs ?? []).find(isOrchestrator);
-    const tabs = (s.tabs ?? []).filter((x) => !x.settled && x !== orchestrator);
-    const on = s.active && (folded || !tabs.length || Boolean(orchestrator?.active));
-    const status = folded ? s.status : orchestrator?.status;
+    // Its tabs are listed under it, its orchestrator's too; the row is selected as a folder's is.
+    const tabs = (s.tabs ?? []).filter((x) => !x.settled);
+    const on = s.active && (folded || !tabs.length);
+    const status = folded ? s.status : null;
     const rows = [this.hoverable(id, h_flex().h(28).pl(24).pr(10).gap(7).items_center().rounded(6).cursor_pointer()
       .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
-      .on_click(() => this.openOrchestrator(s, place(s, ps), g?.top))
+      .on_click(() => this.runAll(wtClick({ space: s })))
       .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 260, props: { tab: "space", target: { id: s.id } } }))
       .child(div().id(`fold-${s.id}`).size(18).mx(-3).flex_none().flex().items_center().justify_center().text_color(t.dim)
         .rounded(4).hover((x) => x.text_color(t.foreground).bg(t.input + "80")).active((x) => x.bg(t.input + "b3"))
@@ -591,7 +603,6 @@ export default class Sidebar extends View {
         (cx) => { const r = g && this.repoByKey?.get(g.repo); r ? this.openNewFor(r, s, ps, cx) : this.openNew(cx, { space: s.id, level: 2 }); }, t)))
       .when(this.hovered !== id, (e) => e.when(Boolean(this.status(t, status)), (e) => e.child(this.status(t, status)))))];
     if (!folded) {
-      if (orchestrator) rows.push(...this.workerRows(orchestrator, 40, t));
       for (const tab of tabs) rows.push(...this.tabRows(s, tab, ps, t, order));
       const r = g && this.repoByKey?.get(g.repo), at = place(s, ps);
       for (const [path, list] of r?.workers ?? []) if (at && (at === path || at.startsWith(path + "/"))) rows.push(...list.map((x) => this.workerRow(x, 40, t)));
