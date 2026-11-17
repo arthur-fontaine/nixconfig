@@ -81,3 +81,16 @@ export function closePlan(world, target) {
     : ids.map((s) => ["space.close", { id: s.id, confirmed: true }]);
   return { scope, items, workers, remote, commands };
 }
+
+// nix-status's close commands: "close-pane[:<pane>]", "close-tab[:<tab>]", "close-space[:<space>]"
+// and "close-spaces:<id>,<id>", to their closePlan target; without ids, what's focused. null:
+// not a close command, or nothing to close. The name is matched whole: close-spaces isn't close-space.
+export function closeTarget(command, focus) {
+  const i = command.indexOf(":");
+  const name = i < 0 ? command : command.slice(0, i), arg = i < 0 ? null : command.slice(i + 1);
+  if (name === "close-pane") return (arg || focus.pane) ? { pane: arg || focus.pane } : null;
+  if (name === "close-tab") return (arg || focus.tab) ? { tab: arg || focus.tab } : null;
+  if (name === "close-space") return (arg || focus.space) ? { spaces: [arg || focus.space] } : null;
+  if (name === "close-spaces") { const ids = (arg ?? "").split(",").filter(Boolean); return ids.length ? { spaces: ids } : null; }
+  return null;
+}

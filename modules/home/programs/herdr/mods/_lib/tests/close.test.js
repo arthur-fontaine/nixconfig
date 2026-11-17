@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { closeAsk, closePlan } from "../close.js";
+import { closeAsk, closePlan, closeTarget } from "../close.js";
 
 const shell = { kind: "terminal", shell: true, agent: false, name: "zsh" };
 const prog = (name) => ({ kind: "terminal", shell: false, agent: false, name });
@@ -97,4 +97,18 @@ test("plan: another machine's space is remote", () => assert.equal(closePlan(wor
 test("plan: something gone plans nothing", () => {
   assert.equal(closePlan(world, { tab: "nope" }), null);
   assert.equal(closePlan(world, { pane: "nope" }), null);
+});
+
+// nix-status.close-*: the command's name up to ":" (exactly), its ids after it, else what's focused.
+const here = { pane: "pF", tab: "tF", space: "sF" };
+for (const [cmd, want] of [
+  ["close-pane", { pane: "pF" }], ["close-pane:p2", { pane: "p2" }],
+  ["close-tab", { tab: "tF" }], ["close-tab:t3", { tab: "t3" }],
+  ["close-space", { spaces: ["sF"] }], ["close-space:s2", { spaces: ["s2"] }],
+  ["close-spaces:s1,s2", { spaces: ["s1", "s2"] }],
+  ["close-spaces", null], ["close-confirmed", null], ["close-tabs:t1", null], ["jump", null],
+]) test(`target: ${cmd}`, () => assert.deepEqual(closeTarget(cmd, here), want));
+test("target: nothing focused targets nothing", () => {
+  assert.equal(closeTarget("close-tab", {}), null);
+  assert.equal(closeTarget("close-space", { space: null }), null);
 });

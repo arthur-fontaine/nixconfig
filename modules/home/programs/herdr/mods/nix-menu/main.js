@@ -122,11 +122,7 @@ export default class Menu extends View {
     closeOverlay(props()?.overlay);
     // Closing a project's worktrees is one close (one question at most); hiding it from the
     // list is its own item, offered only when nothing of it is open.
-    if (it[1] === "project.close") {
-      setShared("nix.closeSpaces", it[2].spaces);
-      run("nix-status.close-spaces");
-      return;
-    }
+    if (it[1] === "project.close") return run(`nix-status.close-spaces:${it[2].spaces.join(",")}`);
     if (it[1] === "project.forget") {
       setShared("nix-sidebar.forget", { key: it[2].key, n: Date.now() });
       return;

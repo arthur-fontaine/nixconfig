@@ -6,14 +6,14 @@
 //   worktree  the worktree dialog (new), worktrees (open)
 //   review    the diff of the focused checkout, in the middle
 //   editor    the focused checkout in Zed, else $VISUAL's GUI editor, else a Neovim tab
-//   close-pane[:<pane>], close-tab[:<tab>], close-space[:<space>], close-spaces (ids in shared
-//             "nix.closeSpaces"): every close in the nix-* mods and ⌘W/⌘⇧W, asking only when
-//             something would be lost (_lib/close.js); close-confirmed runs the one asked about
+//   close-pane[:<pane>], close-tab[:<tab>], close-space[:<space>], close-spaces:<id>,<id>: every
+//             close in the nix-* mods and ⌘W/⌘⇧W, asking only when something would be lost
+//             (_lib/close.js); close-confirmed runs the one asked about
 // Left: machine, branch, then the agents that matter (need you, done, working). Right: key hints.
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, agents, panes, focused, theme, run, window, keys, nextCommand, openOverlay, exec, shared, setShared, layout, terminals } from "herdr";
-import { closeAsk, closePlan, closeQuestion } from "../_lib/close.js";
+import { closeAsk, closePlan, closeQuestion, closeTarget } from "../_lib/close.js";
 
 const RANK = { blocked: 2, done: 1 };
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
@@ -59,11 +59,9 @@ export default class Status extends View {
 
   async command(c) {
     const { space, cwd, on } = place();
-    const arg = c.includes(":") ? c.slice(c.indexOf(":") + 1) : null;
-    if (c.startsWith("close-pane")) return this.close({ pane: arg ?? focused()?.pane });
-    if (c.startsWith("close-tab")) return this.close({ tab: arg ?? focused()?.tab });
-    if (c.startsWith("close-space")) return this.close({ spaces: [arg ?? space?.id].filter(Boolean) });
-    if (c === "close-spaces") return this.close({ spaces: shared("nix.closeSpaces") ?? [] });
+    const f = focused();
+    const target = closeTarget(c, { pane: f?.pane, tab: f?.tab, space: space?.id });
+    if (target) return this.close(target);
     if (c === "close-confirmed") {
       const pending = shared("nix.closePending") ?? [];
       setShared("nix.closePending", null);
