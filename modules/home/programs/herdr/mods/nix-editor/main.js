@@ -75,6 +75,9 @@ export default class Editor extends View {
     this.slides = new Map();
     this.sliding = false;
     cx.timer.every(BLINK, () => {
+      // A theme switch doesn't always redraw this view, and render() was the only place the
+      // theme reached Neovim (it arrived ~10 s late): checked here too (a key compare).
+      this.followTheme();
       const focused = this.handle.is_focused();
       const blink = !focused || Date.now() - this.woke < BLINK ? true : !this.blink;
       if (blink !== this.blink || focused !== this.focused) { this.blink = blink; this.focused = focused; this.cx.notify(); }
