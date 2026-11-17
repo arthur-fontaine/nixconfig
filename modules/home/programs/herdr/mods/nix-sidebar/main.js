@@ -6,7 +6,7 @@
 // worktree starts Pi, a terminal or its orchestrator; right-click a worktree for its menu.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { spaces, panes, agents, terminals, machines, run, openOverlay, exec, theme, window, layout, watchFolder, setAgentOrder, pickFolder, home, shared, setShared, focused, nextCommand } from "herdr";
+import { spaces, panes, agents, terminals, machines, run, openOverlay, exec, theme, window, layout, watchFolder, setAgentOrder, pickFolder, home, shared, setShared, focused, nextCommand, closeOverlay } from "herdr";
 import { ORCHESTRATOR_RE, wtClick, wtOrchestrator } from "../_lib/worktree.js";
 import { tabLabel } from "../_lib/tabs.js";
 
@@ -102,13 +102,15 @@ export default class Sidebar extends View {
         // A row's click and its Orchestrator item, by the worktree's path (keys and scripts).
         else if (command.startsWith("open:")) this.openPath(command.slice(5));
         else if (command.startsWith("orchestrator:")) this.orchestratorAt(command.slice(13));
-        // menu:<x>,<y>:<repo folder>: that project's right-click menu at a point (scripts, checks).
+        // menu:<x>,<y>:<repo root>: that project's right-click menu at a point (scripts, checks);
+        // the root must match exactly. menu-close closes the one it opened, by its overlay id.
         else if (command.startsWith("menu:")) {
           const rest = command.slice(5), i = rest.indexOf(":");
-          const [x, y] = rest.slice(0, i).split(",").map(Number), folder = rest.slice(i + 1);
-          const m = this.lastModel, r = m && [...m.open, ...m.closed].find((x) => JSON.parse(x.key)[1].startsWith(folder));
-          if (r) this.projectMenu(r, m.ps, { x, y });
-        }
+          const [x, y] = rest.slice(0, i).split(",").map(Number), root = rest.slice(i + 1).replace(/\/+$/, "");
+          const m = this.lastModel;
+          const r = root && m && [...m.open, ...m.closed].find((x) => "/" + repoPath(JSON.parse(x.key)[1]).join("/") === root);
+          if (r && Number.isFinite(x) && Number.isFinite(y)) this.menuOverlay = this.projectMenu(r, m.ps, { x, y });
+        } else if (command === "menu-close" && this.menuOverlay) { closeOverlay(this.menuOverlay); this.menuOverlay = null; }
         cx.notify();
       }
     });
@@ -525,7 +527,7 @@ export default class Sidebar extends View {
     const spaces = r.items.map(({ s }) => s.id), project = r.project?.id ?? null;
     const closes = (spaces.length ? 1 : 0) + (project ? 1 : 0);
     const rows = 1 + closes + (!spaces.length && !project ? 1 : 0);
-    openOverlay({ mod: "nix-menu", kind: "popup", width: 260, height: 8 + 28 * rows + 9 * closes, at, props: { tab: "project", target: {
+    return openOverlay({ mod: "nix-menu", kind: "popup", width: 260, height: 8 + 28 * rows + 9 * closes, at, props: { tab: "project", target: {
       key: r.key, spaces, project,
       newProps: { repo: r.key, name: r.name, folder: r.items[0] ? place(r.items[0].s, ps) : JSON.parse(r.key)[1], machine: r.on, ...(this.trees[r.key] && { worktrees: this.trees[r.key] }) },
     } } });
