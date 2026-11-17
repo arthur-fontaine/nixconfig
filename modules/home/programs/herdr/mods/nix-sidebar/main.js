@@ -99,6 +99,8 @@ export default class Sidebar extends View {
       for (;;) {
         const command = await nextCommand();
         if (command === "filter") this.input.focus();
+        // filter:<text>: the filter set by script (checks that need a row on screen); "filter:" clears it.
+        else if (command.startsWith("filter:")) { this.input.set_value(command.slice(7)); this.filter = command.slice(7).trim().toLowerCase(); }
         // A row's click and its Orchestrator item, by the worktree's path (keys and scripts).
         else if (command.startsWith("open:")) this.openPath(command.slice(5));
         else if (command.startsWith("orchestrator:")) this.orchestratorAt(command.slice(13));
