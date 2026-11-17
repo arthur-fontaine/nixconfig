@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -70,8 +70,6 @@ const infoLight = (t) => { const h = String(t.background ?? "#000").replace("#",
 const SHOWN = 200;
 const TOOL_ICON = { bash: "terminal", read: "file", edit: "pen", write: "pen", ask: "help-circle", fetch: "globe", agent: "user", code: "code" };
 const LABELS = { context: "Context window", activity: "Agent activity", lines: "Lines changed", calls: "Calls", files: "Edited files" };
-// The commands' names for the views (nix-info.detail:calls|files) until those views are redone.
-const OLD = { calls: "activity", files: "lines" };
 // The activity detail's filters (infoKeep's kinds): a script counts for the calls it made.
 // "in 2h 10m" reads as is; days read as words in the sub-lines ("in 4 days").
 const days = (msec) => { const d = Math.round(msec / 86400000); return d >= 1 && msec >= 86400000 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(msec); };
@@ -98,6 +96,7 @@ export default class Info extends View {
     this.roots = new Map(); // cwd → its git top (or the cwd), for repo-relative paths
     this.scroll = VirtualListScrollHandle.new(); // the Calls list, put back where it was on Back
     this.returnTo = false;
+    this.git = null; // { key, at, files: path → { status, added, removed }, exact } for the Edited files view
     this.sel = null; // the tool call shown in the inspector
     this.ids = []; // the listed calls' ids, in order, for ↑/↓
     this.area = 0; // height of the list + inspector area
@@ -240,6 +239,8 @@ export default class Info extends View {
             changed = true;
             await new Promise((r) => cx.timer.after(1, r));
           }
+          // The Edited files view's git figures, every few seconds while it shows.
+          if (this.detail === "files" && this.session && (!this.git || this.git.key !== this.session.file || Date.now() - this.git.at > 5000)) { await this.loadGit(); changed = true; }
           // Running calls' elapsed time ticks.
           if (changed || (this.session && this.pane?.status === "working")) cx.notify();
         }
@@ -400,6 +401,69 @@ export default class Info extends View {
       if (steps.length > 3) rows.push(this.callRow(t, { id: `${c.id}-more`, level: 1 }, { more: `+${steps.length - 3} steps`, onClick: (_e, cx) => this.select(c.id, cx) }));
     }
     return rows;
+  }
+
+  // ---- Edited files (O3) ---------------------------------------------------------------
+
+  // git's view of the session's files. Lines from git only, never summed from the session: the
+  // diff from the commit before the session's first entry to the working tree, so what the
+  // session committed counts too, plus its new untracked files. Without such a base, or with a
+  // merge since (others' work would count), only git's status letters.
+  async loadGit() {
+    const s = this.session, root = this.root();
+    const key = s.file;
+    const git = (...a) => exec("git", a, { cwd: root }).catch(() => null);
+    const out = (r) => (r?.code === 0 ? r.stdout : "");
+    let files = {}, exact = false;
+    const base = s.started ? out(await git("rev-list", "-1", `--before=${new Date(s.started).toISOString()}`, "HEAD")).trim() : "";
+    const merges = base ? out(await git("rev-list", "--merges", `${base}..HEAD`)).trim() : "x";
+    const untracked = out(await git("ls-files", "--others", "--exclude-standard")).split("\n").filter(Boolean);
+    if (base && !merges) {
+      const edited = new Set(infoEdited(s, root).files.map((f) => f.rel));
+      const lines = {};
+      for (const p of untracked.filter((p) => edited.has(p)).slice(0, 50)) {
+        const r = await exec("wc", ["-l", p], { cwd: root }).catch(() => null);
+        if (r?.code === 0) lines[p] = Number(r.stdout.trim().split(/\s+/)[0]) || 0;
+      }
+      files = infoGitFiles(out(await git("diff", "--numstat", base)), out(await git("diff", "--name-status", base)), untracked, lines);
+      exact = true;
+    } else {
+      for (const l of out(await git("status", "--porcelain")).split("\n")) if (l.length > 3) files[l.slice(3)] = { status: l.slice(0, 2).trim()[0] === "?" ? "A" : l.slice(0, 2).trim()[0], added: null, removed: null };
+    }
+    this.git = { key, at: Date.now(), files, exact };
+  }
+
+  filesView(t) {
+    const s = this.session;
+    if (!s) return [];
+    const e = infoEdited(s, this.root()), g = this.git?.key === s.file ? this.git.files : {};
+    const color = { A: t.ansi2, D: t.ansi1, U: t.ansi5, R: t.ansi4 };
+    const row = (f) => {
+      const st = g[f.rel];
+      return chromeRow(UI, t, `file-${f.rel}`, { onClick: (ev) => openInEditor(HERDR, f.path, { side: ev.modifiers.alt }) }).tooltip(f.path)
+        .child(div().w(10).flex_none().font_family(MONO()).text_size(11).font_medium().text_color(color[st?.status] ?? t.ansi3).child(st?.status ?? ""))
+        .child(h_flex().flex_1().min_w(0).gap(6).items_baseline()
+          .child(div().flex_none().max_w("70%").truncate().text_color(t.foreground).child(f.name))
+          .child(div().flex_1().min_w(0).text_ellipsis_start().text_size(12).text_color(t.muted).child(f.dir)))
+        .when(st?.added !== null && st?.added !== undefined, (x) => x.child(div().flex_none().text_size(12).text_color(t.ansi2).child(`+${st.added}`)))
+        .when(Boolean(st?.removed), (x) => x.child(div().flex_none().text_size(12).text_color(t.ansi1).child(`−${st.removed}`)))
+        .when(!st, (x) => x.child(div().flex_none().text_size(12).text_color(t.dim).child(this.git ? "unchanged" : "")))
+        .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.dim));
+    };
+    const out = [this.section(t, "In this repo", `${e.files.length} file${e.files.length === 1 ? "" : "s"}`), ...e.files.map(row)];
+    if (e.atLeast) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("Some edits kept no file name: there may be more."));
+    if (this.git && !this.git.exact) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("Line counts need the commit the session started from: git status only."));
+    if (e.outside.length) {
+      const open = this.outside;
+      out.push(div().pt(8).child(chromeRow(UI, t, "outside", { onClick: (_e, cx) => this.command(open ? "close:outside" : "open:outside", cx) })
+        .child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.dim))
+        .child(div().flex_1().text_size(12).font_medium().text_color(t.muted).child(`Outside this repo (${e.outside.length})`))));
+      const home = (p) => p.replace(/^\/Users\/[^/]+/, "~");
+      if (open) for (const f of e.outside) out.push(chromeRow(UI, t, `outside-${f.path}`, { onClick: (ev) => openInEditor(HERDR, f.path, { side: ev.modifiers.alt }) }).pl(CHROME.rowX + 18).tooltip(f.path)
+        .child(div().flex_1().min_w(0).text_ellipsis_start().text_size(12).text_color(t.foreground).child(home(f.path)))
+        .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.dim)));
+    }
+    return out;
   }
 
   // ---- Calls (D6, D10, O1, O2) ------------------------------------------------------------
@@ -610,41 +674,6 @@ export default class Info extends View {
     return top;
   }
 
-  kv(t, key, value, extra) {
-    return h_flex().h(30).flex_none().px(16).gap(10).items_center()
-      .child(div().w(110).flex_none().text_size(12).text_color(t.muted).child(key))
-      .child(value)
-      .when(Boolean(extra), (e) => e.child(extra));
-  }
-
-  detailView(t, f, now) {
-    const s = this.session;
-    if (!this.pane || !s || !f.started) {
-      return [div().px(16).py(14).text_size(12).text_color(t.dim).child(this.pane ? "…" : "No Pi session in this tab")];
-    }
-    switch (OLD[this.detail] ?? this.detail) {
-      case "lines": {
-        if (!s) return [];
-        const l = f.lines, files = infoFiles(s);
-        if (!l.rows.length) return [div().px(16).py(12).text_size(12).text_color(t.dim).child("No edits yet")];
-        const num = (text, color, w) => div().w(w).flex_none().text_right().text_size(12).text_color(color).child(text);
-        return [
-          div().h(6),
-          ...l.rows.map((r) => h_flex().h(28).px(16).items_center().text_size(13)
-            .child(div().flex_1().text_color(t.foreground).child(r.category))
-            .child(num(`${r.files} file${r.files > 1 ? "s" : ""}`, t.dim, 56))
-            .child(num(`+${r.added}`, t.ansi2, 52)).child(num(r.removed ? `−${r.removed}` : "", t.ansi1, 52))),
-          this.section(t, "Files", String(files.length)),
-          ...files.map((x) => h_flex().id(`file-${x.path}`).h(28).flex_none().px(16).gap(8).items_center().cursor_pointer().hover((e) => e.bg(t.hover)).active((e) => e.bg(t.selected))
-            .on_click((e) => openInEditor(HERDR, x.path, { side: e.modifiers.alt }))
-            .child(div().flex_1().min_w(0).text_ellipsis_start().font_family(MONO()).text_size(12).text_color(t.foreground).child(x.rel))
-            .child(num(`+${x.added}`, t.ansi2, 44)).child(num(x.removed ? `−${x.removed}` : "", t.ansi1, 44))),
-        ];
-      }
-    }
-    return [];
-  }
-
   render() {
     this.start();
     infoMono = settings().font_family ?? "JetBrains Mono";
@@ -662,15 +691,16 @@ export default class Info extends View {
     const KIND = { code: "Script", bash: "Bash", read: "Read", edit: "Edit", write: "Write", ask: "Question", fetch: "Fetch", agent: "Agent" };
     const call = this.detail === "call" ? this.selected(f) : null;
     const title = this.detail === "call" ? KIND[call?.kind] ?? call?.name ?? "Call" : LABELS[this.detail] ?? "Info";
-    const actions = this.detail === "calls" ? this.showAllAction(t, f) : this.detail === "call" ? this.callActions(t, f) : [];
-    const header = chromeHeader(UI, t, { id: "info-head", title, meta: this.detail === "call" ? null : meta, back: this.detail ? (cx) => this.back(cx) : null, actions });
+    const actions = this.detail === "calls" ? this.showAllAction(t, f) : this.detail === "call" ? this.callActions(t, f)
+      : this.detail === "files" ? [chromeTextButton(UI, t, "show-changes", "Show in Changes", () => run("layout.select", { stack: "panel-body", child: "changes" }), "Line counts, staging and commits")] : [];
+    const header = chromeHeader(UI, t, { id: "info-head", title, meta: this.detail ? null : meta, back: this.detail ? (cx) => this.back(cx) : null, actions });
     // fill: the corner check's (nix-info.fill:<color>), so the content's own corners show.
     const root = v_flex().id("info").track_focus(this.handle).size_full().min_h(0).bg(this.fill ?? t.chrome).text_color(t.foreground).text_size(CHROME.text)
       .on_key_down((e, cx) => this.key(e, cx))
       .child(header);
     if (this.detail === "calls") return root.child(this.callsView(t, f));
     if (this.detail === "call") return root.child(v_flex().id("info-call").flex_1().min_h(0).overflow_y_scrollbar().pb(12).children(this.callView(t, f, now)));
-    if (this.detail) return root.child(v_flex().id("info-detail").flex_1().min_h(0).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY).children(this.detailView(t, f, now)));
+    if (this.detail === "files") return root.child(v_flex().id("info-files").flex_1().min_h(0).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY).children(this.filesView(t)));
     const top = this.overview(t, f, now);
     if (!this.session || !f.started) return root.child(v_flex().flex_none().children(top));
     const calls = f.total ? `${f.total} call${f.total === 1 ? "" : "s"}${f.errors ? ` · ${f.errors} failed` : ""}` : null;
