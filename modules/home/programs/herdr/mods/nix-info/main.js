@@ -6,11 +6,12 @@
 // a selected call opens below the list with its arguments, result and timing.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand } from "herdr";
+import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
 import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts } from "./model.js";
 import { tipText } from "../_lib/tip.js";
+import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
 
 // The editor (../_lib/editor.js) gets the herdr functions it uses.
 const HERDR = { spaces, panes, run, shared, setShared, notify };
@@ -58,10 +59,16 @@ function selectedPane() {
 
 const pct = (r) => (r === null || r === undefined ? "—" : `${Math.round(r * 100)}%`);
 const ICON = (name) => `mods/nix-head/icons/${name}.svg`;
-const MONO = "JetBrains Mono";
+// Commands and code in the terminal's font, as Changes and Files set theirs. Read once per render
+// (render() sets it): settings() for each of 200 rows got the render interrupted.
+let infoMono = "JetBrains Mono";
+const MONO = () => infoMono;
+const UI = { div, h_flex, svg };
 const SHOWN = 200;
 const TOOL_ICON = { bash: "terminal", read: "file", edit: "pen", write: "pen", ask: "help-circle", fetch: "globe", agent: "user", code: "code" };
-const LABELS = { context: "Context window", activity: "Agent activity", lines: "Lines changed" };
+const LABELS = { context: "Context window", activity: "Agent activity", lines: "Lines changed", calls: "Calls", files: "Edited files" };
+// The commands' names for the views (nix-info.detail:calls|files) until those views are redone.
+const OLD = { calls: "activity", files: "lines" };
 // The activity detail's filters (infoKeep's kinds): a script counts for the calls it made.
 const KINDS = [
   { key: "all", label: "All" },
@@ -299,7 +306,7 @@ export default class Info extends View {
 
   // A key figure tile: label, figure + qualifier, optional bar, sub-line; a click opens its detail.
   tile(t, key, label, figure, qualifier, barEl, sub) {
-    return h_flex().id(`tile-${key}`).px(16).py(10).gap(10).items_center().border_b(1).border_color(t.border)
+    return h_flex().id(`tile-${key}`).px(CHROME.headerX).py(10).gap(10).items_center().border_b(1).border_color(t.border)
       .cursor_pointer().hover((e) => e.bg(t.hover)).active((e) => e.bg(t.selected))
       .on_click((_e, cx) => this.open(key, cx))
       .child(v_flex().flex_1().min_w(0).gap(3)
@@ -314,10 +321,8 @@ export default class Info extends View {
     return div().flex_none().text_size(20).font_medium().line_height("22px").text_color(color).child(text);
   }
 
-  section(t, label, meta, top = true) {
-    return h_flex().h(28).flex_none().px(16).items_center().when(top, (e) => e.border_t(1).border_color(t.border))
-      .child(div().flex_1().text_size(12).text_color(t.muted).child(label))
-      .when(Boolean(meta), (e) => e.child(div().text_size(11).text_color(t.dim).child(meta)));
+  section(t, label, meta, _top = true, onClick = null) {
+    return chromeSection(UI, t, `section-${label}`, label, meta, onClick);
   }
 
   // A tool call row; `big` is the detail view's taller row.
@@ -330,15 +335,13 @@ export default class Info extends View {
     const path = c.kind === "read" || c.kind === "edit" || c.kind === "write";
     const on = this.sel === c.id;
     const arg = div().flex_1().min_w(0).text_color(t.foreground)
-      .when(prose, (e) => e.text_size(12.5)).when(!prose, (e) => e.font_family(MONO).text_size(12))
+      .when(prose, (e) => e.text_size(12.5)).when(!prose, (e) => e.font_family(MONO()).text_size(12))
       .when(path, (e) => e.text_ellipsis_start()).when(!path, (e) => e.truncate()).child(c.arg || c.name);
-    return h_flex().id(`call-${c.id}`).h(big ? 32 : 28).flex_none().px(big ? 6 : 16).when(big, (e) => e.mx(10).rounded(6)).gap(big ? 10 : 8).items_center()
+    return chromeRow(UI, t, `call-${c.id}`, { on, onClick: (_e, cx) => this.select(c.id, cx) })
       // A script's own calls sit under it, one step in.
-      .when(c.level === 1, (e) => e.pl(big ? 24 : 34))
-      .when(on, (e) => e.bg(t.selected)).when(!on && c.running, (e) => e.bg(t.hover)).when(!on && !c.running, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
+      .when(c.level === 1, (e) => e.pl(CHROME.rowX + 16))
       .when(Boolean(c.full || c.arg) && !on, (e) => e.tooltip(tipText(c.full || c.arg)))
-      .cursor_pointer().on_click((_e, cx) => this.select(c.id, cx))
-      .child(svg(ICON(icon)).size(big ? 13 : 14).flex_none().text_color(t.dim))
+      .child(svg(ICON(icon)).size(14).flex_none().text_color(t.dim))
       // A long tool name would wrap onto a second line, over the next row: cut instead.
       .child(div().w(40).flex_none().whitespace_nowrap().truncate().text_size(12.5).text_color(c.error ? t.blocked : t.muted).child(c.kind))
       .child(arg)
@@ -365,7 +368,7 @@ export default class Info extends View {
 
   code(t, children) {
     return v_flex().mx(16).px(10).py(8).rounded(6).bg(t.background).border_1().border_color(t.border)
-      .font_family(MONO).text_size(12).line_height("18px").children(children);
+      .font_family(MONO()).text_size(12).line_height("18px").children(children);
   }
 
   label(t, text, extra) {
@@ -435,7 +438,7 @@ export default class Info extends View {
           : this.code(t, r.lines.map((l) => this.line(t, { text: l, color: c.threw ? t.blocked : t.foreground }))));
     }
     const kv = (k, v) => h_flex().h(22).px(16).gap(10).items_center().text_size(12)
-      .child(div().w(70).flex_none().text_color(t.muted).child(k)).child(div().font_family(MONO).text_color(t.foreground).child(v));
+      .child(div().w(70).flex_none().text_color(t.muted).child(k)).child(div().font_family(MONO()).text_color(t.foreground).child(v));
     // Started only when exact: finished − took, from Pi's durationMs (F4).
     if (state === "done" && c.finished) sections.push(this.label(t, "Timing"), ...(c.startedExact ? [kv("Started", infoClock(c.startedExact))] : []), kv("Finished", infoClock(c.finished)), kv("Took", took));
     // 55% of the area it shares with the list, so the list keeps the rest.
@@ -447,7 +450,7 @@ export default class Info extends View {
           .child(div().flex_1())
           .when(Boolean(opens), (e) => e.child(button("inspector-open", "Open file", c.path, (e) => openInEditor(HERDR, c.path, { line: c.diff?.from ?? null, side: e.modifiers.alt }))))
           .child(button("inspector-close", svg(ICON("x")).size(12), "Close (Esc)", (_e, cx) => { this.sel = null; cx.notify(); })))
-        .child(div().min_w(0).font_family(MONO).text_size(12).text_color(t.foreground)
+        .child(div().min_w(0).font_family(MONO()).text_size(12).text_color(t.foreground)
           .when(Boolean(c.path), (e) => e.text_ellipsis_start()).when(!c.path, (e) => e.truncate()).child(range ? `${c.arg} · ${range}` : c.arg || c.name))
         .child(h_flex().gap(6).text_size(11).text_color(t.dim).child(status)
           .when(Boolean(c.startedExact), (e) => e.child(`· started ${infoClock(c.startedExact, false)}`))))
@@ -486,7 +489,7 @@ export default class Info extends View {
     const u = f.usage;
     if (!u) return this.tile(t, "usage", "Usage", this.figure(t, "—", t.muted), "no usage reported yet", null, null);
     const note = u.overage ? [`Overage on${u.overageStatus ? ` · ${u.overageStatus}` : ""}`, t.blocked] : u.stale ? [`${infoAge(now - (u.at ?? now))} ago`, t.dim] : null;
-    return h_flex().id("tile-usage").px(16).py(10).gap(10).items_center().border_b(1).border_color(t.border)
+    return h_flex().id("tile-usage").px(CHROME.headerX).py(10).gap(10).items_center().border_b(1).border_color(t.border)
       .child(v_flex().flex_1().min_w(0).gap(4)
         .child(h_flex().gap(8).items_baseline()
           .child(div().flex_1().text_size(12).font_medium().text_color(t.muted).line_height("16px").child("Usage"))
@@ -503,7 +506,7 @@ export default class Info extends View {
       return rows;
     }
     const meta = s && f.started ? [[s.model ?? "model"], " · thinking ", [s.thinking ?? "—"], " · ", [`${s.messages} msgs`], " · ", [infoAge(now - s.started)]] : ["…"];
-    rows.push(v_flex().px(16).py(10).gap(4).border_b(1).border_color(t.border)
+    rows.push(v_flex().px(CHROME.headerX).py(10).gap(4).border_b(1).border_color(t.border)
       .child(h_flex().gap(8).items_center().child(this.piMark(t))
         .child(div().flex_1().min_w(0).truncate().text_size(14).font_medium().text_color(t.foreground).child(s?.name ?? infoParseTitle(this.pane.title)?.name ?? "Pi"))
         .when(Boolean(f.working), (e) => e.child(this.spinner(t, 14))))
@@ -527,7 +530,7 @@ export default class Info extends View {
       l.files ? h_flex().gap(8).child(this.figure(t, `+${added}`, t.ansi2)).child(this.figure(t, `−${removed}`, t.ansi1)) : this.figure(t, "—", t.muted),
       l.files ? `${l.files} file${l.files > 1 ? "s" : ""}` : "", null,
       this.mixed(t, l.rows.length ? l.rows.flatMap((r, i) => [i ? " · " : "", `${r.category} `, [`+${r.added}`]]).filter(Boolean) : ["No edits yet"])));
-    rows.push(this.section(t, "Tool calls", f.total ? `${f.total} calls${f.errors ? ` · ${f.errors} failed` : ""}` : "", false));
+    rows.push(div().px(CHROME.insetX).pt(CHROME.insetY).child(this.section(t, "Tool calls", f.total ? `${f.total} calls${f.errors ? ` · ${f.errors} failed` : ""}` : "", false)));
     return rows;
   }
 
@@ -543,7 +546,7 @@ export default class Info extends View {
     if (!this.pane || !s || !f.started) {
       return [div().px(16).py(14).text_size(12).text_color(t.dim).child(this.pane ? "…" : "No Pi session in this tab")];
     }
-    switch (this.detail) {
+    switch (OLD[this.detail] ?? this.detail) {
       case "context": {
         if (!s) return [];
         const c = f.context, cache = f.cache;
@@ -578,7 +581,7 @@ export default class Info extends View {
         // ↑/↓ go through the running calls too, listed above the history here.
         this.ids = [...running.map((c) => c.id), ...(history.length ? this.ids : [])];
         return [
-          h_flex().h(36).flex_none().px(14).gap(2).items_center().children(KINDS.map(chip)),
+          h_flex().h(32).flex_none().gap(2).items_center().children(KINDS.map(chip)),
           ...(running.length ? [this.section(t, "Running", String(running.length)), ...running.map((c) => this.toolRow(t, c, now, true))] : []),
           this.section(t, "History", `${infoRows(history).length} calls${f.errors && this.kind === "all" ? ` · ${f.errors} failed` : ""}`),
           ...list,
@@ -598,7 +601,7 @@ export default class Info extends View {
           this.section(t, "Files", String(files.length)),
           ...files.map((x) => h_flex().id(`file-${x.path}`).h(28).flex_none().px(16).gap(8).items_center().cursor_pointer().hover((e) => e.bg(t.hover)).active((e) => e.bg(t.selected))
             .on_click((e) => openInEditor(HERDR, x.path, { side: e.modifiers.alt }))
-            .child(div().flex_1().min_w(0).text_ellipsis_start().font_family(MONO).text_size(12).text_color(t.foreground).child(x.rel))
+            .child(div().flex_1().min_w(0).text_ellipsis_start().font_family(MONO()).text_size(12).text_color(t.foreground).child(x.rel))
             .child(num(`+${x.added}`, t.ansi2, 44)).child(num(x.removed ? `−${x.removed}` : "", t.ansi1, 44))),
         ];
       }
@@ -608,6 +611,7 @@ export default class Info extends View {
 
   render() {
     this.start();
+    infoMono = settings().font_family ?? "JetBrains Mono";
     // Herdr renders the view when focus or tabs change: a new pane is read now, not at the
     // next tick (up to a second later).
     if (this.wake && visible() && selectedPane()?.pane !== this.pane?.pane) this.wake();
@@ -616,29 +620,25 @@ export default class Info extends View {
     if (asked !== this.asked) { this.asked = asked; this.detail = asked; }
     const t = theme(), now = Date.now();
     const f = this.figures(now);
-    const name = this.session?.name ?? (this.pane ? infoParseTitle(this.pane.title)?.name : null);
-    const meta = this.detail === "lines" && this.session ? `from edits and bash-changes · ${f.lines.files} files` : name;
-    const header = h_flex().h(36).flex_none().px(16).gap(6).items_center().border_b(1).border_color(t.border)
-      .when(Boolean(this.detail), (e) => e.child(div().id("info-back").ml(-8).size(24).flex_none().flex().items_center().justify_center().rounded(6)
-        .text_color(t.dim).cursor_pointer().hover((x) => x.bg(t.hover).text_color(t.foreground)).active((x) => x.bg(t.selected)).tooltip("Back")
-        .on_click((_e, cx) => this.back(cx)).child(svg(ICON("chevron-left")).size(13))))
-      .child(div().flex_none().text_size(13).font_medium().text_color(t.foreground).child(this.detail ? LABELS[this.detail] : "Info"))
-      .when(Boolean(meta), (e) => e.child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(meta)));
-    const root = v_flex().id("info").track_focus(this.handle).size_full().min_h(0).bg(t.chrome).text_color(t.foreground)
+    // The header names the model, not the session again (D8).
+    const s = this.session;
+    const meta = s?.model ? [s.model.replace(/^claude-/, ""), s.thinking ? `thinking ${s.thinking}` : null].filter(Boolean).join(" · ") : null;
+    const header = chromeHeader(UI, t, { id: "info-head", title: this.detail ? LABELS[this.detail] ?? "Info" : "Info", meta, back: this.detail ? (cx) => this.back(cx) : null });
+    const root = v_flex().id("info").track_focus(this.handle).size_full().min_h(0).bg(t.chrome).text_color(t.foreground).text_size(CHROME.text)
       .on_key_down((e, cx) => this.key(e, cx))
       .child(header);
     // The list above, the selected call below (only where calls are listed).
-    const sel = this.detail === null || this.detail === "activity" ? this.selected(f) : null;
+    const sel = this.detail === null || this.detail === "activity" || this.detail === "calls" || this.detail === "call" ? this.selected(f) : null;
     const area = (id, list) => v_flex().id(id).flex_1().min_h(0)
       .on_size_change((size, cx) => { if (size.height !== this.area) { this.area = size.height; cx.notify(); } })
       .child(list).when(Boolean(sel), (e) => e.child(this.inspector(t, sel, now, this.area)));
     if (this.detail) {
-      return root.child(area("info-detail-area", v_flex().id("info-detail").flex_1().min_h(0).overflow_y_scrollbar().pb(8).children(this.detailView(t, f, now))));
+      return root.child(area("info-detail-area", v_flex().id("info-detail").flex_1().min_h(0).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY).children(this.detailView(t, f, now))));
     }
     const top = this.overview(t, f, now);
     if (!this.session || !f.started) return root.child(v_flex().flex_none().children(top));
     return root.child(v_flex().flex_none().children(top))
-      .child(area("info-tools-area", v_flex().id("info-tools").flex_1().min_h(0).overflow_y_scrollbar().pb(8)
+      .child(area("info-tools-area", v_flex().id("info-tools").flex_1().min_h(0).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY)
         .children(f.total ? this.toolList(t, f.running, f.history, now, false) : [div().px(16).py(12).text_size(12).text_color(t.dim).child("No tool calls yet")])));
   }
 }

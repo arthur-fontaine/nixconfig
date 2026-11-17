@@ -27,6 +27,7 @@ echo "sessions: $gen"
 
 # Tab name → session file and status.
 declare -A FILE=([pi]=session [pi-run]=running [pi-dead]=running [pi-cc]=cc [pi-empty]=empty)
+declare -A TITLE=([pi]=tide-tables-parser [pi-run]=tide-tables-parser [pi-dead]=tide-tables-parser [pi-cc]=tide-tables-cc [pi-empty]=tide-tables-new)
 declare -A STATUS=([pi]=idle [pi-run]=working [pi-dead]=idle [pi-cc]=idle [pi-empty]=idle)
 space=$(ls_ | jq -r '.spaces[] | select(.name == "info-shots") | .id' | head -1)
 if [ -z "$space" ]; then
@@ -36,7 +37,7 @@ tabs() { ls_ | jq -c --arg s "$space" '.spaces[] | select(.id == $s) | .tabs'; }
 for name in pi pi-run pi-dead pi-cc pi-empty; do
   if [ -z "$(tabs | jq -r --arg n "$name" '.[] | select(.name == $n) | .id')" ]; then
     "$S" do tab.new --name "$name" --space "$space" --folder "$fixture/repo" --focus false \
-      --argv "$(jq -cn --arg p "$here/info-fake-pi" --arg t "π - tide-tables-${name#pi} - repo" --arg s "${STATUS[$name]}" '[$p, $t, $s]')" >/dev/null
+      --argv "$(jq -cn --arg p "$here/info-fake-pi" --arg t "π - ${TITLE[$name]} - repo" --arg s "${STATUS[$name]}" '[$p, $t, $s]')" >/dev/null
   fi
 done
 sleep 1.5
@@ -52,7 +53,10 @@ edit_call=$(jq -r 'select(.message.role == "assistant") | .message.content[] | s
 act() { "$S" act "$@" >/dev/null; }
 show() { "$S" do tab.select --id "$(tab_of "$1")" >/dev/null; }
 panel() { "$S" do layout.show --id panel >/dev/null; "$S" do layout.select --stack panel-body --child "$1" >/dev/null; }
-show pi; panel info; sleep 1.5
+# A mod just redeployed (sandbox sync) reads each session and the usage again: each stand-in
+# shown once, given time, before the first shot.
+panel info
+for name in pi-empty pi-cc pi-dead pi-run pi; do show "$name"; sleep 2.5; done
 
 well() { jq -r .colors.well "$here/../themes/nix-islands-b-$1.json"; }
 corners=$out/$prefix-corners.txt; : >"$corners"
