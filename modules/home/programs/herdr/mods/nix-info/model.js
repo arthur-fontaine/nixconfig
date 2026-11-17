@@ -50,7 +50,8 @@ export function infoNewSession(file) {
     written: new Map(), // path → content of its last write, for diffing the next one
     pendingCompaction: false,
     changed: new Set(), // ids of the calls whose bash-changes record was counted
-    untitled: 0, // codemode calls without a title of their own (details.title or a late one)
+    untitled: 0,
+    untitledNested: 0, // nested bash calls only bash-titles.json can name // codemode calls without a title of their own (details.title or a late one)
     early: new Map(), // id → a late title fed before its call
   };
 }
@@ -447,7 +448,11 @@ function apply(state, entry) {
         const lines = Array.isArray(out?.lines) ? out.lines : [];
         const text = c.error && typeof c.errorText === "string" ? c.errorText : lines.join("\n");
         // Title first, as a top-level bash: none carries one yet, but bash-titles may name them.
-        return { id: typeof c.id === "string" ? c.id : `${m.toolCallId}/${i + 1}`, name: c.name, kind: t.kind, arg: c.title ?? t.arg, full: t.full ?? t.arg, path: t.path,
+        // A long command bash-titles named only in bash-titles.json (nested calls' titles aren't
+        // in the session): keyed by its whole command, so not from details.calls' cut one.
+        const wants = !c.title && c.name === "bash" && c.whole && infoWantsTitle(c.args.command);
+        if (wants) state.untitledNested++;
+        return { id: typeof c.id === "string" ? c.id : `${m.toolCallId}/${i + 1}`, name: c.name, kind: t.kind, arg: c.title ?? t.arg, full: t.full ?? t.arg, path: t.path, wants,
           error: c.error, duration: c.duration, args: infoCapValue(c.args, INFO_NESTED_ARG_CAP),
           result: text.slice(0, INFO_NESTED_ARG_CAP), resultCut: text.length > INFO_NESTED_ARG_CAP || (!c.error && out?.total > lines.length) };
       });
@@ -595,13 +600,12 @@ export function infoCache(state) {
 export function infoTools(state, titles = null) {
   return state.order.slice().reverse().map((id) => {
     const c = state.tools.get(id);
+    const fromFile = (key) => { const x = titles?.[key]; return typeof x === "string" && x && !x.endsWith("…") ? x : null; };
     let arg = c.title ?? c.lateTitle ?? c.arg;
-    if (titles && c.titleKey && !c.titled) {
-      const title = titles[c.titleKey];
-      if (typeof title === "string" && title && !title.endsWith("…")) arg = title;
-    }
+    if (c.titleKey && !c.titled) arg = fromFile(c.titleKey) ?? arg;
+    const nested = titles && c.nested ? c.nested.map((sub) => (sub.titleKey && fromFile(sub.titleKey) ? { ...sub, arg: fromFile(sub.titleKey) } : sub)) : c.nested;
     return { id: c.id, kind: c.kind, name: c.name, arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null,
-      threw: c.threw ?? null, nested: c.nested ?? null,
+      threw: c.threw ?? null, nested: nested ?? null,
       args: c.args, result: c.result, resultCut: c.resultCut, finished: c.finished, diff: c.diff ?? null };
   });
 }
@@ -634,16 +638,22 @@ export function infoKeyTitles(state, max = Infinity) {
   let n = 0;
   for (const id of state.order) {
     const c = state.tools.get(id);
-    if (!c.needsTitle || c.titled || c.titleKey) continue;
-    if (n++ >= max) return true;
-    c.titleKey = c.name === "codemode" ? infoScriptKey(c.full) : infoCommandKey(c.full);
+    if (c.needsTitle && !c.titled && !c.titleKey) {
+      if (n++ >= max) return true;
+      c.titleKey = c.name === "codemode" ? infoScriptKey(c.full) : infoCommandKey(c.full);
+    }
+    for (const sub of c.nested ?? []) {
+      if (!sub.wants || sub.titleKey) continue;
+      if (n++ >= max) return true;
+      sub.titleKey = infoCommandKey(sub.full);
+    }
   }
   return false;
 }
 
 // Whether bash-titles.json could name a call: some codemode call has no title of its own.
 export function infoNeedsTitles(state) {
-  return state.untitled > 0;
+  return state.untitled > 0 || state.untitledNested > 0;
 }
 
 export function infoRunning(state) {

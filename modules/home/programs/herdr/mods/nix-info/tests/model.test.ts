@@ -559,3 +559,27 @@ test("a sub-row takes its nested call's title when it carries one, else its comm
   assert.equal(titled.full, LONG);
   assert.equal(plain.arg, "git status -sb");
 });
+
+test("a nested bash takes its bash-titles.json title, keyed by its whole command", () => {
+  // The real nested command of REAL's first script (details.calls cuts it: nestedCalls' is whole).
+  const cmd = "which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr";
+  assert.equal(infoCommandKey(cmd), keyOf(cmd));
+  assert.equal(wantsTitle(cmd), true);
+  const s = infoNewSession("f");
+  infoFeed(s, REAL);
+  // Three scripts with no title of their own, and that nested bash.
+  assert.equal(infoNeedsTitles(s), true);
+  const titles = { [keyOf(cmd)]: "Finds the herdr-app binaries", [keyOf("sed -n 112,118p modules/home/programs/herdr/mods/nix-tabs/main.js")]: "Not wanted: short and one step" };
+  infoKeyTitles(s);
+  const all = infoRows(infoTools(s, titles));
+  const sub = all.find((r) => r.id === "toolu_01NZrSTC2p7ssRymJ4A1iLvk/1");
+  assert.equal(sub.arg, "Finds the herdr-app binaries");
+  assert.equal(sub.full, cmd);
+  assert.equal(all.find((r) => r.id === "toolu_01CLKS9CX6zyphy73bQpqtZU/2").arg, "sed -n 112,118p modules/home/programs/herdr/mods/nix-tabs/main.js");
+  // Under a filter too.
+  assert.equal(infoRows([infoKeep(infoTools(s, titles).find((c) => c.id === "toolu_01NZrSTC2p7ssRymJ4A1iLvk"), "bash")])[1].arg, "Finds the herdr-app binaries");
+  // The scripts titled, the nested bash still wants the file.
+  const late = (id) => line({ type: "custom", customType: "bash-titles", timestamp: "2026-11-16T23:00:00.000Z", data: { toolCallId: id, title: "A title" } });
+  infoFeed(s, late("toolu_01NZrSTC2p7ssRymJ4A1iLvk") + late("toolu_01CdG5Nu7zL7rxJuWhL1CZjt") + late("toolu_01CLKS9CX6zyphy73bQpqtZU"));
+  assert.equal(infoNeedsTitles(s), true);
+});
