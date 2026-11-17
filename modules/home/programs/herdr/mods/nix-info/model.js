@@ -49,7 +49,8 @@ export function infoNewSession(file) {
     files: new Map(), // path → { added, removed }
     written: new Map(), // path → content of its last write, for diffing the next one
     pendingCompaction: false,
-    untitled: 0, // codemode calls without a title of their own (details.title)
+    untitled: 0, // codemode calls without a title of their own (details.title or a late one)
+    early: new Map(), // id → a late title fed before its call
   };
 }
 
@@ -282,6 +283,13 @@ function countLines(state, call) {
   state.files.set(a.path, f);
 }
 
+// A codemode call has a title of its own: bash-titles.json is no longer needed for it.
+function infoTitled(state, call) {
+  if (call.name !== "codemode" || call.titled) return;
+  call.titled = true;
+  state.untitled--;
+}
+
 function apply(state, entry) {
   const t = ms(entry.timestamp);
   if (t) { state.last = t; state.started ??= t; }
@@ -299,6 +307,16 @@ function apply(state, entry) {
     case "thinking_level_change":
       state.thinking = entry.thinkingLevel ?? state.thinking;
       return;
+    case "custom": {
+      // A title Pi learned after the result: the latest entry for a call counts.
+      const id = entry.data?.toolCallId, title = entry.data?.title;
+      if (entry.customType !== "bash-titles" || typeof id !== "string" || typeof title !== "string" || !title.trim()) return;
+      const call = state.tools.get(id);
+      if (!call) { state.early.set(id, title.trim()); return; }
+      call.lateTitle = title.trim();
+      infoTitled(state, call);
+      return;
+    }
     case "compaction":
       state.compactions++;
       state.lastCompaction = t;
@@ -328,7 +346,9 @@ function apply(state, entry) {
       state.tools.set(b.id, { ...infoTool(b, state.cwd), started: ms(m.timestamp) ?? t, duration: null, error: null, call: b,
         args: infoCapValue(b.arguments ?? {}), result: null, resultCut: false, finished: null });
       state.order.push(b.id);
+      const call = state.tools.get(b.id);
       if (b.name === "codemode") state.untitled++;
+      if (state.early.has(b.id)) { call.lateTitle = state.early.get(b.id); state.early.delete(b.id); infoTitled(state, call); }
     }
   } else if (m.role === "toolResult") {
     const call = state.tools.get(m.toolCallId);
@@ -345,7 +365,7 @@ function apply(state, entry) {
     if (call.name === "codemode") {
       call.arg = infoNestedArg(m, state.cwd) ?? call.arg;
       const title = m.details?.title;
-      if (typeof title === "string" && title.trim() && call.title === undefined) { call.title = title.trim(); state.untitled--; }
+      if (typeof title === "string" && title.trim()) { call.title = title.trim(); infoTitled(state, call); }
     }
     // Lines count once the edit or write went through.
     if (!call.error) countLines(state, call.call);
@@ -480,13 +500,13 @@ export function infoCache(state) {
 }
 
 // Tool calls newest first; `running` = no result yet. A codemode call is named by its result's
-// details.title, else by `titles` (bash-titles.json, for older sessions and running scripts; a
+// details.title, else by its latest bash-titles session entry, else by `titles` (bash-titles.json, for older sessions and running scripts; a
 // title ending in "…" was cut by an old limit: none), else by its own arg.
 export function infoTools(state, titles = null) {
   return state.order.slice().reverse().map((id) => {
     const c = state.tools.get(id);
-    let arg = c.title ?? c.arg;
-    if (titles && c.name === "codemode" && c.title === undefined) {
+    let arg = c.title ?? c.lateTitle ?? c.arg;
+    if (titles && c.name === "codemode" && !c.titled) {
       c.titleKey ??= infoScriptKey(c.full);
       const title = titles[c.titleKey];
       if (typeof title === "string" && title && !title.endsWith("…")) arg = title;

@@ -299,3 +299,32 @@ test("bash-titles.json is needed only while a codemode call has no title of its 
   assert.equal(infoNeedsTitles(s), true);
 });
 
+
+test("a title that arrived later, as a bash-titles session entry, names the call after details.title", () => {
+  const late = (ts, id, title) => line({ type: "custom", customType: "bash-titles", timestamp: ts, data: { toolCallId: id, title } });
+  const s = infoNewSession("f");
+  infoFeed(s, assistant("2026-11-03T10:00:05.000Z", { input: 1, output: 1 }, [codemode("a", "return 1"), codemode("b", "return 2"), codemode("c", "return 3")])
+    + result("2026-11-03T10:00:06.000Z", "a", { details: { title: "From the result" } })
+    + result("2026-11-03T10:00:06.000Z", "b", nested("b", []))
+    + late("2026-11-03T10:00:07.000Z", "a", "Later, but details.title wins")
+    + late("2026-11-03T10:00:07.000Z", "b", "First late title")
+    + late("2026-11-03T10:00:08.000Z", "b", "Latest late title")
+    + late("2026-11-03T10:00:08.000Z", "c", "   ")
+    + line({ type: "custom", customType: "other", timestamp: "2026-11-03T10:00:08.000Z", data: { toolCallId: "c", title: "Not ours" } }));
+  const titles = { [infoScriptKey("return 2")]: "From the file", [infoScriptKey("return 3")]: "Three, from the file" };
+  assert.deepEqual(rows(s, titles).reverse(), [["a", "code", "From the result"], ["b", "code", "Latest late title"], ["c", "code", "Three, from the file"]]);
+  // Only c lacks a title of its own; once one arrives, the file isn't needed.
+  assert.equal(infoNeedsTitles(s), true);
+  infoFeed(s, late("2026-11-03T10:00:09.000Z", "c", "Three, late"));
+  assert.equal(infoNeedsTitles(s), false);
+  assert.equal(rows(s, titles)[0][2], "Three, late");
+});
+
+test("a late title fed before its call is kept for it", () => {
+  const s = infoNewSession("f");
+  infoFeed(s, line({ type: "custom", customType: "bash-titles", timestamp: "2026-11-03T10:00:04.000Z", data: { toolCallId: "e", title: "Early" } })
+    + assistant("2026-11-03T10:00:05.000Z", { input: 1, output: 1 }, [codemode("e", "return 1")]));
+  assert.equal(infoNeedsTitles(s), false);
+  assert.equal(rows(s)[0][2], "Early");
+});
+
