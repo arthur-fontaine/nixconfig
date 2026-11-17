@@ -9,7 +9,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoLastCall, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
 
 // The editor (../_lib/editor.js) gets the herdr functions it uses.
 const HERDR = { spaces, panes, run, shared, setShared, notify };
@@ -19,10 +19,14 @@ const POLL = 100;
 // Sessions kept read, for switching between panes.
 const KEPT = 6;
 const USAGE_EVERY = 5000;
-const CHUNK_BYTES = 4 * 1024 * 1024;
-// From byte $2 on: whole lines, up to CHUNK_BYTES; nothing while the file ends mid-line.
+const KEYS_AT_ONCE = 8;
+// Herdr interrupts a mod that runs too long between two awaits: a 4 MB chunk (counting its
+// bytes, then parsing it) did, on a 40 MB session, and the panel's loop died with it.
+const CHUNK_BYTES = 1024 * 1024;
+// From byte $2 on: whole lines, up to CHUNK_BYTES, their byte count on stderr; nothing while
+// the file ends mid-line.
 const CHUNK = `[ "$(tail -c 1 "$1" | od -An -tx1 | tr -d ' ')" = "0a" ] || exit 0
-tail -c +"$2" "$1" | LC_ALL=C awk -v max=${CHUNK_BYTES} '{ print; n += length($0) + 1; if (n >= max) exit }'`;
+tail -c +"$2" "$1" | LC_ALL=C awk -v max=${CHUNK_BYTES} '{ print; n += length($0) + 1; if (n >= max) exit } END { printf "%d", n > "/dev/stderr" }'`;
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -167,7 +171,8 @@ export default class Info extends View {
       if (this.session !== s) return false;
       const text = r?.code === 0 ? r.stdout : "";
       if (!text) break;
-      if (infoFeed(s, text, infoUtf8Length(text))) changed = true;
+      const bytes = Number(r.stderr);
+      if (infoFeed(s, text, bytes > 0 ? bytes : infoUtf8Length(text))) changed = true;
       if (text.length < CHUNK_BYTES / 4) break;
     }
     return changed;
@@ -217,6 +222,11 @@ export default class Info extends View {
           if (!file && this.session) { this.session = null; changed = true; }
           if (file && (await this.read(file))) changed = true;
           if (Date.now() - usageAt > USAGE_EVERY) { usageAt = Date.now(); await this.readUsage(); changed = true; }
+          // A few keys per continuation, the view redrawn as titles come.
+          for (const s = this.session; this.titles && s && this.session === s && infoKeyTitles(s, KEYS_AT_ONCE);) {
+            changed = true;
+            await new Promise((r) => cx.timer.after(1, r));
+          }
           // Running calls' elapsed time ticks.
           if (changed || (this.session && this.pane?.status === "working")) cx.notify();
         }

@@ -576,15 +576,15 @@ export function infoCache(state) {
   return { last: last ? hit(last) : null, session: hit(state.totals), read: state.totals.cacheRead, written: state.totals.cacheWrite, input: state.totals.input, output: state.totals.output };
 }
 
-// Tool calls newest first; `running` = no result yet. A codemode call is named by its result's
-// details.title, else by its latest bash-titles session entry, else by `titles` (bash-titles.json, for older sessions and running scripts; a
-// title ending in "…" was cut by an old limit: none), else by its own arg.
+// Tool calls newest first; `running` = no result yet. A codemode call (a long bash command) is named
+// by its result's details.title, else by its latest bash-titles session entry, else by `titles`
+// (bash-titles.json, for older sessions and running scripts, once infoKeyTitles keyed the call;
+// a title ending in "…" was cut by an old limit: none), else by its own arg.
 export function infoTools(state, titles = null) {
   return state.order.slice().reverse().map((id) => {
     const c = state.tools.get(id);
     let arg = c.title ?? c.lateTitle ?? c.arg;
-    if (titles && c.needsTitle && !c.titled) {
-      c.titleKey ??= c.name === "codemode" ? infoScriptKey(c.full) : infoCommandKey(c.full);
+    if (titles && c.titleKey && !c.titled) {
       const title = titles[c.titleKey];
       if (typeof title === "string" && title && !title.endsWith("…")) arg = title;
     }
@@ -607,6 +607,20 @@ export function infoKeep(c, kind) {
   if (!matched.length) return c;
   const arg = matched.length === 1 ? matched[0].label : `${infoCallNames(matched.map((n) => n.name))} · ${matched[0].arg}`;
   return { ...c, arg, tip: matched.map((n) => n.label).join("\n") };
+}
+
+// Works out the bash-titles.json keys of up to `max` calls that lack a title (infoTools looks them
+// up): the sha256 is slow under Herdr's JS, which interrupts a mod busy too long between two
+// awaits, so a session of hundreds of scripts is keyed a few at a time. Whether some are left.
+export function infoKeyTitles(state, max = Infinity) {
+  let n = 0;
+  for (const id of state.order) {
+    const c = state.tools.get(id);
+    if (!c.needsTitle || c.titled || c.titleKey) continue;
+    if (n++ >= max) return true;
+    c.titleKey = c.name === "codemode" ? infoScriptKey(c.full) : infoCommandKey(c.full);
+  }
+  return false;
 }
 
 // Whether bash-titles.json could name a call: some codemode call has no title of its own.

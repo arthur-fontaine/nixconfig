@@ -5,7 +5,7 @@ import {
   infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length,
   infoCapValue, infoClock, infoEditDiff, infoJsonLines, infoParseDiff, infoResultLines, RESULT_CAP,
   infoPace, FIVE_HOURS, SEVEN_DAYS, infoTokensLeft, infoScriptKey, infoNeedsTitles,
-  infoKeep, infoCommandKey, infoWantsTitle,
+  infoKeep, infoCommandKey, infoWantsTitle, infoKeyTitles,
 } from "../model.js";
 import { keyOf, scriptKey, wantsTitle } from "../../../../pi/extensions/bash-titles/titles.ts";
 
@@ -213,7 +213,7 @@ test("Pi's edit diff gives numbered lines and the changed range", () => {
 
 const codemode = (id, code) => ({ id, name: "codemode", arguments: { code } });
 const nested = (id, calls) => ({ nestedCalls: { complete: true, calls: calls.map(([name, args], i) => ({ id: `${id}/${i + 1}`, name, status: "ok", arguments: args })) } });
-const rows = (s, titles) => infoTools(s, titles).map((c) => [c.id, c.kind, c.arg]);
+const rows = (s, titles) => { infoKeyTitles(s); return infoTools(s, titles).map((c) => [c.id, c.kind, c.arg]); };
 
 test("a codemode call is a short kind; while it runs, its arg comes from the code", () => {
   const s = infoNewSession("f");
@@ -493,4 +493,16 @@ test("the command key and which commands get a title are bash-titles' own", () =
     assert.equal(infoWantsTitle(c), wantsTitle(c), JSON.stringify(c));
     assert.equal(infoCommandKey(c), keyOf(c), JSON.stringify(c));
   }
+});
+
+test("bash-titles.json keys are worked out a few calls at a time", () => {
+  const s = infoNewSession("f");
+  infoFeed(s, assistant("2026-11-03T10:00:05.000Z", { input: 1, output: 1 }, ["return 1", "return 2", "return 3"].map((code, i) => codemode(`k${i}`, code))));
+  const titles = Object.fromEntries(["return 1", "return 2", "return 3"].map((code) => [infoScriptKey(code), `Title of ${code}`]));
+  // Not keyed yet: listed by their code, nothing hashed while listing.
+  assert.deepEqual(infoTools(s, titles).map((c) => c.arg), ["return 3", "return 2", "return 1"]);
+  assert.equal(infoKeyTitles(s, 2), true);
+  assert.deepEqual(infoTools(s, titles).map((c) => c.arg), ["return 3", "Title of return 2", "Title of return 1"]);
+  assert.equal(infoKeyTitles(s, 2), false);
+  assert.deepEqual(infoTools(s, titles).map((c) => c.arg), ["Title of return 3", "Title of return 2", "Title of return 1"]);
 });
