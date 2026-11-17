@@ -6,7 +6,8 @@
 // this view draws as its tab strip, or beside the current file (a split).
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, settings, props, exec, home, appHome, shared, setShared, spaces, panes, focused, run, writeTextFile } from "herdr";
+import { theme, settings, props, exec, home, appHome, shared, setShared, spaces, panes, focused, run, writeTextFile, layout } from "herdr";
+import { paneRadius } from "../_lib/pane.js";
 import { Grid, nvimKey } from "./grid.js";
 import { startNvim } from "./nvim.js";
 
@@ -655,7 +656,7 @@ export default class Editor extends View {
     const c = this.grid.cmdline;
     const h = m.lh + 12;
     const caret = PAD.x + (c.lead.length + c.pos) * m.cw;
-    return div().absolute().left(0).bottom(0).w_full().h(h).bg(t.chrome).border_t(1).border_color(t.border)
+    return div().absolute().left(0).bottom(0).w_full().h(h).bg(t.chrome).border_t(1).border_color(t.border).rounded_b(paneRadius(layout()))
       .child(div().absolute().left(PAD.x).top(6).h(m.lh).line_height(`${m.lh}px`).whitespace_nowrap().overflow_hidden()
         .child(h_flex().child(div().text_color(t.dim).child(c.lead)).child(div().text_color(t.foreground).child(c.text))))
       .child(div().absolute().left(caret).top(6).w(2).h(m.lh).bg(t.accent));
@@ -672,7 +673,7 @@ export default class Editor extends View {
     const msg = this.flash ?? this.grid.message;
     const count = (n, color) => h_flex().flex_none().gap(5).items_center()
       .child(div().size(6).rounded(3).bg(color)).child(String(n));
-    return h_flex().h(STATUS).flex_none().px(12).gap(14).items_center().bg(t.chrome).border_t(1).border_color(t.border)
+    return h_flex().h(STATUS).flex_none().px(12).gap(14).items_center().bg(t.chrome).border_t(1).border_color(t.border).rounded_b(paneRadius(layout()))
       .text_size(11).text_color(t.muted)
       .when(Boolean(msg), (e) => e.child(div().flex_1().min_w(0).truncate().whitespace_nowrap().text_color(msg.error ? t.blocked : t.muted).child(msg.text.replace(/\s+/g, " "))))
       .when(!msg, (e) => e.child(div().flex_1().min_w(0).text_ellipsis_start().whitespace_nowrap().text_color(t.dim).child(rel)))
@@ -758,7 +759,7 @@ export default class Editor extends View {
     const bg = this.grid.defaults.bg ?? t.background;
     const names = tabs.map((x) => basename(x.file) || "[No Name]");
     const twice = new Set(names.filter((n, i) => names.indexOf(n) !== i));
-    return h_flex().id("editor-tabs").h(TABS).flex_none().bg(t.chrome).border_b(1).border_color(t.border).overflow_x_scroll()
+    return h_flex().id("editor-tabs").h(TABS).flex_none().bg(t.chrome).border_b(1).border_color(t.border).rounded_t(paneRadius(layout())).overflow_x_scroll()
       .children(tabs.map((x, i) => {
         const on = x.current;
         const dir = twice.has(names[i]) ? basename(dirname(x.file)) : null;
@@ -792,6 +793,8 @@ export default class Editor extends View {
     this.followTheme();
     const body = div().id("editor-grid").flex_1().min_h(0).relative().overflow_hidden()
       .bg(g.defaults.bg ?? t.background).font_family(m.mono).text_size(m.size).line_height(`${m.lh}px`)
+      // With no tab strip above it, the grid's own fill is the top corners.
+      .when(!strip, (e) => e.rounded_t(paneRadius(layout())))
       .on_size_change((px, cx) => { this.px = px; this.resized(px); })
       .on_mouse_down("left", (e, cx) => this.mouseDown(e, cx))
       .on_mouse_move((e) => this.mouseMove(e))
@@ -822,7 +825,8 @@ export default class Editor extends View {
           }, { owner: this });
         }
       }).child("0".repeat(100));
-    return v_flex().id("nix-editor").size_full().min_h(0).relative().child(measure).bg(g.defaults.bg ?? t.background).text_color(t.foreground)
+    // Its frame's radius doesn't clip what it paints (_lib/pane.js): the root and its bars round themselves.
+    return v_flex().id("nix-editor").size_full().min_h(0).relative().child(measure).bg(g.defaults.bg ?? t.background).rounded(paneRadius(layout())).text_color(t.foreground)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .on_modifiers_changed((e) => this.followLink(e.modifiers.platform))
       .when(Boolean(strip), (e) => e.child(strip))
