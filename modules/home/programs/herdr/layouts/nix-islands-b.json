@@ -216,7 +216,10 @@
             "px": 24
           },
           "content": {
-            "mod": "nix-status"
+            "mod": "nix-status",
+            "props": {
+              "onWell": true
+            }
           }
         }
       ],

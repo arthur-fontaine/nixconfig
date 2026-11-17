@@ -12,7 +12,7 @@
 // Left: machine, branch, then the agents that matter (need you, done, working). Right: key hints.
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, agents, panes, focused, theme, run, window, keys, nextCommand, openOverlay, exec, shared, setShared, layout, terminals } from "herdr";
+import { spaces, agents, panes, focused, theme, run, window, keys, nextCommand, openOverlay, exec, shared, setShared, layout, terminals, props } from "herdr";
 import { sessionHidden, wtSessionDirName } from "../_lib/worktree.js";
 import { closeAsk, closePlan, closeQuestion, closeTarget } from "../_lib/close.js";
 
@@ -153,7 +153,9 @@ export default class Status extends View {
     const count = (id, n, word, color) => h_flex().id(id).gap(5).items_center().cursor_pointer().text_color(color ?? t.muted)
       .hover((x) => x.opacity(0.75)).active((x) => x.opacity(0.55))
       .on_click(() => this.command("jump")).when(Boolean(color), (el) => el.child(div().size(6).flex_none().rounded(3).bg(color))).child(`${n} ${word}`);
-    return h_flex().size_full().px(12).gap(14).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(11).text_color(t.muted)
+    return h_flex().size_full().px(12).gap(14).items_center()
+      // { onWell: true } (islands layouts): no strip of its own, the text sits on the well.
+      .when(!props()?.onWell, (el) => el.bg(t.chrome).border_t(1).border_color(t.border)).text_size(11).text_color(t.muted)
       .child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer"))
       .when(Boolean(space?.branch), (el) => el.child(label("git-branch", space.branch)))
       .when(needs > 0, (el) => el.child(count("agents-need", needs, needs === 1 ? "needs you" : "need you", t.blocked)))
