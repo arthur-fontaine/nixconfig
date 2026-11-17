@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   infoCallState, infoCounts, infoEdited, infoFeed, infoGitFiles, infoIdleSince, infoKeep, infoKindCounts, infoMeterTone,
-  infoNewSession, infoPaceText, infoRows, infoStatusLine, infoStepsLabel, infoTools, infoViewCommand,
+  infoNavIds, infoNewSession, infoPaceText, infoRows, infoStatusLine, infoStepsLabel, infoTools, infoViewCommand,
 } from "../model.js";
 
 const line = (o) => JSON.stringify(o) + "\n";
@@ -185,4 +185,15 @@ test("an untitled script's label counts all its steps, also under a filter that 
   const kept = infoKeep(script, "bash");
   assert.equal(kept.nested.length, 2);
   assert.equal(infoStepsLabel(kept.steps), "5 steps: bash, edit, read");
+});
+
+test("↑/↓ in a call walk the list it was opened from: the Calls rows, or the overview's calls and the steps it shows (D7)", () => {
+  const script = { id: "s", nested: [1, 2, 3, 4, 5].map((i) => ({ id: "s/" + i })) };
+  const recent = [{ id: "a" }, script, { id: "b" }];
+  const listed = [{ id: "x" }, { id: "y" }];
+  const view = (o) => ({ detail: "call", from: null, collapsed: [], ...o });
+  assert.deepEqual(infoNavIds(view({}), listed, recent), ["a", "s", "s/1", "s/2", "s/3", "b"]);
+  assert.deepEqual(infoNavIds(view({ collapsed: ["s"] }), listed, recent), ["a", "s", "b"]);
+  assert.deepEqual(infoNavIds(view({ from: "calls" }), listed, recent), ["x", "y"]);
+  assert.deepEqual(infoNavIds(view({ detail: "calls" }), listed, recent), ["x", "y"]);
 });

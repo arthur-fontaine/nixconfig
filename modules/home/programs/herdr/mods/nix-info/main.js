@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -130,7 +130,7 @@ export default class Info extends View {
     cx.notify();
   }
 
-  // State is set here and in the loop, never in render(): Herdr keeps nothing render() assigns.
+  // State changes here and in the loop; render() only reads (prepare() derives what it shows).
   apply(next) {
     const back = this.detail === "call" && next.detail === "calls";
     Object.assign(this, next);
@@ -675,9 +675,9 @@ export default class Info extends View {
     return f ? { ...f, usage } : { usage };
   }
 
-  // What the session gives, worked out in the loop and in command() once per change, and only
-  // read by render(): Herdr keeps nothing render() sets on the view, and a long session's
-  // derivation (1 400 rows, some 25 ms under Herdr) on each render got the view interrupted.
+  // What the session gives, worked out in the loop and in apply() once per change, and only read
+  // by render(): a long session's derivation (1 400 rows, some 25 ms under Herdr) in a render
+  // got the view interrupted, and an interrupted render leaves an idle tab's frame stale.
   memoKey() {
     return this.session ? `${this.rev}|${this.session.file}|${this.pane?.status}|${this.root()}` : null;
   }
@@ -696,8 +696,7 @@ export default class Info extends View {
     if (f.list?.key !== list) f.list = { key: list, rows: this.makeList(f, list) };
     // What the list shows, and what ↑/↓ walk: that list, or the overview's recent calls.
     this.listed = this.all ? f.list.rows : f.list.rows.slice(0, SHOWN);
-    this.ids = this.detail === "calls" || (this.detail === "call" && this.from === "calls")
-      ? this.listed.map((r) => r.id) : [...f.running, ...f.history].slice(0, 8).map((c) => c.id);
+    this.ids = infoNavIds(this.view(), this.listed, [...f.running, ...f.history].slice(0, 8));
   }
 
   derive() {

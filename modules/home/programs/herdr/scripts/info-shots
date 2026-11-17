@@ -90,7 +90,7 @@ state_() { # <state> <theme>
     call-script) act "nix-info.select:$script_a" ;;
     call-step) act "nix-info.select:$script_a/2" ;;
     call-edit) act "nix-info.select:$edit_call" ;;
-    call-next) act "nix-info.select:$script_a"; act nix-info.next ;;
+    call-next) act nix-info.detail:calls; act "nix-info.select:$script_a"; act nix-info.next ;;
     show-all) act nix-info.detail:calls; act nix-info.all ;;
     # Back from a call far down the list: the list again, scrolled to it and selected.
     back) act nix-info.detail:calls; act "nix-info.select:$deep_call"; sleep 0.5; act nix-info.back ;;

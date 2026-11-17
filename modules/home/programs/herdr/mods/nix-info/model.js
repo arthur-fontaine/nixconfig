@@ -794,6 +794,13 @@ export function infoGitFiles(numstat, nameStatus, untracked = [], untrackedLines
 }
 
 // An untitled script as its steps: "4 steps: read, edit, write" (kinds in order of first use).
+// The calls ↑/↓ walk in a call (D7): the list it was opened from. The Calls rows as listed, or
+// the overview's recent calls with the steps it shows (3 each, none of a collapsed script).
+export function infoNavIds(view, listed, recent) {
+  if (view.detail === "calls" || (view.detail === "call" && view.from === "calls")) return listed.map((r) => r.id);
+  return recent.flatMap((c) => [c.id, ...(view.collapsed.includes(c.id) ? [] : (c.nested ?? []).slice(0, 3).map((n) => n.id))]);
+}
+
 export function infoStepsLabel(nested) {
   if (!nested?.length) return null;
   const kinds = [...new Set(nested.map((n) => n.kind))];
