@@ -38,3 +38,46 @@ export function closeQuestion(scope, lost) {
   const list = [...new Set(lost)];
   return { title: `Close ${what}?`, detail: `${list.join(", ")} would end.` };
 }
+
+// What closing a target ends, and the commands that do it, from the herdr state:
+// world { spaces, panes, terminals }; target { pane } | { tab } | { spaces: [ids] }.
+// A tab's only pane closes the tab, a space's only tab closes the space (Herdr does the
+// same); each command carries confirmed: true, since closeAsk asked already. null: gone.
+export function closePlan(world, target) {
+  const spaceOfTab = (id) => world.spaces.find((s) => (s.tabs ?? []).some((t) => t.id === id));
+  const panesOf = (tab) => world.panes.filter((p) => p.tab === tab);
+  let scope, ids;
+  if (target.spaces) {
+    const found = target.spaces.map((id) => world.spaces.find((s) => s.id === id)).filter(Boolean);
+    if (!found.length) return null;
+    scope = "space"; ids = found;
+  } else {
+    const pane = target.pane ? world.panes.find((p) => p.pane === target.pane) : null;
+    if (target.pane && !pane) return null;
+    const tab = pane ? pane.tab : target.tab;
+    const space = spaceOfTab(tab);
+    if (!space) return null;
+    if (pane && panesOf(tab).length > 1) scope = "pane";
+    else scope = (space.tabs ?? []).length > 1 ? "tab" : "space";
+    ids = scope === "pane" ? [pane] : scope === "tab" ? [tab] : [space];
+  }
+  const tabsOf = (s) => (s.tabs ?? []).map((t) => t.id);
+  const panes = scope === "pane" ? ids : world.panes.filter((p) => (scope === "tab" ? ids : ids.flatMap(tabsOf)).includes(p.tab));
+  const term = (a) => (world.terminals ?? []).find((t) => t.address === a);
+  const items = panes.map((p) => {
+    if (!p.terminal) return { kind: "mod" };
+    if (!p.program) return { kind: "terminal" };
+    const agent = Boolean(p.program.agent || p.status);
+    const it = { kind: "terminal", shell: Boolean(p.program.shell) && !agent, agent, app: p.app ?? null, status: p.status ?? null, name: p.program.name ?? null };
+    if (agent) it.resumable = p.app === "pi" ? (term(p.terminal)?.labels?.["pi.session"] ? true : null) : false;
+    return it;
+  });
+  const mine = new Set(panes.map((p) => p.terminal).filter(Boolean));
+  const workers = (world.terminals ?? []).filter((t) => t.state === "live" && mine.has(t.parent) && !world.panes.some((p) => p.terminal === t.address)).map((t) => t.status ?? null);
+  const spaces = scope === "space" ? ids : [spaceOfTab(scope === "tab" ? ids[0] : ids[0].tab)];
+  const remote = spaces.some((s) => s.machine);
+  const commands = scope === "pane" ? [["pane.close", { pane: ids[0].pane }]]
+    : scope === "tab" ? [["tab.close", { id: ids[0], confirmed: true }]]
+    : ids.map((s) => ["space.close", { id: s.id, confirmed: true }]);
+  return { scope, items, workers, remote, commands };
+}
