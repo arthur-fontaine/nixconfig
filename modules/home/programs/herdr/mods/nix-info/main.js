@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -398,9 +398,11 @@ export default class Info extends View {
       : div().flex_1().min_w(0).truncate().font_family(MONO()).text_size(12).text_color(t.foreground).child(c.arg || c.name);
     const KIND = { code: "Script", bash: "Bash", read: "Read", edit: "Edit", write: "Write", ask: "Question", fetch: "Fetch", agent: "Agent" };
     return chromeRow(UI, t, `call-${c.id}`, { on, onClick: inList ? null : onClick, clickable: inList || Boolean(onClick) })
-      .when(Boolean(c.full || c.arg) && !more, (e) => e.tooltip(tipText(`${KIND[c.kind] ?? c.name}: ${c.full || c.arg}`)))
+      .when(Boolean(c.full || c.arg) && !more, (e) => e.tooltip(tipText(c.merged ? `${c.tip}\n${c.full || c.arg}` : `${KIND[c.kind] ?? c.name}: ${c.full || c.arg}`)))
       .when(c.level === 1, (e) => e.child(div().w(10).h_full().flex_none().child(div().ml(4).w(1).h_full().bg(t.border))))
       .child(div().w(10).flex_none().flex().items_center().justify_center()
+        // R2-1: a script merged with its one step: the script's marker, muted, no action of its own.
+        .when(Boolean(c.merged), (e) => e.child(svg(ICON(TOOL_ICON.code)).size(10).text_color(t.dim)))
         .when(Boolean(disclose), (e) => e.id(`toggle-${c.id}`).cursor_pointer().when(!inList, (x) => x.on_click(disclose.onClick))
           .child(svg(ICON(disclose.open ? "chevron-down" : "chevron-right")).size(10).text_color(t.dim))))
       .when(!more, (e) => e.child(svg(ICON(TOOL_ICON[c.kind] ?? "box")).size(14).flex_none().text_color(t.dim)))
@@ -416,6 +418,8 @@ export default class Info extends View {
   recentCalls(t, f) {
     const rows = [];
     for (const c of [...(f.running ?? []), ...(f.history ?? [])].slice(0, 8)) {
+      const merged = infoMergedRow(c);
+      if (merged) { rows.push(this.callRow(t, merged, { on: this.sel === c.id, onClick: (_e, cx) => this.select(c.id, cx) })); continue; }
       const open = !this.collapsed.includes(c.id);
       rows.push(this.callRow(t, { ...c, level: 0 }, { on: this.sel === c.id, onClick: (_e, cx) => this.select(c.id, cx),
         disclose: c.nested?.length ? { open, onClick: (_e, cx) => { cx.stop_propagation(); this.collapsed = open ? [...this.collapsed, c.id] : this.collapsed.filter((x) => x !== c.id); this.prepare(); cx.notify(); } } : null }));
@@ -503,13 +507,7 @@ export default class Info extends View {
 
   makeList(f, key) {
     const keep = (l) => l.map((c) => infoKeep(c, this.kind)).filter(Boolean);
-    const calls = [...keep(f.running ?? []), ...keep(f.history ?? [])];
-    const rows = [];
-    for (const c of calls) {
-      rows.push({ ...c, level: 0 });
-      if (c.nested?.length && !this.collapsed.includes(c.id)) rows.push(...infoRows([c]).slice(1));
-    }
-    return rows;
+    return infoListRows([...keep(f.running ?? []), ...keep(f.history ?? [])], this.collapsed);
   }
 
   // A row of the virtual list: no handlers (its rows are rebuilt each frame); the list's
