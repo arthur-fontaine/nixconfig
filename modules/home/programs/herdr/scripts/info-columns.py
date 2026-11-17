@@ -1,4 +1,7 @@
+import sys
 from PIL import Image
+# usage: <script> <shot prefix>: reads <prefix>-<state>-<theme>-panel.png (info-shots' crops).
+PREFIX = sys.argv[1]
 # Per file row: the x (pt) where the letter, the name, the + and − figures and the › ink lie.
 def cols(path, th="dark"):
     im=Image.open(path).convert("RGB"); W,H=im.size; bg=im.getpixel((W//2,H-20))
@@ -14,7 +17,7 @@ def cols(path, th="dark"):
         if len(runs)>=4: out.append((y0, [(a/2,b/2) for a,b in runs]))
     return out
 for name in ["files","changes"]:
-    rows=cols(f"/tmp/r2/t-{name}-dark-panel.png")
+    rows=cols(f"{PREFIX}-{name}-dark-panel.png")
     seen=set()
     print(name)
     for y,r in rows:

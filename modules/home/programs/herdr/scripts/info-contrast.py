@@ -1,5 +1,7 @@
 import sys
 from PIL import Image
+# usage: <script> <shot prefix>: reads <prefix>-<state>-<theme>-panel.png (info-shots' crops).
+PREFIX = sys.argv[1]
 def lum(c):
     def ch(v):
         v/=255; return v/12.92 if v<=0.03928 else ((v+0.055)/1.055)**2.4
@@ -9,7 +11,7 @@ def cr(a,b):
 def hexc(c): return "#%02x%02x%02x"%c[:3]
 out=[]
 for th in ["dark","light"]:
-    ov=Image.open(f"/tmp/r2/t-overview-{th}-panel.png").convert("RGB"); W,H=ov.size
+    ov=Image.open(f"{PREFIX}-overview-{th}-panel.png").convert("RGB"); W,H=ov.size
     isl=ov.getpixel((W//2,H-20))
     # bars: rows where x=40 differs from the island, under the status block
     bars=[]; y=200
@@ -33,14 +35,14 @@ for th in ["dark","light"]:
     best=max((ov.getpixel((x,y)) for x in range(655,690) for y in range(600,900)), key=lambda p: cr(p,isl))
     out.append(f"trailing chevron        {cr(best,isl):.2f}:1  ({hexc(best)}, darkest stroke pixel)   target >= 3")
     # tree guide: a 1-2 px vertical run left of step rows
-    cs=Image.open(f"/tmp/r2/t-calls-{th}-panel.png").convert("RGB")
+    cs=Image.open(f"{PREFIX}-calls-{th}-panel.png").convert("RGB")
     guide=None
     for x in range(30,120):
         col=[cs.getpixel((x,y)) for y in range(400,1000)]
         runs=[p for p in col if 1.15<cr(p,isl)<2.0]
         if len(runs)>200: guide=max(set(runs),key=runs.count); gx=x; break
     out.append(f"tree guide vs island    {cr(guide,isl):.2f}:1  ({hexc(guide)}, x={gx/2:.1f} pt)   target ~1.4" if guide else "tree guide: not found")
-    sc=Image.open(f"/tmp/r2/t-call-script-{th}-panel.png").convert("RGB")
+    sc=Image.open(f"{PREFIX}-call-script-{th}-panel.png").convert("RGB")
     code=sc.getpixel((60,260))
     out.append(f"code block vs island    {cr(code,isl):.2f}:1  ({hexc(code)}, {'lighter' if lum(code)>lum(isl) else 'darker'} than the island)   rule: one step above, border in light only")
 print("\n".join(out))
