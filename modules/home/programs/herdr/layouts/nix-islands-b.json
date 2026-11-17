@@ -127,7 +127,7 @@
                     "tab": "active",
                     "pane": {
                       "gap": 1,
-                      "radius": 0,
+                      "radius": 9,
                       "background": "background",
                       "lone": false,
                       "border": {
