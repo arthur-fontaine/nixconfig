@@ -56,7 +56,19 @@ edit_call=$(jq -r 'select(.message.role == "assistant") | .message.content[] | s
 
 act() { "$S" act "$@" >/dev/null; }
 # The panel resets its view when it sees another tab (D10): wait for that before commands.
-show() { "$S" do tab.select --id "$(tab_of "$1")" >/dev/null; sleep 0.8; }
+show() { "$S" do tab.select --id "$(tab_of "$1")" >/dev/null; sleep 0.8; case $1 in pi*) loaded "$1" ;; esac; }
+# A stand-in's panel has read its session (its overview has meters and calls under the status
+# line), polled from shots; a panel that never loads stops the run, never a "Loading…" shot.
+loaded() {
+  local probe=/tmp/info-shots-probe.png
+  "$S" act nix-info.reset >/dev/null
+  for _ in $(seq 1 40); do
+    "$S" shot "$probe" >/dev/null
+    if python3 "$here/info-loaded.py" "$probe" "$(well "${theme:-dark}")"; then rm -f "$probe"; return 0; fi
+    sleep 0.5
+  done
+  rm -f "$probe"; echo "info-shots: the panel on $1 never loaded (theme ${theme:-dark})" >&2; exit 1
+}
 panel() { "$S" do layout.show --id panel >/dev/null; "$S" do layout.select --stack panel-body --child "$1" >/dev/null; }
 # A mod just redeployed or restyled (sync, appearance) reads each session and the usage again:
 # each stand-in shown once, given time, before the first shot.
