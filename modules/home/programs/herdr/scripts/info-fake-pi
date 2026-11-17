@@ -1,0 +1,18 @@
+#!/bin/sh
+# A terminal that looks like Pi to Herdr, for info-shots: Pi's title ("π - <name> - <folder>")
+# and its OSC 7501 status (app=pi), the state read from a file (idle | working) as it changes.
+# No model behind it; the session the panel shows comes from the pi.session label.
+#   info-fake-pi <title> <state file>
+title=$1 state=$2
+printf '\033]0;%s\007' "$title"
+printf 'Not Pi: a stand-in for the Info panel shots (%s).\n' "$title"
+last=
+while :; do
+  s=$(cat "$state" 2>/dev/null || echo idle)
+  case $s in idle|working) ;; *) s=idle ;; esac
+  if [ "$s" != "$last" ]; then
+    printf '\033]7501;state=%s:app=pi:msg=%s\033\\' "$s" "$(printf %s "$title" | base64)"
+    last=$s
+  fi
+  sleep 0.2
+done

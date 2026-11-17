@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Every state of the Info panel, dark and light, from one synthetic session, on the sandbox
+# (scripts/sandbox up first). Per state: the window, the panel alone (-panel.png) and the
+# panel's corner check (info-panel.py) in <out>/<prefix>-corners.txt.
+#   info-shots <prefix> <out dir> [state...]    default: every state
+# States: overview context activity lines kind-errors kind-bash select-row select-subrow
+# show-all no-pi running narrow changes files.
+# Its space ("info-shots": a plain shell tab and a stand-in Pi, scripts/info-fake-pi) is made
+# once through the sandbox, so sandbox down closes it. The session is written anew each run, to
+# a new path: the panel keeps what it read of a file by its path.
+set -euo pipefail
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+S=$here/sandbox
+prefix=${1:?info-shots <prefix> <out dir> [state...]}; out=${2:?out dir}; shift 2
+states=("$@")
+[ ${#states[@]} -gt 0 ] || states=(overview context activity lines kind-errors kind-bash select-row select-subrow show-all no-pi running narrow changes files)
+root=${HERDR_SANDBOX:-/tmp/herdr-sandbox}; root=$(cd "$root" && pwd -P)
+mkdirp() { mkdir -p "$1"; }; mkdirp "$out"
+ls_() { "$S" app ls; }
+
+gen=$root/info-$(date +%s)
+mkdir -p "$gen"
+"$here/info-session" "$gen" >/dev/null
+echo "session: $gen/session.jsonl"
+state=$root/info-pi-state; echo idle >"$state"
+
+space=$(ls_ | jq -r '.spaces[] | select(.name == "info-shots") | .id' | head -1)
+if [ -z "$space" ]; then
+  space=$("$S" do space.new --name info-shots --folder "$gen/repo" | jq -r .space)
+  "$S" do tab.new --name pi --folder "$gen/repo" --argv "$(jq -cn --arg p "$here/info-fake-pi" --arg s "$state" '[$p, "π - tide-tables-parser - repo", $s]')" >/dev/null
+  sleep 1.5
+fi
+tabs=$(ls_ | jq -c --arg s "$space" '.spaces[] | select(.id == $s) | .tabs')
+shell_tab=$(jq -r '.[] | select(.name != "pi") | .id' <<<"$tabs" | head -1)
+pi_tab=$(jq -r '.[] | select(.name == "pi") | .id' <<<"$tabs")
+pi_term=$(jq -r '.[] | select(.name == "pi") | .terminals[0].terminal' <<<"$tabs")
+[ -n "$pi_term" ] && [ -n "$shell_tab" ] || { echo "the info-shots space lacks its tabs" >&2; exit 1; }
+label() { hc label "$pi_term" "pi.session=$1" >/dev/null; }
+label "$gen/session.jsonl"
+
+act() { "$S" act "$@" >/dev/null; }
+show() { "$S" do tab.select --id "$1" >/dev/null; }
+panel() { "$S" do layout.show --id panel >/dev/null; "$S" do layout.select --stack panel-body --child "$1" >/dev/null; }
+show "$pi_tab"; panel info; sleep 1.5
+
+well() { jq -r .colors.well "$here/../themes/nix-islands-b-$1.json"; }
+corners=$out/$prefix-corners.txt; : >"$corners"
+
+shoot() { # <state> <theme>
+  sleep 1.3
+  local f=$out/$prefix-$1-$2.png
+  "$S" shot "$f" >/dev/null
+  { echo "== $1 $2"; python3 "$here/info-panel.py" "$f" "$(well "$2")" "${f%.png}-panel.png" || true; } >>"$corners"
+  echo "$f"
+}
+
+# One state: set it up from the overview, shoot, put things back.
+state_() { # <state> <theme>
+  act nix-info.detail:
+  case $1 in
+    overview) ;;
+    context|activity|lines) act "nix-info.detail:$1" ;;
+    kind-*) act "nix-info.kind:${1#kind-}" ;;
+    select-row) act nix-info.select:toolu_syn0198 ;;
+    select-subrow) act nix-info.select:toolu_syn0198/2 ;;
+    show-all) act nix-info.detail:activity; act nix-info.all ;;
+    no-pi) show "$shell_tab" ;;
+    running) label "$gen/running.jsonl"; echo working >"$state"; sleep 1 ;;
+    narrow) "$S" do layout.resize --id panel --px 260 >/dev/null ;;
+    changes|files) panel "$1" ;;
+    *) echo "unknown state $1" >&2; return 1 ;;
+  esac
+  shoot "$1" "$2"
+  case $1 in
+    no-pi) show "$pi_tab" ;;
+    running) echo idle >"$state"; label "$gen/session.jsonl" ;;
+    narrow) "$S" do layout.resize --id panel --px 360 >/dev/null ;;
+    changes|files) panel info ;;
+  esac
+}
+
+for theme in dark light; do
+  "$S" appearance "$theme"; sleep 1.5
+  for s in "${states[@]}"; do state_ "$s" "$theme"; done
+done
+act nix-info.detail:
+"$S" appearance dark
+echo "corners: $corners"
+grep -c "content SQUARE\|island SQUARE" "$corners" | sed 's/^/square corners: /' || true
