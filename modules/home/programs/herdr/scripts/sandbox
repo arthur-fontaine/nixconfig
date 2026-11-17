@@ -77,7 +77,11 @@ deploy() {
 # before the window opens only, since a running Herdr keeps them in memory and saves over them.
 settings() {
   local cfg="#darwinConfigurations.Arthur-Mac.config.home-manager.users.$USER.nixconfig.sync"
-  nix eval --json "$repo$cfg.herdr-settings.managed" >"$home/settings.json"
+  # No sounds: an agent here finishing or needing you plays on this Mac, whichever window shows it.
+  nix eval --json "$repo$cfg.herdr-settings.managed" | jq '.sounds.enabled = false' >"$home/settings.json"
+  # This Herdr's release notes as already seen: their toast would cover every shot's bottom edge.
+  v=$("$bin" --version 2>/dev/null | grep -o '[0-9][0-9.]*' | head -1)
+  [ -z "$v" ] || jq -n --arg v "$v" '{last_run: $v, presented: [$v]}' >"$home/update-notes.json"
   # Welcomed already: the welcome would cover every shot.
   nix eval --json "$repo$cfg.herdr-shared.managed" | jq '. + {"frame.welcomed": "finished"}' >"$home/shared.json"
 }
