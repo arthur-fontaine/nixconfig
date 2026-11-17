@@ -25,6 +25,7 @@
   };
   nix-status = {
     shared = [
+      "close.js"
     ];
   };
   nix-pane = {

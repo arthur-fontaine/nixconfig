@@ -6,10 +6,14 @@
 //   worktree  the worktree dialog (new), worktrees (open)
 //   review    the diff of the focused checkout, in the middle
 //   editor    the focused checkout in Zed, else $VISUAL's GUI editor, else a Neovim tab
+//   close-pane[:<pane>], close-tab[:<tab>], close-space[:<space>], close-spaces (ids in shared
+//             "nix.closeSpaces"): every close in the nix-* mods and ⌘W/⌘⇧W, asking only when
+//             something would be lost (_lib/close.js); close-confirmed runs the one asked about
 // Left: machine, branch, then the agents that matter (need you, done, working). Right: key hints.
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, agents, panes, focused, theme, run, window, keys, nextCommand, openOverlay, exec, shared, setShared, layout } from "herdr";
+import { spaces, agents, panes, focused, theme, run, window, keys, nextCommand, openOverlay, exec, shared, setShared, layout, terminals } from "herdr";
+import { closeAsk, closePlan, closeQuestion } from "../_lib/close.js";
 
 const RANK = { blocked: 2, done: 1 };
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
@@ -42,8 +46,30 @@ export default class Status extends View {
     });
   }
 
+  // A close: the commands at once when nothing would be lost, else one question first (Herdr's
+  // own asks are skipped with confirmed: true, so they never stack on it).
+  close(target) {
+    const plan = closePlan({ spaces: spaces(), panes: panes(), terminals: terminals() }, target);
+    if (!plan) return;
+    const { ask, lost } = closeAsk(plan);
+    if (!ask) { for (const [name, args] of plan.commands) run(name, args); return; }
+    setShared("nix.closePending", plan.commands);
+    openOverlay({ mod: "confirm", kind: "dialog", width: 380, height: 170, props: { ...closeQuestion(plan.scope, lost), command: { name: "nix-status.close-confirmed" } } });
+  }
+
   async command(c) {
     const { space, cwd, on } = place();
+    const arg = c.includes(":") ? c.slice(c.indexOf(":") + 1) : null;
+    if (c.startsWith("close-pane")) return this.close({ pane: arg ?? focused()?.pane });
+    if (c.startsWith("close-tab")) return this.close({ tab: arg ?? focused()?.tab });
+    if (c.startsWith("close-space")) return this.close({ spaces: [arg ?? space?.id].filter(Boolean) });
+    if (c === "close-spaces") return this.close({ spaces: shared("nix.closeSpaces") ?? [] });
+    if (c === "close-confirmed") {
+      const pending = shared("nix.closePending") ?? [];
+      setShared("nix.closePending", null);
+      for (const [name, args] of pending) run(name, args);
+      return;
+    }
     if (c === "jump") {
       const list = agents().filter((a) => RANK[a.status]).sort((a, b) => RANK[b.status] - RANK[a.status] || b.seq - a.seq);
       const target = list.find((a) => !a.focused) ?? list[0];

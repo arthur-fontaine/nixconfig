@@ -91,6 +91,10 @@ let
   });
 
   merge = import ../../lib/merge-json.nix { inherit pkgs; };
+  closeKeys = {
+    "cmd-w" = "nix-status.close-tab";
+    "cmd-shift-w" = "nix-status.close-pane";
+  };
   json = pkgs.formats.json { };
   home = "${config.xdg.configHome}/herdr-app";
 
@@ -116,6 +120,10 @@ let
     # Switches the sidebar: Repos ⇄ Kanban, two sidebars in one place.
     "cmd-shift-k" = "nix-status.kanban";
   };
+  # ⌘W and ⌘⇧W close as the × do: asking only when something would be lost (nix-status).
+  # Per layout, so a layout without nix-status keeps Herdr's own close.
+  keys."layout:nix" = closeKeys;
+  keys."layout:nix-islands-b" = closeKeys;
   shared = {
     # Islands "Handle": the panes, sidebar and panel as islands on a neutral well (k31).
     # nix.json stays deployed beside it, the layout it was made from.

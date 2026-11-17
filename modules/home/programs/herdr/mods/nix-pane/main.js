@@ -82,6 +82,6 @@ export default class Pane extends View {
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
         .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
         .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
-        .child(this.button(t, `ph-x-${pane}`, "x", "pane.close", { pane })));
+        .child(this.button(t, `ph-x-${pane}`, "x", `nix-status.close-pane:${pane}`, {})));
   }
 }

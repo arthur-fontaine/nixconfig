@@ -568,7 +568,7 @@ export default class Sidebar extends View {
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(on ? t.foreground : t.muted).child(label))
       // A worktree's orchestrator is a tab like the others, with a mark.
       .when(isOrchestrator(tab), (e) => e.child(svg(ICON("radio")).size(11).flex_none().text_color(t.dim).tooltip("This worktree's orchestrator")))
-      .when(this.hovered === id, (e) => e.child(this.small(`close-${tab.id}`, "x", "Close", () => run("tab.close", { id: tab.id }), t)))
+      .when(this.hovered === id, (e) => e.child(this.small(`close-${tab.id}`, "x", "Close", () => run(`nix-status.close-tab:${tab.id}`), t)))
       .when(this.hovered !== id && Boolean(time) && tab.status !== "idle", (e) => e.child(div().flex_none().text_size(11).text_color(t.dim).child(ago(time))))
       .when(Boolean(this.status(t, tab.status)), (e) => e.child(this.status(t, tab.status))));
   }
@@ -627,9 +627,10 @@ export default class Sidebar extends View {
       .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
       .on_mouse_down("left", (e) => { this.drag = { key: r.key, y: e.position.y, moved: false }; })
       .on_click((_e, cx) => { if (this.dragged) { this.dragged = false; return; } this.openProject(r, cx); })
-      .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 210, height: 96, props: { tab: "project", target: {
+      .on_mouse_down("right", () => openOverlay({ mod: "nix-menu", kind: "popup", width: 240, height: 132, props: { tab: "project", target: {
         key: r.key,
-        spaces: [...r.items.map(({ s }) => s.id), ...(r.project ? [r.project.id] : [])],
+        spaces: r.items.map(({ s }) => s.id),
+        project: r.project?.id ?? null,
         newProps: { repo: r.key, name: r.name, folder: r.items[0] ? place(r.items[0].s, ps) : JSON.parse(r.key)[1], machine: r.on, ...(this.trees[r.key] && { worktrees: this.trees[r.key] }) },
       } } }))
       .child(div().id(`fold-${r.key}`).size(20).ml(-3).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.muted)

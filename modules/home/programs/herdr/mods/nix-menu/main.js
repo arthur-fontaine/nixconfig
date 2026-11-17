@@ -1,6 +1,8 @@
 // Context menus (Herdr's items). Opened as a popup with
 // props { tab: "pane" | "tab" | "space" | "project" | "global", target }. A project's target is
-// the sidebar's repo: { key, spaces (its open spaces' ids), newProps (nix-new's, for its +) }.
+// the sidebar's repo: { key, spaces (its worktrees' open spaces), project (its orchestrator's
+// space, or null), newProps (nix-new's, for its +) }. Every close goes through nix-status,
+// which asks only when something would be lost.
 // ↑/↓ move, Enter runs, Esc closes. An item is [label, command, args];
 // a command "worktree" opens the worktree dialog instead.
 
@@ -46,21 +48,22 @@ function items(p, git) {
             ]
           : []),
         ...(parent ? [[`Send back to ${parent.name || parent.address}`, "terminal.park", { terminal: term.address }]] : []),
-        ["Close pane", "pane.close", { pane: tg.pane }],
+        ["Close pane", `nix-status.close-pane:${tg.pane}`, {}],
       ];
     }
     case "tab":
       return [
         ["Rename", "tab.rename", { id: tg.id }],
         ["New tab", "tab.new", { space: tg.space }],
-        ["Close", "tab.close", { id: tg.id }],
+        ["Close", `nix-status.close-tab:${tg.id}`, {}],
       ];
     case "project":
       return [
         ["New worktree", "worktree", { action: "new-project", props: tg.newProps }],
-        ...(tg.spaces?.length
-          ? [["Close project", "project.close", { spaces: tg.spaces, key: tg.key }]]
-          : [["Hide from the list", "project.forget", { key: tg.key }]]),
+        // The project's orchestrator stays unless asked: the kanban dispatches to it.
+        ...(tg.spaces?.length ? [["Close worktrees", "project.close", { spaces: tg.spaces }]] : []),
+        ...(tg.project ? [["Close worktrees and project chat", "project.close", { spaces: [...(tg.spaces ?? []), tg.project] }]] : []),
+        ...(!tg.spaces?.length && !tg.project ? [["Hide from the list", "project.forget", { key: tg.key }]] : []),
       ];
     case "space":
       return [
@@ -68,7 +71,7 @@ function items(p, git) {
         ...(git ? [["Orchestrator", "orchestrator", { space: tg.id, top: git.top }]] : []),
         ...(git ? [["New worktree", "worktree", { space: tg.id, action: "new" }], ["Open worktree", "worktree", { space: tg.id, action: "open" }]] : []),
         ...(git?.kind === "linked" ? [["Remove worktree", "worktree", { space: tg.id, action: "remove" }]] : []),
-        ["Close", "space.close", { id: tg.id }],
+        ["Close", `nix-status.close-space:${tg.id}`, {}],
       ];
     default:
       return [
@@ -82,8 +85,10 @@ function items(p, git) {
   }
 }
 
+const isClose = (command) => command.endsWith(".close") || command.includes(".close-");
+
 function menuIcon(command) {
-  const name = command === "orchestrator" ? "radio" : command.endsWith(".close") ? "x" : command === "project.forget" ? "minus" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.help" ? "terminal" : command === "app.theme" ? "settings" : command === "pane.split" ? "split-right" : command === "pane.zoom" ? "zoom" : "terminal";
+  const name = command === "orchestrator" ? "radio" : command.endsWith(".close") || command.includes(".close-") ? "x" : command === "project.forget" ? "minus" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.help" ? "terminal" : command === "app.theme" ? "settings" : command === "pane.split" ? "split-right" : command === "pane.zoom" ? "zoom" : "terminal";
   return `mods/nix-head/icons/${name}.svg`;
 }
 
@@ -115,10 +120,14 @@ export default class Menu extends View {
     const it = items(props(), this.git)[i];
     if (!it) return;
     closeOverlay(props()?.overlay);
-    // A project closes all its spaces (Herdr asks first for one with programs running) and
-    // leaves the sidebar's list; the sidebar takes the key from shared state.
-    if (it[1] === "project.close" || it[1] === "project.forget") {
-      for (const id of it[2].spaces ?? []) run("space.close", { id });
+    // Closing a project's worktrees is one close (one question at most); hiding it from the
+    // list is its own item, offered only when nothing of it is open.
+    if (it[1] === "project.close") {
+      setShared("nix.closeSpaces", it[2].spaces);
+      run("nix-status.close-spaces");
+      return;
+    }
+    if (it[1] === "project.forget") {
       setShared("nix-sidebar.forget", { key: it[2].key, n: Date.now() });
       return;
     }
@@ -157,7 +166,7 @@ export default class Menu extends View {
       .children(
         list.map((it, i) =>
           v_flex()
-            .when(i > 0 && (it[1].endsWith(".close") || it[1] === "app.help" || (it[1] === "app.theme" && list[i - 1][1] !== "app.theme")), el => el.child(div().mx(8).my(4).h(1).bg(t.border)))
+            .when(i > 0 && (isClose(it[1]) || it[1] === "app.help" || (it[1] === "app.theme" && list[i - 1][1] !== "app.theme")), el => el.child(div().mx(8).my(4).h(1).bg(t.border)))
             .child(h_flex()
             .id(`mi-${i}`)
             .h(28)
@@ -167,11 +176,11 @@ export default class Menu extends View {
             .items_center()
             .justify_between()
             // Closing is the one destructive item: it says so in the needs-you red.
-            .text_color(it[1].endsWith(".close") ? t.blocked : t.foreground)
+            .text_color(isClose(it[1]) ? t.blocked : t.foreground)
             .when(i === this.at, (el) => el.bg(t.selected))
             .hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected))
             .on_click((_e, cx) => this.choose(i, cx))
-            .child(svg(menuIcon(it[1])).size(14).flex_none().text_color(it[1].endsWith(".close") ? t.blocked : t.muted))
+            .child(svg(menuIcon(it[1])).size(14).flex_none().text_color(isClose(it[1]) ? t.blocked : t.muted))
             .child(div().flex_1().child(it[0]))
             .child(div().text_size(11).text_color(t.dim).child(shortcut(it[1], it[2])))),
         ),
