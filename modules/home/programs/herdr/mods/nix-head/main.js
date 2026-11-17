@@ -6,6 +6,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { theme, run, props, window, shared, setShared, updates, layout } from "herdr";
+import { sidebarState, sidebarReopen, sidebarFold } from "../_lib/sidebar.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 const STACK = "sidebar-body"; // the sidebar's stack in layouts/nix.json
@@ -20,15 +21,16 @@ function find(node, id) {
 }
 
 // The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
-const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
+const narrow = () => sidebarState({ size: find(layout(), "sidebar")?.size }) === "rail";
 
 // To the rail (on macOS wide enough for the traffic lights), or back to the width it had.
 function toggleSidebar() {
-  const width = find(layout(), "sidebar")?.size?.px;
-  if (!narrow()) setShared("sidebar.width", width);
+  const node = find(layout(), "sidebar");
   // Mods edited before the rail went by width still read the flag.
   setShared("sidebar.collapsed", !narrow());
-  run("layout.resize", { id: "sidebar", px: narrow() ? (shared("sidebar.width") ?? 256) : window()?.platform === "macos" ? 76 : 44 });
+  if (narrow()) { for (const [action, args] of sidebarReopen(node, shared("sidebar.width"))) run(action, args); return; }
+  setShared("sidebar.width", node?.size?.px);
+  run("layout.resize", { id: "sidebar", px: sidebarFold(window()?.platform) });
 }
 
 export default class Head extends View {
@@ -84,7 +86,7 @@ export default class Head extends View {
     return h_flex().size_full().bg(t.chrome).pl(collapsed ? 6 : 12).pr(6).items_center()
       .when(mac && !window()?.fullscreen && !collapsed, (el) => el.pl(76))
       .child(div().flex_1())
-      // On the macOS rail the traffic lights fill the row; the agents list's » unfolds it.
+      // On the macOS rail the traffic lights fill the row: the tab bar shows the toggle (nix-tabs).
       .when(!(collapsed && mac), (el) => el.child(this.button("sidebar-toggle", "panel-left", collapsed ? "Show sidebar" : "Hide sidebar", toggleSidebar)));
   }
 }

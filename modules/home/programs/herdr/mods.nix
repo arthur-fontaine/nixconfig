@@ -23,6 +23,7 @@
   nix-tabs = {
     shared = [
       "tabs.js"
+      "sidebar.js"
     ];
   };
   nix-status = {
@@ -35,7 +36,11 @@
     shared = [
     ];
   };
-  nix-head = { };
+  nix-head = {
+    shared = [
+      "sidebar.js"
+    ];
+  };
   # The + popover: an open or idle worktree, or a new one, then Pi or a terminal.
   nix-new = {
     shared = [

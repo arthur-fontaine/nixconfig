@@ -1,7 +1,8 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings, props } from "herdr";
+import { spaces, panes, run, openOverlay, theme, window, shared, setShared, layout, settings, props, nextCommand } from "herdr";
 import { tabLabel, tabLabelIsPath, tabSlot, tabMoveIndex } from "../_lib/tabs.js";
+import { sidebarState, sidebarReopen, sidebarToggleInBar } from "../_lib/sidebar.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // Pi's mark as Herdr's program table has it, for when the pane's program isn't at hand.
@@ -23,12 +24,20 @@ function find(node, id) {
 }
 
 export default class Tabs extends View {
-  init() {
+  init(_props, cx) {
+    // sidebar-show: what the bar's sidebar toggle does (keys and scripts).
+    cx.spawn(async () => { for (;;) if ((await nextCommand()) === "sidebar-show") this.showSidebar(); });
     this.pressed = null; // the tab pressed: { id, moved }
     this.hovered = null;
     this.slot = null; // while dragging: the gap it would land in, 0..n
     this.ghostX = null; // while dragging: the pointer's x in the bar, where the ghost tab is drawn
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
+  }
+
+  // Back from hidden, or from the rail to the width it had (nix-head saved it).
+  showSidebar() {
+    setShared("sidebar.collapsed", false);
+    for (const [action, args] of sidebarReopen(find(layout(), "sidebar"), shared("sidebar.width"))) run(action, args);
   }
 
   // The + popover (nix-new) for the shown space's project, under the pointer and inside the window.
@@ -164,6 +173,9 @@ export default class Tabs extends View {
           else { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); }
         }).child(svg(ICON(icon)).size(14));
     };
+    // The sidebar's own toggle is gone when it's hidden, and on the macOS rail (traffic lights).
+    const sidebarToggle = sidebarToggleInBar(sidebarState(sidebar), w?.platform)
+      ? button("sidebar-show", svg(ICON("panel-left")).size(14), () => this.showSidebar(), "Show sidebar").mr(4) : null;
     const ghost = this.pressed?.moved && this.ghostX !== null ? shown.find(x => x.id === this.pressed.id) : null;
     // Handle style starts the tabs 24 in: the island's 14 corner, then the first tab's 10 fillet
     // on flat top (inside the strip, which clips what hangs out of it).
@@ -180,6 +192,7 @@ export default class Tabs extends View {
       .when(Boolean(ghost), el => el.child(div().absolute().top(6).h(24).left(Math.max(0, this.ghostX - 60)).px(12).flex().items_center()
         .rounded(8).bg(t.popover).border_1().border_color(t.input).shadow_md().text_size(13).text_color(t.foreground).opacity(0.92)
         .child(tabLabel({ named: ghost.named, name: ghost.name, lead: (() => { const own = panes().filter(p => p.tab === ghost.id); return own.find(p => p.program?.agent) ?? own.find(p => p.focused) ?? own[0]; })(), folder: space?.folder }))))
+      .when(Boolean(sidebarToggle), el => el.child(sidebarToggle))
       // + right after the last tab, as in a browser; the right group is the panels.
       // Handle style: tabs touch (their fillets), and no scrollbar is painted over the junction.
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_stretch().gap(style === "handle" ? 0 : 2)
