@@ -101,7 +101,8 @@ export default class Tabs extends View {
         .when(style === "ink", el => el.h(26).self_center().rounded(13))
         .when(c.active && !style, el => el.bg(t.background).border_l(1).border_t(1).border_r(1).border_color(t.border).text_color(t.foreground))
         .when(c.active && style === "ink", el => el.bg(t.solid).text_color(t.solid_foreground).font_medium())
-        .when(c.active && style === "handle", el => el.bg(t.background).text_color(t.foreground).font_medium())
+        // Capped in the accent: the shown tab is the one handle with color.
+        .when(c.active && style === "handle", el => el.bg(t.background).border_t(2).border_color(t.accent).text_color(t.foreground).font_medium())
         .when(!c.active, el => el.text_color(t.muted).hover(s => s.bg(t.hover)))
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
         .on_mouse_up("left", () => {
