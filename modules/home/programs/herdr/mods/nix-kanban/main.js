@@ -12,6 +12,7 @@ import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui
 import { theme, settings, run, props, shared, setShared, spaces, openOverlay, closeOverlay, notify, pickFolder, layout, nextCommand, exec, appHome } from "herdr";
 import { KNOWN_EXCLUSIVE, estimateDraft, estimateEdits, isEdited, resourceName, apiBase, fileSize, isImage, pickedPaths, pastedName, COLUMNS, PRIORITIES, columnColor, kTokens, ago, byColumn, neighbor, projectName, factorChips, livePending, spacedCode, parseNumber, unrecordedSpaces, SIDE_ORDER, isFolded, waitLabel, waitLabels, firstLine } from "./model.js";
 import { paneRadius } from "../_lib/pane.js";
+import { tipText } from "../_lib/tip.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // An image attachment's thumbnail height in the card dialog.
@@ -298,7 +299,7 @@ export default class Kanban extends View {
     return v_flex().id(`sc-${c.id}`).px(10).py(8).gap(4).rounded(8).bg(t.surface).border_1().border_color(t.border).cursor_pointer()
       .hover((x) => x.border_color(t.input)).active((x) => x.bg(t.hover))
       .when(this.drag?.id === c.id && this.over !== c.column, (e) => e.opacity(0.5))
-      .tooltip(c.column === "todo" && c.waiting.length ? c.waiting.join("\n") : c.title)
+      .tooltip(tipText(c.column === "todo" && c.waiting.length ? c.waiting.join("\n") : c.title))
       .on_mouse_down("left", () => { this.drag = { id: c.id, from: c.column }; })
       .on_mouse_down("right", (_e, cx) => this.openMove(c, cx))
       .on_click((_e, cx) => { if (this.dragged) { this.dragged = false; return; } this.drag = null; this.openCard(c.id); cx.notify(); })
@@ -452,12 +453,12 @@ export default class Kanban extends View {
       .child(div().text_size(13).text_color(c.column === "done" ? t.muted : t.foreground).child(c.title))
       .when(chips.length > 0 || c.estimating, (e) => e.child(h_flex().flex_wrap().gap(4)
         .children(chips.map((x, i) => div().id(`chip-${c.id}-${i}`).h(18).px(6).rounded(4).bg(t.raised).flex().items_center().text_size(10.5).text_color(t.muted)
-          .when(i === 0 && Boolean(c.factors?.notes), (e) => e.tooltip(c.factors.notes)).child(x)))
+          .when(i === 0 && Boolean(c.factors?.notes), (e) => e.tooltip(tipText(c.factors.notes))).child(x)))
         .when(isEdited(c), (e) => e.child(div().id(`edited-${c.id}`).h(18).flex().items_center().text_color(t.dim).tooltip("Estimate set by hand")
           .child(svg(ICON("pen")).size(10))))
         .when(c.estimating, (e) => e.child(div().h(18).px(6).flex().items_center().text_size(10.5).text_color(t.dim).frames(["sizing up", "sizing up.", "sizing up..", "sizing up..."], 400)))))
       .when(c.column === "todo" && c.waiting.length > 0, (e) => e.child(v_flex().gap(2)
-        .tooltip(c.waiting.join("\n"))
+        .tooltip(tipText(c.waiting.join("\n")))
         .children(waitLabels(c).map((w) => h_flex().gap(5).items_start().text_size(11.5).text_color(t.muted)
           .child(svg(ICON("clock")).size(11).mt(2).flex_none().text_color(t.dim)).child(div().flex_1().min_w(0).child(w))))))
       .when(Boolean(c.error) && c.column === "todo", (e) => e.child(div().text_size(11.5).text_color(t.blocked).child(c.error)))

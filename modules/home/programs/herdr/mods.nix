@@ -52,11 +52,11 @@
   # nvim.js (msgpack-RPC to it) joined in.
   nix-editor = { shared = [ "pane.js" ]; modules = [ "grid.js" "nvim.js" ]; };
   # The Info panel: the selected Pi session and the Claude usage; model.js (the figures) joined in.
-  nix-info = { shared = [ "editor.js" ]; modules = [ "model.js" ]; };
+  nix-info = { shared = [ "editor.js" "tip.js" ]; modules = [ "model.js" ]; };
   # The Games panel: micro-breaks while an agent works; model.js (the rules and the agent
   # strip) joined in, after nix-info's model.js (the session helpers it reuses).
   nix-games = { modules = [ "../nix-info/model.js" "model.js" ]; };
   # The kanban (the Kanban sidebar, the board as a tab, its dialogs and menu), on the
   # herdr-kanban daemon below; model.js (its figures) joined in.
-  nix-kanban = { shared = [ "pane.js" ]; modules = [ "model.js" ]; };
+  nix-kanban = { shared = [ "pane.js" "tip.js" ]; modules = [ "model.js" ]; };
 }
