@@ -30,3 +30,7 @@ test("worktree: an unnamed tab is never taken for an orchestrator", () =>
   assert.equal(wtOrchestrator({ space: { id: "s1", tabs: [{ id: "t1", named: false, name: "wt-a-orchestrator" }] }, label: "wt-a", folder: "/r/wt-a", home: "/h" })[1][0], "tab.new"));
 test("worktree: the orchestrator's argv is nix-sidebar's (name, role prompt)", () =>
   assert.deepEqual(wtArgv("wt a", "/h"), ["pi", "--name", "wt-a-orchestrator", "--append-system-prompt", "/h/.pi/agent/orchestrator/worktree.md"]));
+test("worktree: in a project's space, Orchestrator focuses the project's one (never a second Pi there)", () => {
+  const space = { id: "sp", tabs: [{ id: "t1", named: false, name: "1" }, { id: "tp", named: true, name: "repo-project-orchestrator" }] };
+  assert.deepEqual(wtOrchestrator({ space, label: "repo", folder: "/r", home: "/h" }), [["space.select", { id: "sp" }], ["tab.select", { id: "tp" }]]);
+});

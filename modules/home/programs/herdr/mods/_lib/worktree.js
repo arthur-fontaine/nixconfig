@@ -22,7 +22,9 @@ export function wtOrchestrator({ space, label, folder, home, machine }) {
   const name = wtName(label), argv = wtArgv(label, home);
   if (!space) return [["space.new", { folder, machine: machine ?? "", tab: name, argv }]];
   // Any worktree orchestrator in the space: its name may be from another folder (a cd, a rename).
-  const tab = (space.tabs ?? []).find((t) => t.named && ORCHESTRATOR_RE.test(t.name) && !/-project-orchestrator$/.test(t.name));
+  // A project's space (the kanban dispatches to its orchestrator) gets no second one: that one.
+  const tabs = (space.tabs ?? []).filter((t) => t.named && ORCHESTRATOR_RE.test(t.name));
+  const tab = tabs.find((t) => !/-project-orchestrator$/.test(t.name)) ?? tabs.find((t) => /-project-orchestrator$/.test(t.name));
   return tab ? [["space.select", { id: space.id }], ["tab.select", { id: tab.id }]]
     : [["space.select", { id: space.id }], ["tab.new", { space: space.id, name, folder, argv }]];
 }
