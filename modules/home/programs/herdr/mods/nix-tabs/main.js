@@ -164,7 +164,8 @@ export default class Tabs extends View {
         }).child(svg(ICON(icon)).size(14));
     };
     const ghost = this.pressed?.moved && this.ghostX !== null ? shown.find(x => x.id === this.pressed.id) : null;
-    return h_flex().id("tab-bar").relative().size_full().min_w(0).px(8).pl(style === "handle" ? Math.max(lightsPadding, 14) : lightsPadding).gap(4).items_stretch().when(style !== "handle", el => el.bg(t.chrome))
+    // Handle style starts the strip 24 in: the island's 14 corner, then the first tab's 10 fillet on flat top.
+    return h_flex().id("tab-bar").relative().size_full().min_w(0).px(8).pl(style === "handle" ? Math.max(lightsPadding, 24) : lightsPadding).gap(4).items_stretch().when(style !== "handle", el => el.bg(t.chrome))
       // Released off the tabs: the drag is dropped. The wheel scrolls the strip (no tab switch).
       .on_mouse_up("left", (_e, cx) => { if (this.pressed) { this.pressed = null; this.slot = null; this.ghostX = null; cx.notify(); } })
       // Released outside the window's bar: no release reaches it, so leaving it ends the drag.
