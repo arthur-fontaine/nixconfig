@@ -32,3 +32,15 @@ test("Claude Code's tool names (Bash, Edit, Write, AskUserQuestion) count for th
   assert.deepEqual(infoFiles(s).map((f) => f.rel).sort(), ["a.js", "b.js"]);
 });
 
+
+// Herdr runtime behaviour, not reproducible in Node: a loop spawned from render() through a kept
+// cx stopped at its first await on a fresh view (stuck on "Loading session…" after every mount
+// until some command came). The loop is spawned in init() with init's cx; this keeps it there.
+test("the panel's loop is spawned in init() with its own cx, never from render() or a kept cx", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const src = await readFile(new URL("../main.js", import.meta.url), "utf8");
+  const body = (name) => src.slice(src.indexOf(`\n  ${name}(`), src.indexOf("\n  }\n", src.indexOf(`\n  ${name}(`)));
+  assert.match(body("init"), /this\.start\(cx\)/);
+  assert.doesNotMatch(body("render"), /start\(/);
+  assert.doesNotMatch(src, /this\.cx\b/);
+});

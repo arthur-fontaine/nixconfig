@@ -83,7 +83,6 @@ const days = (msec) => { const d = Math.round(msec / 86400000); return d >= 1 &&
 
 export default class Info extends View {
   init(_props, cx) {
-    this.cx = cx;
     this.session = null; // model state of the file shown
     this.kept = new Map(); // file → model state, the last few shown: going back shows at once
     this.wake = null; // ends the loop's wait early
@@ -93,7 +92,6 @@ export default class Info extends View {
     this.titles = null; // bash-titles.json: codemode scripts' titles by key
     this.titlesStamp = null; // its mtime and size when last read
     this.resolved = new Map(); // terminal + title → session file
-    this.loop = false;
     // "context" | "activity" | "lines"; a layout may open on one (props.detail).
     this.detail = null;
     this.asked = undefined;
@@ -116,6 +114,7 @@ export default class Info extends View {
         if (next) { this.apply(next); cx.notify(); }
       }
     });
+    this.start(cx);
   }
 
   view() { return Object.fromEntries(Object.keys(INFO_VIEW).map((k) => [k, this[k]])); }
@@ -225,12 +224,12 @@ export default class Info extends View {
     }
   }
 
-  // One loop for the view's life, started on the first render: every await runs under
-  // cx.spawn, so it ends with the view (a promise outliving it crashes Herdr's runtime).
-  start() {
-    if (this.loop) return;
-    this.loop = true;
-    this.cx.spawn(async (cx) => {
+  // One loop for the view's life, spawned in init() with init's cx: every await runs under
+  // cx.spawn, so it ends with the view (a promise outliving it crashes Herdr's runtime). Spawned
+  // from render() through a kept cx, it stopped at its first await on a fresh view until some
+  // command came: the panel stayed on "Loading session…".
+  start(cx) {
+    cx.spawn(async (cx) => {
       let usageAt = 0, readAt = 0;
       for (;;) {
         // The selection is checked every POLL (memory only), the file read every TICK or
@@ -747,7 +746,6 @@ export default class Info extends View {
   }
 
   render() {
-    this.start();
     infoMono = settings().font_family ?? "JetBrains Mono";
     // Herdr renders the view when focus or tabs change: a new pane is read now, not at the
     // next tick (up to a second later).
