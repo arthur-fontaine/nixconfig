@@ -4,8 +4,9 @@ import {
   infoCache, infoCategory, infoCommand, infoFiles, infoLastCall, infoContext, infoDuration, infoFeed, infoLineDiff, infoLines, infoNewSession, infoParseTitle,
   infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length,
   infoCapValue, infoClock, infoEditDiff, infoJsonLines, infoParseDiff, infoResultLines, RESULT_CAP,
-  infoPace, FIVE_HOURS, SEVEN_DAYS, infoTokensLeft,
+  infoPace, FIVE_HOURS, SEVEN_DAYS, infoTokensLeft, infoScriptKey,
 } from "../model.js";
+import { keyOf, scriptKey } from "../../../../pi/extensions/bash-titles/titles.ts";
 
 const line = (o) => JSON.stringify(o) + "\n";
 const assistant = (ts, usage, calls = []) => line({ type: "message", timestamp: ts, message: { role: "assistant", model: "claude-opus-5-5", thinkingLevel: "high", timestamp: Date.parse(ts), usage, content: calls.map((c) => ({ type: "toolCall", ...c })) } });
@@ -206,3 +207,70 @@ test("Pi's edit diff gives numbered lines and the changed range", () => {
   assert.equal(d.to, 29);
   assert.match(infoClock(Date.UTC(2026, 10, 3, 10, 0, 0, 7), false), /^\d\d:00:00$/);
 });
+
+// ---- codemode: a script's row says what it did, not its first line of code ------------
+
+const codemode = (id, code) => ({ id, name: "codemode", arguments: { code } });
+const nested = (id, calls) => ({ nestedCalls: { complete: true, calls: calls.map(([name, args], i) => ({ id: `${id}/${i + 1}`, name, status: "ok", arguments: args })) } });
+const rows = (s, titles) => infoTools(s, titles).map((c) => [c.id, c.kind, c.arg]);
+
+test("a codemode call is a short kind; while it runs, its arg comes from the code", () => {
+  const s = infoNewSession("f");
+  infoFeed(s, line({ type: "session", cwd: "/repo", timestamp: "2026-11-03T10:00:00.000Z" }) + assistant("2026-11-03T10:00:05.000Z", { input: 1, output: 1 }, [
+    codemode("one", "const r = await tools.bash({command: `cd /repo && git status -sb`});\nreturn r.output"),
+    codemode("path", 'return await tools.read({ path: "/repo/src/a.ts" })'),
+    codemode("vars", "const r = await tools.bash({ command: `P=$(pwd); ls $P ${dir}` });"),
+    codemode("many", "const [a, b] = await Promise.allSettled([tools.bash({ command: 'ls' }), tools.bash({ command: 'pwd' })]);\nconst c = await tools.read({ path: 'x' });\nreturn [a, b, c]"),
+    codemode("plain", "// @options: {\"timeout_ms\": 1000}\n\nconst xs = [1, 2, 3];\nreturn xs.map((x) => x * 2)"),
+  ]));
+  assert.deepEqual(rows(s).reverse(), [
+    ["one", "code", "bash: git status -sb"],
+    ["path", "code", "read: src/a.ts"],
+    ["vars", "code", "bash: ls $P ${dir}"],
+    ["many", "code", "bash ×2, read"],
+    ["plain", "code", "const xs = [1, 2, 3];"],
+  ]);
+  // The tooltip and the inspector keep the whole script.
+  assert.equal(infoTools(s).find((c) => c.id === "plain").full, "// @options: {\"timeout_ms\": 1000}\n\nconst xs = [1, 2, 3];\nreturn xs.map((x) => x * 2)");
+});
+
+test("a finished codemode call is named by the calls it made", () => {
+  const s = infoNewSession("f");
+  infoFeed(s, line({ type: "session", cwd: "/repo", timestamp: "2026-11-03T10:00:00.000Z" }) + assistant("2026-11-03T10:00:05.000Z", { input: 1, output: 1 }, [
+    codemode("one", "const r = await tools.bash({ command: cmd });\nreturn r.output"),
+    codemode("many", "for (const f of files) await tools.edit({ path: f, edits });\nreturn await tools.bash({ command: 'pnpm test' })"),
+    codemode("details", "const r = await tools.bash({ command: cmd })"),
+    codemode("threw", "const r = await tools.bash({ command: cmd });\nthrow new Error('x')"),
+  ])
+    + result("2026-11-03T10:00:06.000Z", "one", nested("one", [["bash", { command: "cd /repo && pnpm test --filter x" }]]))
+    + result("2026-11-03T10:00:06.000Z", "many", nested("many", [["edit", { path: "/repo/a" }], ["edit", { path: "/repo/b" }], ["edit", { path: "/repo/c" }], ["bash", { command: "pnpm test" }]]))
+    // Without nestedCalls, details.calls: its args are JSON cut at some length, so not parsable.
+    + result("2026-11-03T10:00:06.000Z", "details", { details: { calls: [{ id: "details/1", name: "bash", args: '{"command":"git log --oneline -20; ls modules/home/programs/pi modules/home/progr...', status: "ok" }] } })
+    + result("2026-11-03T10:00:06.000Z", "threw", { isError: true, ...nested("threw", []) }));
+  assert.deepEqual(rows(s).reverse(), [
+    ["one", "code", "bash: pnpm test --filter x"],
+    ["many", "code", "edit ×3, bash"],
+    ["details", "code", "bash: git log --oneline -20; ls modules/home/programs/pi modules/home/progr..."],
+    ["threw", "code", "const r = await tools.bash({ command: cmd });"],
+  ]);
+});
+
+test("a codemode call takes its bash-titles title when there is one", () => {
+  const code = "const a = await tools.bash({ command: 'ls' });\nconst b = await tools.read({ path: 'x' });";
+  const s = infoNewSession("f");
+  infoFeed(s, assistant("2026-11-03T10:00:05.000Z", { input: 1, output: 1 }, [codemode("t", code), codemode("old", "return 1"), codemode("none", "return 2")]));
+  const titles = { [infoScriptKey(code)]: "Lists the files and reads x", [infoScriptKey("return 1")]: "A title cut by the old limit…" };
+  assert.deepEqual(rows(s, titles).reverse(), [["t", "code", "Lists the files and reads x"], ["old", "code", "return 1"], ["none", "code", "return 2"]]);
+  assert.deepEqual(rows(s).map((r) => r[2]).reverse(), ["bash, read", "return 1", "return 2"]);
+});
+
+test("the script key is bash-titles' own", () => {
+  const samples = ["return 1", "  padded\n  ", "é è ü — 漢字 🎉", "lone \ud800 surrogate", ...[55, 56, 63, 64, 119, 120].map((n) => "x".repeat(n - "codemode\0".length))];
+  for (const code of samples) assert.equal(infoScriptKey(code), keyOf(scriptKey(code)), JSON.stringify(code));
+  // Byte lengths around the sha256 block edges, with multi-byte characters in them.
+  for (const n of [54, 55, 56, 62, 63, 64, 118, 119, 120]) {
+    const code = "é" + "a".repeat(n - 2);
+    assert.equal(infoScriptKey(code), keyOf(scriptKey(code)), String(n));
+  }
+});
+

@@ -117,9 +117,130 @@ export function infoTool(call, cwd) {
       return { ...base, kind: "fetch", arg: String((Array.isArray(a.urls) ? a.urls[0] : a.url) ?? "") };
     case "Agent":
       return { ...base, kind: "agent", arg: firstLine([a.subagent_type, a.description ?? a.prompt].filter(Boolean).join(": ")) };
+    case "codemode":
+      return { ...base, kind: "code", arg: infoScriptArg(String(a.code ?? ""), cwd), full: String(a.code ?? "") };
     default:
       return { ...base, kind: call.name, arg: firstLine(Object.values(a).find((v) => typeof v === "string") ?? "") };
   }
+}
+
+// ---- codemode: a script is named by the calls it makes --------------------------------
+
+// Kinds with their counts, in order of first use: "edit ×3, bash".
+function infoCallNames(names) {
+  const n = new Map();
+  for (const name of names) { const k = infoTool({ name }).kind; n.set(k, (n.get(k) ?? 0) + 1); }
+  return [...n].map(([k, c]) => (c > 1 ? `${k} ×${c}` : k)).join(", ");
+}
+
+// One call as "bash: git status", "read: src/a.ts"; its kind alone when it has no argument.
+function infoCallLabel(name, args, cwd) {
+  const t = infoTool({ name, arguments: args }, cwd);
+  return t.arg ? `${t.kind}: ${t.arg}` : t.kind;
+}
+
+const INFO_ARG_KEYS = ["command", "path", "url", "urls", "query", "question"];
+const INFO_TOOL_CALL = /\btools\s*\.\s*(\w+)\s*\(/g;
+
+// The literal arguments of a call written in the code, as far as a regex reads them:
+// `command: "…"`, `path: '…'`, a template too (its ${…} shown as written).
+function infoCodeArgs(text) {
+  const args = {};
+  for (const key of INFO_ARG_KEYS) {
+    const m = new RegExp(`\\b${key}\\s*:\\s*(\`(?:[^\`\\\\]|\\\\.)*\`|"(?:[^"\\\\\\n]|\\\\.)*"|'(?:[^'\\\\\\n]|\\\\.)*')`).exec(text);
+    if (m) args[key] = m[1].slice(1, -1);
+  }
+  return Object.keys(args).length ? args : null;
+}
+
+// A script's arg before it has a result: its calls when the code names several, the one call
+// with its literal argument, else its first line that isn't a comment or a lone bracket.
+export function infoScriptArg(code, cwd) {
+  const calls = [...code.matchAll(INFO_TOOL_CALL)];
+  if (calls.length > 1) return infoCallNames(calls.map((m) => m[1]));
+  if (calls.length === 1) {
+    const args = infoCodeArgs(code.slice(calls[0].index));
+    if (args) return infoCallLabel(calls[0][1], args, cwd);
+  }
+  const line = code.split("\n").map((l) => l.trim()).find((l) => l && !/^(\/\/|\/\*|\*)/.test(l) && /[\w"'`]/.test(l));
+  return line ?? firstLine(code).trim();
+}
+
+// A finished script's arg from the calls it made: Pi's nestedCalls (whole arguments), else
+// details.calls, whose arguments are JSON cut at some length, so read by regex. Null when it
+// made none (it threw first).
+function infoNestedArg(m, cwd) {
+  const nested = m.nestedCalls?.calls;
+  if (Array.isArray(nested)) {
+    if (nested.length > 1) return infoCallNames(nested.map((c) => c.name));
+    return nested.length ? infoCallLabel(nested[0].name, nested[0].arguments ?? {}, cwd) : null;
+  }
+  const calls = m.details?.calls;
+  if (!Array.isArray(calls) || !calls.length) return null;
+  if (calls.length > 1) return infoCallNames(calls.map((c) => c.name));
+  const raw = String(calls[0].args ?? "");
+  let args = null;
+  try { args = JSON.parse(raw); } catch {
+    args = {};
+    for (const key of INFO_ARG_KEYS) {
+      const v = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`).exec(raw)?.[1];
+      if (v === undefined) continue;
+      try { args[key] = JSON.parse(`"${v}"`); } catch { args[key] = v.replace(/\\n/g, "\n").replace(/\\(.)/g, "$1"); }
+    }
+  }
+  return infoCallLabel(calls[0].name, args && typeof args === "object" ? args : {}, cwd);
+}
+
+// sha256 as hex, of a string's UTF-8 (a lone surrogate as U+FFFD, as Node encodes it): the
+// panel's runtime has no crypto, and bash-titles keys its cache by this hash.
+const INFO_PRIMES = [];
+for (let n = 2; INFO_PRIMES.length < 64; n++) if (INFO_PRIMES.every((p) => n % p)) INFO_PRIMES.push(n);
+const infoFrac = (x) => ((x - Math.floor(x)) * 4294967296) >>> 0;
+const INFO_K = INFO_PRIMES.map((p) => infoFrac(Math.cbrt(p)));
+const INFO_H = INFO_PRIMES.slice(0, 8).map((p) => infoFrac(Math.sqrt(p)));
+
+function infoUtf8(s) {
+  const out = [];
+  for (let i = 0; i < s.length; i++) {
+    let c = s.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length && (s.charCodeAt(i + 1) & 0xfc00) === 0xdc00) c = 0x10000 + ((c - 0xd800) << 10) + (s.charCodeAt(++i) - 0xdc00);
+    else if (c >= 0xd800 && c <= 0xdfff) c = 0xfffd;
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+    else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    else out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+  }
+  return out;
+}
+
+export function infoSha256(s) {
+  const bytes = infoUtf8(s), bits = bytes.length * 8;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+  for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : (bits >>> (i * 8)) & 0xff);
+  const h = INFO_H.slice(), w = new Array(64);
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let o = 0; o < bytes.length; o += 64) {
+    for (let i = 0; i < 16; i++) w[i] = (bytes[o + i * 4] << 24) | (bytes[o + i * 4 + 1] << 16) | (bytes[o + i * 4 + 2] << 8) | bytes[o + i * 4 + 3];
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+    }
+    let [a, b, c, d, e, f, g, k] = h;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (k + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + INFO_K[i] + w[i]) | 0;
+      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      k = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    [a, b, c, d, e, f, g, k].forEach((x, i) => { h[i] = (h[i] + x) | 0; });
+  }
+  return h.map((x) => (x >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+// A script's key in ~/.pi/agent/bash-titles.json (its keyOf(scriptKey(code))).
+export function infoScriptKey(code) {
+  return infoSha256(`codemode\0${String(code).trim()}`.trim()).slice(0, 32);
 }
 
 // Lines added and removed between two texts, line by line as a multiset (moves aren't changes).
@@ -218,6 +339,7 @@ function apply(state, entry) {
     // Pi's edit result carries the diff with line numbers: the inspector shows it as is.
     const diff = m.details?.diff;
     if (typeof diff === "string") call.diff = infoParseDiff(diff.length > RESULT_CAP ? diff.slice(0, RESULT_CAP) : diff);
+    if (call.name === "codemode") call.arg = infoNestedArg(m, state.cwd) ?? call.arg;
     // Lines count once the edit or write went through.
     if (!call.error) countLines(state, call.call);
     delete call.call;
@@ -350,11 +472,18 @@ export function infoCache(state) {
   return { last: last ? hit(last) : null, session: hit(state.totals), read: state.totals.cacheRead, written: state.totals.cacheWrite, input: state.totals.input, output: state.totals.output };
 }
 
-// Tool calls newest first; `running` = no result yet.
-export function infoTools(state) {
+// Tool calls newest first; `running` = no result yet. `titles`: bash-titles.json, whose title
+// names a codemode call before its own arg (one ending in "…" was cut by an old limit: none).
+export function infoTools(state, titles = null) {
   return state.order.slice().reverse().map((id) => {
     const c = state.tools.get(id);
-    return { id: c.id, kind: c.kind, name: c.name, arg: c.arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null,
+    let arg = c.arg;
+    if (titles && c.name === "codemode") {
+      c.titleKey ??= infoScriptKey(c.full);
+      const title = titles[c.titleKey];
+      if (typeof title === "string" && title && !title.endsWith("…")) arg = title;
+    }
+    return { id: c.id, kind: c.kind, name: c.name, arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null,
       args: c.args, result: c.result, resultCut: c.resultCut, finished: c.finished, diff: c.diff ?? null };
   });
 }
