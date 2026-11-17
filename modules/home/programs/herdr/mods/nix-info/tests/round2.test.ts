@@ -43,6 +43,14 @@ test("a merged row's dot is the more severe of script and step", () => {
   assert.equal(infoMergedRow(script({ untitled: false })), null);
 });
 
+test("a merged row is never context: its step is what matched", () => {
+  const kept = infoKeep(script(), "bash");
+  assert.equal(kept.context, true); // the script itself isn't bash
+  assert.equal(infoListRows([kept], [])[0].context, undefined);
+  const went = infoKeep(script({ error: true, stepFailed: true, nested: [step({ error: true })] }), "failed");
+  assert.equal(infoListRows([went], [])[0].context, undefined);
+});
+
 test("a filter never merges a script of several steps (decided on all its steps)", () => {
   const five = script({ nested: ["bash", "edit", "read", "edit", "edit"].map((kind, i) => step({ id: "s/" + i, kind })) });
   const kept = infoKeep(five, "bash");

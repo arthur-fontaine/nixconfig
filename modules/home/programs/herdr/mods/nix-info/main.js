@@ -577,7 +577,7 @@ export default class Info extends View {
       return div().id(`kind-${key}`).h(24).px(8).gap(5).flex_none().flex().items_center().rounded(CHROME.radius).cursor_pointer().text_size(12)
         .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
         .on_click((_e, cx) => this.command(`kind:${key}`, cx))
-        .child(div().child(label)).child(div().text_color(key === "failed" ? t.blocked : t.dim).child(String(n[key])));
+        .child(div().child(label)).child(div().text_color(key === "failed" ? t.blocked : t.dim).child(infoNum(n[key])));
     };
     const rows = this.listRows(f), shown = this.all ? rows : rows.slice(0, SHOWN);
     const label = CHIPS.find(([k]) => k === this.kind)?.[1] ?? "All";
@@ -797,7 +797,10 @@ export default class Info extends View {
     const asked = props()?.detail ?? null;
     if (asked !== this.asked) { this.asked = asked; this.detail = asked; }
     // R2-4: the quiet colours (meters, chevrons, guides, code) from the theme, to contrast targets.
-    const base = theme(), tones = infoTones(base), t = { ...base, tones, chevron: tones.chevron }, now = Date.now();
+    const base = theme();
+    // Once per theme: a working pane renders every second.
+    if (this.tonesOf?.chrome !== base.chrome || this.tonesOf?.foreground !== base.foreground) this.tonesOf = { chrome: base.chrome, foreground: base.foreground, tones: infoTones(base) };
+    const tones = this.tonesOf.tones, t = { ...base, tones, chevron: tones.chevron }, now = Date.now();
     const f = this.figures(now);
     // The header names the model, not the session again (D8).
     const s = this.session;

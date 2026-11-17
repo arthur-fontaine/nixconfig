@@ -728,7 +728,8 @@ export function infoMergedRow(c) {
   const [s] = all;
   const tip = c.failed && s.error ? "Script and its step failed" : `Script with 1 step${s.duration !== null && s.duration !== undefined ? ` · step took ${infoRowDuration(s.duration)}` : ""}`;
   return { ...c, level: 0, merged: true, kind: s.kind, name: s.name, arg: s.arg, full: s.full, path: s.path, titled: Boolean(s.titled), placeholder: Boolean(s.placeholder),
-    argKind: null, untitled: false, nested: null, steps: null, tip };
+    // Never context: under a filter the step is what matched, and the row is the step.
+    argKind: null, untitled: false, nested: null, steps: null, context: undefined, tip };
 }
 
 // The rows a list shows (Calls, Recent calls): a merged row for a one-step script, else the call

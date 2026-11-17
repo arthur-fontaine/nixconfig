@@ -228,6 +228,9 @@ script("await tools.write({ path: \"src/predict.js\", content: big });\nawait to
   result(c, { text: "src/units.js 12ms", ms: 1300 });
   put({ type: "custom", customType: "bash-changes", timestamp: iso(ts(100)), data: { toolCallId: c.id, fileChanges: changes(before) } });
 }
+// Untitled scripts of one step (R2-1: one row each): one that went well, one that threw on it.
+script(`await tools.bash({ command: "git status -sb" });`, [{ name: "bash", arguments: { command: "git status -sb" }, ms: 180, out: "## main" }], { ms: 260 });
+script(`await tools.bash({ command: "tide predict brest 2026-13-01" });`, [{ name: "bash", arguments: { command: "tide predict brest 2026-13-01" }, ms: 90, status: "error", error: "exit 2: invalid date", out: "invalid date" }], { ms: 140, threw: true });
 {
   const c = { id: id(), name: "read", arguments: { path: abs("src/parse.js") } };
   assistant([c], { grow: 600, out: 900 }); result(c, { text: read("src/parse.js"), ms: 15 });
