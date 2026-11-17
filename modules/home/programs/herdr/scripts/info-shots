@@ -2,54 +2,60 @@
 # Every state of the Info panel, dark and light, from one synthetic session, on the sandbox
 # (scripts/sandbox up first). Per state: the window, the panel alone (-panel.png) and the
 # panel's corner check (info-panel.py) in <out>/<prefix>-corners.txt.
-#   info-shots <prefix> <out dir> [state...]    default: every state
-# States: overview context activity lines kind-errors kind-bash select-row select-subrow
-# show-all no-pi running narrow changes files.
-# Its space ("info-shots": a plain shell tab and a stand-in Pi, scripts/info-fake-pi) is made
-# once through the sandbox, so sandbox down closes it. The session is written anew each run, to
-# a new path: the panel keeps what it read of a file by its path.
+#   info-shots <prefix> <out dir> [state...]    default: every state (see STATES)
+# Its space ("info-shots") is made once through the sandbox, so sandbox down closes it: a plain
+# shell tab and one stand-in Pi per session (scripts/info-fake-pi), each with a status that never
+# changes (a change would notify every Herdr window). The repo stays at one path, the space's
+# folder; the session files go to a new path each run (the panel keeps what it read by path).
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 S=$here/sandbox
+STATES=(overview context calls calls-bash calls-failed calls-nomatch collapsed call-script call-step call-edit call-next
+  show-all files files-outside no-pi no-calls running dead claude-code narrow changes files-panel corners)
 prefix=${1:?info-shots <prefix> <out dir> [state...]}; out=${2:?out dir}; shift 2
-states=("$@")
-[ ${#states[@]} -gt 0 ] || states=(overview context activity lines kind-errors kind-bash select-row select-subrow show-all no-pi running narrow changes files)
+states=("$@"); [ ${#states[@]} -gt 0 ] || states=("${STATES[@]}")
 root=${HERDR_SANDBOX:-/tmp/herdr-sandbox}; root=$(cd "$root" && pwd -P)
-mkdirp() { mkdir -p "$1"; }; mkdirp "$out"
+mkdir -p "$out"
 ls_() { "$S" app ls; }
 
-# The repo stays at one path (the space's folder); the session files go to a new one each run.
 fixture=$root/info-fixture
 "$here/info-session" "$fixture" >/dev/null
 gen=$root/info-sessions/$(date +%s)
 mkdir -p "$gen"
-mv "$fixture/session.jsonl" "$fixture/running.jsonl" "$gen/"
-ln -sfn "$fixture/repo" "$gen/repo"
-echo "session: $gen/session.jsonl"
-state=$root/info-pi-state; echo idle >"$state"
+mv "$fixture"/*.jsonl "$gen/"
+echo "sessions: $gen"
 
+# Tab name → session file and status.
+declare -A FILE=([pi]=session [pi-run]=running [pi-dead]=running [pi-cc]=cc [pi-empty]=empty)
+declare -A STATUS=([pi]=idle [pi-run]=working [pi-dead]=idle [pi-cc]=idle [pi-empty]=idle)
 space=$(ls_ | jq -r '.spaces[] | select(.name == "info-shots") | .id' | head -1)
 if [ -z "$space" ]; then
   space=$("$S" do space.new --name info-shots --folder "$fixture/repo" | jq -r .space)
-  "$S" do tab.new --name pi --folder "$fixture/repo" --argv "$(jq -cn --arg p "$here/info-fake-pi" --arg s "$state" '[$p, "π - tide-tables-parser - repo", $s]')" >/dev/null
-  sleep 1.5
 fi
-tabs=$(ls_ | jq -c --arg s "$space" '.spaces[] | select(.id == $s) | .tabs')
-shell_tab=$(jq -r '.[] | select(.name != "pi") | .id' <<<"$tabs" | head -1)
-pi_tab=$(jq -r '.[] | select(.name == "pi") | .id' <<<"$tabs")
-pi_term=$(jq -r '.[] | select(.name == "pi") | .terminals[0].terminal' <<<"$tabs")
-[ -n "$pi_term" ] && [ -n "$shell_tab" ] || { echo "the info-shots space lacks its tabs" >&2; exit 1; }
-label() { hc label "$pi_term" "pi.session=$1" >/dev/null; }
-label "$gen/session.jsonl"
+tabs() { ls_ | jq -c --arg s "$space" '.spaces[] | select(.id == $s) | .tabs'; }
+for name in pi pi-run pi-dead pi-cc pi-empty; do
+  if [ -z "$(tabs | jq -r --arg n "$name" '.[] | select(.name == $n) | .id')" ]; then
+    "$S" do tab.new --name "$name" --space "$space" --folder "$fixture/repo" --focus false \
+      --argv "$(jq -cn --arg p "$here/info-fake-pi" --arg t "π - tide-tables-${name#pi} - repo" --arg s "${STATUS[$name]}" '[$p, $t, $s]')" >/dev/null
+  fi
+done
+sleep 1.5
+tab_of() { tabs | jq -r --arg n "$1" '.[] | select(.name == $n) | .id'; }
+term_of() { tabs | jq -r --arg n "$1" '.[] | select(.name == $n) | .terminals[0].terminal'; }
+for name in "${!FILE[@]}"; do hc label "$(term_of "$name")" "pi.session=$gen/${FILE[$name]}.jsonl" >/dev/null; done
+shell_tab=$(tabs | jq -r '[.[] | select(.name | startswith("pi") | not)][0].id')
+
+# Calls the states open, by what they are rather than by id.
+script_a=$(jq -r 'select(.message.role == "toolResult" and .message.details.title == "Fixes negative heights and adds their test") | .message.toolCallId' "$gen/session.jsonl")
+edit_call=$(jq -r 'select(.message.role == "assistant") | .message.content[] | select(.type == "toolCall" and .name == "edit") | .id' "$gen/session.jsonl" | head -1)
 
 act() { "$S" act "$@" >/dev/null; }
-show() { "$S" do tab.select --id "$1" >/dev/null; }
+show() { "$S" do tab.select --id "$(tab_of "$1")" >/dev/null; }
 panel() { "$S" do layout.show --id panel >/dev/null; "$S" do layout.select --stack panel-body --child "$1" >/dev/null; }
-show "$pi_tab"; panel info; sleep 1.5
+show pi; panel info; sleep 1.5
 
 well() { jq -r .colors.well "$here/../themes/nix-islands-b-$1.json"; }
 corners=$out/$prefix-corners.txt; : >"$corners"
-
 shoot() { # <state> <theme>
   sleep 1.3
   local f=$out/$prefix-$1-$2.png
@@ -59,43 +65,49 @@ shoot() { # <state> <theme>
   echo "$f"
 }
 
-# One state: set it up from the overview, shoot, put things back.
+# One state: set it up from a reset panel on the main stand-in, shoot, put things back.
 state_() { # <state> <theme>
-  act nix-info.detail:
+  show pi; act nix-info.reset
   case $1 in
     overview) ;;
-    context|activity|lines) act "nix-info.detail:$1" ;;
-    kind-*) act "nix-info.kind:${1#kind-}" ;;
-    select-row) act nix-info.select:toolu_syn0198 ;;
-    select-subrow) act nix-info.select:toolu_syn0198/2 ;;
-    show-all) act nix-info.detail:activity; act nix-info.all ;;
-    no-pi) show "$shell_tab" ;;
+    context) act nix-info.open:context ;;
+    calls) act nix-info.detail:calls ;;
+    calls-bash) act nix-info.kind:bash ;;
+    calls-failed) act nix-info.kind:failed ;;
+    calls-nomatch) show pi-cc; act nix-info.reset; act nix-info.kind:ask ;;
+    collapsed) act nix-info.detail:calls; act "nix-info.toggle:$script_a" ;;
+    call-script) act "nix-info.select:$script_a" ;;
+    call-step) act "nix-info.select:$script_a/2" ;;
+    call-edit) act "nix-info.select:$edit_call" ;;
+    call-next) act "nix-info.select:$script_a"; act nix-info.next ;;
+    show-all) act nix-info.detail:calls; act nix-info.all ;;
+    files) act nix-info.detail:files ;;
+    files-outside) act nix-info.detail:files; act nix-info.open:outside ;;
+    no-pi) "$S" do tab.select --id "$shell_tab" >/dev/null ;;
+    no-calls) show pi-empty ;;
+    running) show pi-run ;;
+    dead) show pi-dead ;;
+    claude-code) show pi-cc; act nix-info.reset ;;
     narrow) "$S" do layout.resize --id panel --px 260 >/dev/null ;;
-    changes|files) panel "$1" ;;
+    changes) panel changes ;;
+    files-panel) panel files ;;
+    # A fill no theme uses, so the corner check sees the content's own corners.
+    corners) act "nix-info.fill:#ff00ff" ;;
     *) echo "unknown state $1" >&2; return 1 ;;
   esac
   shoot "$1" "$2"
   case $1 in
-    no-pi) show "$pi_tab" ;;
     narrow) "$S" do layout.resize --id panel --px 360 >/dev/null ;;
-    changes|files) panel info ;;
+    changes|files-panel) panel info ;;
+    corners) act nix-info.fill: ;;
   esac
 }
 
-# running last, both themes in one go: its end (working → idle) raises a "Pi finished"
-# notification over the panel's bottom, which would spoil the shots after it.
-running=0
 for theme in dark light; do
   "$S" appearance "$theme"; sleep 1.5
-  for s in "${states[@]}"; do if [ "$s" = running ]; then running=1; else state_ "$s" "$theme"; fi; done
+  for s in "${states[@]}"; do state_ "$s" "$theme"; done
 done
-if [ $running = 1 ]; then
-  act nix-info.detail:
-  label "$gen/running.jsonl"; echo working >"$state"
-  for theme in dark light; do "$S" appearance "$theme"; sleep 1.5; shoot running "$theme"; done
-  echo idle >"$state"; label "$gen/session.jsonl"
-fi
-act nix-info.detail:
+show pi; act nix-info.reset
 "$S" appearance dark
 echo "corners: $corners"
 echo "square corners: $(grep -c "SQUARE" "$corners" || true); unreadable shots: $(grep -c "isn't the well" "$corners" || true); content corners that can't tell: $(grep -c "same fill" "$corners" || true)"
