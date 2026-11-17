@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 // A synthetic Pi session for the Info panel's shots and audit, never a real transcript.
-//   info-session <dir>   writes <dir>/repo (a git repo the session's edits really happened in:
-//                        "git diff --numstat" there is the lines' ground truth), <dir>/session.jsonl
-//                        and <dir>/running.jsonl (the same plus one script still running).
+//   info-session <dir>   writes <dir>/repo, a git repo the session's edits really happened in
+//                        (its commits dated as the session goes: the base before it, one in the
+//                        middle; "git diff --numstat <base>" is the lines' ground truth), and:
+//     session.jsonl   the session
+//     running.jsonl   the same plus one script without a result (working, or dead when idle)
+//     waiting.jsonl   the same plus an ask without an answer
+//     cc.jsonl        a session with Claude Code's tool names (Bash, Read, Edit, Write, …)
+//     empty.jsonl     a session that started and made no call yet
+//   <dir>/scratch holds the files it wrote outside the repo.
 // Timestamps end now, so ages read as minutes. The calls the shots look at come last (the list
 // is newest first); some 190 small ones go first so the list passes 200 rows (Show all).
 import { execFileSync } from "node:child_process";
@@ -15,6 +21,13 @@ const repo = join(dir, "repo");
 rmSync(repo, { recursive: true, force: true });
 mkdirSync(repo, { recursive: true });
 const git = (...a) => execFileSync("git", ["-C", repo, "-c", "user.name=sandbox", "-c", "user.email=sandbox@localhost", "-c", "commit.gpgsign=false", ...a], { encoding: "utf8" });
+// A commit dated at ms: author and committer (git log --before reads the committer date).
+const commitAt = (ms, msg) => execFileSync("git", ["-C", repo, "-c", "user.name=sandbox", "-c", "user.email=sandbox@localhost", "-c", "commit.gpgsign=false", "commit", "-q", "-m", msg],
+  { env: { ...process.env, GIT_AUTHOR_DATE: new Date(ms).toISOString(), GIT_COMMITTER_DATE: new Date(ms).toISOString() } });
+const scratch = join(dir, "scratch");
+rmSync(scratch, { recursive: true, force: true });
+mkdirSync(scratch, { recursive: true });
+const now = Date.now();
 
 const lines = (n, f) => Array.from({ length: n }, (_, i) => f(i + 1)).join("\n") + "\n";
 const BASE = {
@@ -29,7 +42,7 @@ const BASE = {
 for (const [p, c] of Object.entries(BASE)) { mkdirSync(dirname(join(repo, p)), { recursive: true }); writeFileSync(join(repo, p), c); }
 git("init", "-q", "-b", "main");
 git("add", "-A");
-git("commit", "-q", "-m", "base");
+commitAt(now - 60 * 60 * 1000, "base");
 
 const abs = (p) => join(repo, p);
 const read = (p) => (existsSync(abs(p)) ? readFileSync(abs(p), "utf8") : "");
@@ -45,7 +58,7 @@ function doEdit(p, oldText, newText) {
   newText.split("\n").forEach((l, i) => out.push("+ " + (line + i) + " " + l));
   return out.join("\n");
 }
-function doWrite(p, content) { mkdirSync(dirname(abs(p)), { recursive: true }); writeFileSync(abs(p), content); }
+function doWrite(p, content) { const f = p.startsWith("/") ? p : abs(p); mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, content); }
 // What bash-changes records for a bash call: per file, git's numstat of that call's own change
 // (its content before → after).
 function changes(before) {
@@ -61,7 +74,6 @@ function changes(before) {
   return { root: repo, files };
 }
 
-const now = Date.now();
 let t = now - 52 * 60 * 1000;
 const ts = (step = 2000) => { t += step; return t; };
 const iso = (ms) => new Date(ms).toISOString();
@@ -89,24 +101,25 @@ function user(text) { const at = ts(20000); put({ type: "message", timestamp: is
 // One codemode script: its nested calls (applied for real when they edit or write), as Pi
 // records them in nestedCalls and details.calls. A nested call with cut: true keeps only
 // argumentsBytes (its arguments were too big), as Pi does for large writes.
-function script(code, nested, { title = null, ms = 3000, threw = false } = {}) {
+function script(code, nested, { title = null, ms = 3000, threw = false, record = true } = {}) {
   const c = { id: id(), name: "codemode", arguments: { code } };
   assistant([c], { grow: 1400 });
   const calls = nested.map((x, i) => ({ id: c.id + "/" + (i + 1), ...x }));
   // bash-changes records a script's changes in its repo too (as for bash): its result's fileChanges.
   const touched = {};
-  for (const x of calls) if ((x.name === "edit" || x.name === "write") && x.status !== "error") touched[x.arguments.path.slice(repo.length + 1)] ??= read(x.arguments.path.slice(repo.length + 1));
+  const inRepo = (x) => x.arguments.path.startsWith(repo + "/");
+  for (const x of calls) if ((x.name === "edit" || x.name === "write") && x.status !== "error" && inRepo(x)) touched[x.arguments.path.slice(repo.length + 1)] ??= read(x.arguments.path.slice(repo.length + 1));
   for (const x of calls) {
     if (x.status === "error") continue;
     if (x.name === "edit") doEdit(x.arguments.path.slice(repo.length + 1), x.arguments.edits[0].oldText, x.arguments.edits[0].newText);
-    if (x.name === "write") doWrite(x.arguments.path.slice(repo.length + 1), x.arguments.content);
+    if (x.name === "write") doWrite(inRepo(x) ? x.arguments.path.slice(repo.length + 1) : x.arguments.path, x.arguments.content);
   }
   const nestedCalls = { complete: true, calls: calls.map((x) => ({ id: x.id, name: x.name, status: x.status ?? "ok", durationMs: x.ms ?? 120,
     ...(x.cut ? { argumentsBytes: JSON.stringify(x.arguments).length } : { arguments: x.arguments }), ...(x.error ? { error: x.error } : {}) })) };
   const details = { autoMode: false, calls: calls.map((x) => ({ id: x.id, name: x.name, status: x.status ?? "ok", durationMs: x.ms ?? 120,
-    args: JSON.stringify(x.arguments).slice(0, x.cut ? 160 : 4000), ...(x.error ? { error: x.error } : {}) })),
+    args: JSON.stringify(x.arguments).slice(0, x.cut === "nopath" ? 12 : x.cut ? 160 : 4000), ...(x.error ? { error: x.error } : {}) })),
     callOutputs: Object.fromEntries(calls.map((x) => [x.id, { lines: (x.out ?? "ok").split("\n"), total: (x.out ?? "ok").split("\n").length }])),
-    ...(title ? { title } : {}), ...(Object.keys(touched).length ? { fileChanges: changes(touched) } : {}) };
+    ...(title ? { title } : {}), ...(record && Object.keys(touched).length ? { fileChanges: changes(touched) } : {}) };
   result(c, { text: threw ? "Error: tools.bash failed" : calls.map((x) => x.out ?? "ok").join("\n"), ms, isError: threw, details });
   // Pi's nestedCalls sits on the message itself.
   const last = JSON.parse(out.pop()); last.message.nestedCalls = nestedCalls; put(last);
@@ -171,6 +184,21 @@ script("const a = await tools.read({ path: \"src/parse.js\" });\nawait tools.edi
   { name: "write", arguments: { path: abs("tests/negative.test.js"), content: lines(12, (i) => "// negative " + i) } },
   { name: "bash", arguments: { command: "node --test tests" }, ms: 2400, out: "ok 1\nok 2\nok 3" },
 ], { title: "Fixes negative heights and adds their test", ms: 3100 });
+// The agent commits what it has so far (git commit, as a bash call), dated now in the session.
+{
+  const c = { id: id(), name: "bash", arguments: { command: "git add -A && git commit -m \"fix(parse): keep negative heights\"" } };
+  assistant([c]); git("add", "-A"); commitAt(t, "fix(parse): keep negative heights"); result(c, { text: "[main 1a2b3c4] fix(parse): keep negative heights", ms: 200 });
+}
+// Scratch files outside the repo: a direct write, and a script's (one of its writes keeps
+// neither its arguments nor a readable path, and the script has no bash-changes record).
+{
+  const c = { id: id(), name: "write", arguments: { path: join(scratch, "probe.mjs"), content: lines(6, (i) => "// probe " + i) } };
+  assistant([c]); doWrite(c.arguments.path, c.arguments.content); result(c, { text: "Wrote 6 lines", ms: 20 });
+}
+script("await tools.write({ path: scratchFile, content });\nawait tools.write({ path: other, content: huge });", [
+  { name: "write", arguments: { path: join(scratch, "tides.csv"), content: lines(30, (i) => "brest," + i) } },
+  { name: "write", cut: "nopath", arguments: { path: join(scratch, "huge.json"), content: lines(400, (i) => "{\"n\": " + i + "}") } },
+], { ms: 900, record: false });
 // Script B: a nested bash fails, the script catches it and goes on; titled later by a bash-titles entry.
 const b = script("for (const h of [\"brest\", \"saint-malo\"]) { try { await tools.bash({ command: \"tide predict \" + h }); } catch {} }", [
   { name: "bash", arguments: { command: "tide predict brest 2026-11-17" }, ms: 900, out: "06:12 high 6.8 m" },
@@ -206,10 +234,43 @@ script("await tools.write({ path: \"src/predict.js\", content: big });\nawait to
 user("Thanks.");
 assistant([], { grow: 300, out: 420 });
 
-const base = out.join("\n") + "\n";
+const base = out.join("\n") + "\n", calls = n;
 writeFileSync(join(dir, "session.jsonl"), base);
 // running: one more script, no result yet.
 const run = { id: "toolu_running", name: "codemode", arguments: { code: "await tools.bash({ command: \"node --test tests --watch\" });" } };
 out.length = 0; t = now - 20000; assistant([run], { grow: 500 });
 writeFileSync(join(dir, "running.jsonl"), base + out.join("\n") + "\n");
-console.log(JSON.stringify({ repo, session: join(dir, "session.jsonl"), running: join(dir, "running.jsonl"), calls: n }));
+// waiting: an ask without an answer.
+const ask = { id: "toolu_waiting", name: "ask_user_question", arguments: { questions: [{ question: "Run the slow tide tests too?", header: "Tests", options: [] }] } };
+out.length = 0; t = now - 15000; assistant([ask], { grow: 300 });
+writeFileSync(join(dir, "waiting.jsonl"), base + out.join("\n") + "\n");
+
+// cc: Claude Code's names and argument shapes (file_path, old_string), no scripts. Its edits
+// aren't applied: the repo stays the main session's truth.
+out.length = 0; n = 0; t = now - 30 * 60 * 1000; ctx = 30000;
+put({ type: "session", version: 3, id: "syn-cc", cwd: repo, timestamp: iso(t) });
+put({ type: "session_info", name: "tide-tables-cc", timestamp: iso(ts(10)) });
+user("Check the harbour defaults.");
+{
+  const calls = [
+    { id: id("toolu_cc"), name: "Bash", arguments: { command: "git log --oneline -3", description: "Recent commits" } },
+    { id: id("toolu_cc"), name: "Read", arguments: { file_path: abs("src/harbour.js") } },
+    { id: id("toolu_cc"), name: "Edit", arguments: { file_path: abs("src/harbour.js"), old_string: "// harbour 7", new_string: "// harbour 7 (checked)" } },
+    { id: id("toolu_cc"), name: "Write", arguments: { file_path: abs("docs/harbours.md"), content: "# Harbours\n\nBrest, Saint-Malo.\n" } },
+    { id: id("toolu_cc"), name: "Grep", arguments: { pattern: "DEFAULT", path: abs("src") } },
+  ];
+  assistant(calls);
+  for (const c of calls) result(c, { text: "…", ms: 300 });
+}
+user("Thanks.");
+assistant([], { grow: 200 });
+writeFileSync(join(dir, "cc.jsonl"), out.join("\n") + "\n");
+
+// empty: started, nothing called yet.
+out.length = 0; t = now - 60 * 1000;
+put({ type: "session", version: 3, id: "syn-empty", cwd: repo, timestamp: iso(t) });
+put({ type: "session_info", name: "tide-tables-new", timestamp: iso(ts(10)) });
+user("Look at the predictor.");
+assistant([], { grow: 0, out: 40 });
+writeFileSync(join(dir, "empty.jsonl"), out.join("\n") + "\n");
+console.log(JSON.stringify({ repo, session: join(dir, "session.jsonl"), running: join(dir, "running.jsonl"), calls }));
