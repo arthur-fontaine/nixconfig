@@ -76,7 +76,7 @@ export default class Editor extends View {
     this.sliding = false;
     cx.timer.every(BLINK, () => {
       // A theme switch doesn't always redraw this view, and render() was the only place the
-      // theme reached Neovim (it arrived ~10 s late): checked here too (a key compare).
+      // theme reached Neovim (it stayed one switch behind): checked here too (a key compare).
       this.followTheme();
       const focused = this.handle.is_focused();
       const blink = !focused || Date.now() - this.woke < BLINK ? true : !this.blink;
@@ -659,7 +659,7 @@ export default class Editor extends View {
     const c = this.grid.cmdline;
     const h = m.lh + 12;
     const caret = PAD.x + (c.lead.length + c.pos) * m.cw;
-    return div().absolute().left(0).bottom(0).w_full().h(h).bg(t.chrome).border_t(1).border_color(t.border).rounded_b(paneRadius(layout()))
+    return div().absolute().left(0).bottom(0).w_full().h(h).bg(t.chrome).border_t(1).border_color(t.border)
       .child(div().absolute().left(PAD.x).top(6).h(m.lh).line_height(`${m.lh}px`).whitespace_nowrap().overflow_hidden()
         .child(h_flex().child(div().text_color(t.dim).child(c.lead)).child(div().text_color(t.foreground).child(c.text))))
       .child(div().absolute().left(caret).top(6).w(2).h(m.lh).bg(t.accent));
