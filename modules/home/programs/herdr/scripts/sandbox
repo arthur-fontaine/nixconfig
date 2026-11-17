@@ -10,6 +10,9 @@
 #   sandbox shot <file>   screenshot of the sandbox window
 #   sandbox appearance light|dark   the sandbox's appearance (its settings.json, applied live)
 #   sandbox variant nix|<name>      show layouts/nix.json or layouts/nix-islands-<name>.json
+#   sandbox fixture       a throwaway repo (k31-fixture) with two worktrees, for destructive tests
+#   sandbox keys          merge default.nix's keys into the keys.json Herdr wrote
+#   sandbox act <cmd> ... herdr-app do, only while the shown space is one `do` made
 #   sandbox down          close what `do` created, kill only the recorded PID, remove the home
 set -euo pipefail
 
@@ -78,6 +81,9 @@ settings() {
   nix eval --json "$repo$cfg.herdr-shared.managed" | jq '. + {"frame.welcomed": "finished"}' >"$home/shared.json"
 }
 
+# The fixture's real path: git reports /private/tmp, and the mods compare paths as strings.
+fixture=$(mkdir -p "$root" && cd "$root" && pwd -P)/k31-fixture
+
 cmd=${1:-}; shift || true
 case $cmd in
   up)
@@ -114,6 +120,32 @@ case $cmd in
     [ "$shown" = "$name" ] || { echo "still showing $shown" >&2; cat "$home/layouts/$name.error" 2>/dev/null >&2; exit 1; }
     echo "showing $name"
     ;;
+  fixture)
+    if ! git -C "$fixture/main" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+      git init -q -b main "$fixture/main"
+      # Its own identity and no signing: the person's global git config stays out of it.
+      git -C "$fixture/main" -c user.name=sandbox -c user.email=sandbox@localhost -c commit.gpgsign=false commit -q --allow-empty -m "fixture: first commit"
+      git -C "$fixture/main" worktree add -q -b wt-a "$fixture/wt-a"
+      git -C "$fixture/main" worktree add -q -b wt-b "$fixture/wt-b"
+    fi
+    git -C "$fixture/main" worktree list
+    ;;
+  keys)
+    running || { echo "the sandbox isn't up" >&2; exit 1; }
+    cfg="#darwinConfigurations.Arthur-Mac.config.home-manager.users.$USER.nixconfig.sync.herdr-keys.managed"
+    tmp=$(mktemp)
+    # After start: Herdr writes its defaults first, nix's keys go on top, as activation merges them.
+    nix eval --json "$repo$cfg" 2>/dev/null | jq -s '.[0] * .[1]' "$home/keys.json" - >"$tmp" && mv "$tmp" "$home/keys.json"
+    sleep 1
+    [ ! -e "$home/keys.error" ] || { cat "$home/keys.error" >&2; exit 1; }
+    jq -c '.global | with_entries(select(.value|tostring|test("^nix-")))' "$home/keys.json"
+    ;;
+  act)
+    # Mod commands carry no target: they act on what the sandbox shows. Only ever on our own.
+    shown=$(app status | jq -r .space)
+    grep -q "^space $shown$" "$created" || { echo "refused: the shown space $shown isn't one the sandbox made" >&2; exit 1; }
+    app do "$@"
+    ;;
   appearance)
     case ${1:-} in light|dark) ;; *) echo "appearance light|dark" >&2; exit 1 ;; esac
     tmp=$(mktemp) && jq --arg a "$1" '.appearance = $a' "$home/settings.json" >"$tmp" && mv "$tmp" "$home/settings.json"
@@ -135,5 +167,5 @@ case $cmd in
     rm -rf "$root"
     echo "down"
     ;;
-  *) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
