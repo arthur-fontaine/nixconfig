@@ -88,7 +88,8 @@
       "border": {
         "width": 1,
         "color": "border"
-      }
+      },
+      "padding": 5
     },
     {
       "id": "work",
@@ -118,10 +119,6 @@
               "type": "column",
               "radius": 14,
               "background": "background",
-              "border": {
-                "width": 1,
-                "color": "border"
-              },
               "children": [
                 {
                   "id": "main",
@@ -152,7 +149,8 @@
                     }
                   }
                 }
-              ]
+              ],
+              "padding": 5
             },
             {
               "id": "panel",
@@ -205,7 +203,8 @@
               "border": {
                 "width": 1,
                 "color": "border"
-              }
+              },
+              "padding": 5
             }
           ],
           "gap": 8
@@ -218,8 +217,7 @@
           },
           "content": {
             "mod": "nix-status"
-          },
-          "radius": 10
+          }
         }
       ],
       "gap": 0
