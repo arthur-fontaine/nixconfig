@@ -452,7 +452,7 @@ function apply(state, entry) {
         // in the session): keyed by its whole command, so not from details.calls' cut one.
         const wants = !c.title && c.name === "bash" && c.whole && infoWantsTitle(c.args.command);
         if (wants) state.untitledNested++;
-        return { id: typeof c.id === "string" ? c.id : `${m.toolCallId}/${i + 1}`, name: c.name, kind: t.kind, arg: c.title ?? t.arg, full: t.full ?? t.arg, path: t.path, wants,
+        return { id: typeof c.id === "string" ? c.id : `${m.toolCallId}/${i + 1}`, name: c.name, kind: t.kind, arg: c.title ?? t.arg, full: t.full ?? t.arg, path: infoAbs(t.path, state.cwd), wants,
           error: c.error, duration: c.duration, args: infoCapValue(c.args, INFO_NESTED_ARG_CAP),
           result: text.slice(0, INFO_NESTED_ARG_CAP), resultCut: text.length > INFO_NESTED_ARG_CAP || (!c.error && out?.total > lines.length) };
       });

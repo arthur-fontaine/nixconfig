@@ -222,7 +222,7 @@ export default class Info extends View {
           if (!file && this.session) { this.session = null; changed = true; }
           if (file && (await this.read(file))) changed = true;
           if (Date.now() - usageAt > USAGE_EVERY) { usageAt = Date.now(); await this.readUsage(); changed = true; }
-          // A few keys per continuation, the view redrawn as titles come.
+          // A few keys per continuation; the view is redrawn once all are keyed.
           for (const s = this.session; this.titles && s && this.session === s && infoKeyTitles(s, KEYS_AT_ONCE);) {
             changed = true;
             await new Promise((r) => cx.timer.after(1, r));

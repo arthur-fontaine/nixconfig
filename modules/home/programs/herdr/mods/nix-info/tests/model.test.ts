@@ -465,9 +465,10 @@ test("a codemode call lists the calls it made under it, in call order, at level 
   const at = all.findIndex((r) => r.id === edit);
   assert.deepEqual(all.slice(at, at + 5).map((r) => [r.level, r.kind, r.arg, r.duration, r.error, r.path]), [
     [0, "code", "write ×2, read, bash", 2244, false, null],
-    [1, "write", "modules/home/programs/herdr/mods.nix", 4, false, "modules/home/programs/herdr/mods.nix"],
-    [1, "read", "modules/home/programs/herdr/default.nix", 2, false, "modules/home/programs/herdr/default.nix"],
-    [1, "write", "modules/home/programs/herdr/default.nix", 3, false, "modules/home/programs/herdr/default.nix"],
+    // Shown relative, opened by their absolute path.
+    [1, "write", "modules/home/programs/herdr/mods.nix", 4, false, "/repo/modules/home/programs/herdr/mods.nix"],
+    [1, "read", "modules/home/programs/herdr/default.nix", 2, false, "/repo/modules/home/programs/herdr/default.nix"],
+    [1, "write", "modules/home/programs/herdr/default.nix", 3, false, "/repo/modules/home/programs/herdr/default.nix"],
     [1, "bash", "git add mods.nix default.nix && git diff --cached --stat", 2195, false, null],
   ]);
   const sub = all[at + 4];
