@@ -8,7 +8,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, terminals, machines, run, openOverlay, exec, theme, window, layout, watchFolder, setAgentOrder, pickFolder, home, shared, setShared, focused, nextCommand, closeOverlay } from "herdr";
 import { ORCHESTRATOR_RE, wtClick, wtOrchestrator } from "../_lib/worktree.js";
-import { tabLabel } from "../_lib/tabs.js";
+import { tabLabel, tabSlot, tabMoveIndex } from "../_lib/tabs.js";
 
 const ICON = (n) => `mods/nix-head/icons/${n}.svg`;
 // Pi's mark as Herdr's program table has it, for rows with no program at hand (workers).
@@ -568,15 +568,40 @@ export default class Sidebar extends View {
     cx.timer.after(100, () => record(30));
   }
 
-  tabRow(s, tab, ps, t, order) {
+  // list: the tab rows shown with it (its space's), for a drag among them.
+  tabRow(s, tab, ps, t, order, list = [tab]) {
     const { lead, label } = this.tabInfo(tab, ps);
     if (this.filter && !this.first && this.matches(label)) this.first = { space: s.id, tab: tab.id };
     for (const a of agents()) if (a.tab === tab.id) order.push(a.address);
     const id = `tab-${tab.id}`, on = s.active && tab.active;
     const time = tab.status === "working" ? tab.working_since : tab.changed_at;
-    return this.hoverable(id, h_flex().h(28).pl(40).pr(10).gap(8).items_center().rounded(6).cursor_pointer()
+    const i = list.indexOf(tab), d = this.tabDrag, dragging = d?.moved && d.space === s.id;
+    const line = (top) => div().absolute().left(4).right(4).h(2).rounded(1).bg(t.accent).when(top, (e) => e.top(-1)).when(!top, (e) => e.bottom(-1));
+    return this.hoverable(id, h_flex().relative().h(28).pl(40).pr(10).gap(8).items_center().rounded(6).cursor_pointer()
       .when(on, (e) => e.bg(t.selected)).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
-      .on_click(() => { run("space.select", { id: s.id }); run("tab.select", { id: tab.id }); })
+      .when(Boolean(dragging && d.id === tab.id), (e) => e.opacity(0.5))
+      // Dragged within its worktree: a line shows the gap it lands in; released, tab.move.
+      .on_mouse_down("left", (e) => { this.tabDrag = { space: s.id, id: tab.id, y: e.position.y, moved: false, slot: null }; })
+      .on_mouse_move((e, cx) => {
+        const g = this.tabDrag;
+        if (!g || g.space !== s.id || i < 0) return;
+        if (!g.moved && Math.abs(e.position.y - g.y) < 4) return;
+        const slot = tabSlot(i, e.local_position.y, e.bounds.height);
+        if (!g.moved || slot !== g.slot) { g.moved = true; g.slot = slot; this.tabDragged = true; cx.notify(); }
+      })
+      .on_mouse_up("left", (_e, cx) => {
+        const g = this.tabDrag;
+        this.tabDrag = null;
+        if (!g?.moved || g.space !== s.id) return;
+        cx.timer.after(50, () => { this.tabDragged = false; });
+        const index = tabMoveIndex((s.tabs ?? []).map((x) => x.id), list.map((x) => x.id), g.id, g.slot);
+        if (index) run("tab.move", { id: g.id, index });
+        cx.notify();
+      })
+      .when(Boolean(dragging && d.slot === i), (e) => e.child(line(true)))
+      .when(Boolean(dragging && d.slot === i + 1 && i === list.length - 1), (e) => e.child(line(false)))
+      // The click that ends a drag isn't one.
+      .on_click(() => { if (this.tabDragged) { this.tabDragged = false; return; } run("space.select", { id: s.id }); run("tab.select", { id: tab.id }); })
       .child(this.picture(lead, t, 14, on))
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(on ? t.foreground : t.muted).child(label))
       // A worktree's orchestrator is a tab like the others, with a mark.
@@ -586,8 +611,8 @@ export default class Sidebar extends View {
       .when(Boolean(this.status(t, tab.status)), (e) => e.child(this.status(t, tab.status))));
   }
 
-  tabRows(s, tab, ps, t, order) {
-    return [this.tabRow(s, tab, ps, t, order), ...this.workerRows(tab, 56, t)];
+  tabRows(s, tab, ps, t, order, list) {
+    return [this.tabRow(s, tab, ps, t, order, list), ...this.workerRows(tab, 56, t)];
   }
 
   worktreeRow({ s, g }, ps, t, order) {
@@ -616,7 +641,7 @@ export default class Sidebar extends View {
         (cx) => { const r = g && this.repoByKey?.get(g.repo); r ? this.openNewFor(r, s, ps, cx) : this.openNew(cx, { space: s.id, level: 2 }); }, t)))
       .when(this.hovered !== id, (e) => e.when(Boolean(this.status(t, status)), (e) => e.child(this.status(t, status)))))];
     if (!folded) {
-      for (const tab of tabs) rows.push(...this.tabRows(s, tab, ps, t, order));
+      for (const tab of tabs) rows.push(...this.tabRows(s, tab, ps, t, order, tabs));
       const r = g && this.repoByKey?.get(g.repo), at = place(s, ps);
       for (const [path, list] of r?.workers ?? []) if (at && (at === path || at.startsWith(path + "/"))) rows.push(...list.map((x) => this.workerRow(x, 40, t)));
     }
@@ -661,7 +686,8 @@ export default class Sidebar extends View {
     if (r.closed && !this.trees[r.key]) this.loadTrees(r.key, null);
     // A space opened on the repo's own folder (a bare clone's container) lists its tabs here;
     // with no worktree open, the repo's worktrees are listed, each opening on a click.
-    const homeTabs = r.home && r.home === r.project ? (r.home.tabs ?? []).filter((x) => !x.settled && !isOrchestrator(x)).flatMap((x) => this.tabRows(r.home, x, ps, t, order)) : [];
+    const homeList = r.home && r.home === r.project ? (r.home.tabs ?? []).filter((x) => !x.settled && !isOrchestrator(x)) : [];
+    const homeTabs = homeList.flatMap((x) => this.tabRows(r.home, x, ps, t, order, homeList));
     const idle = !r.items.length && !r.closed ? r.idle.filter((c) => !r.busy.includes(c)).flatMap((c) => this.checkoutRows(r, c, t)) : [];
     return [head, ...workers, ...homeTabs, ...items.flatMap((it) => this.worktreeRow(it, ps, t, order)), ...r.busy.flatMap((c) => this.checkoutRows(r, c, t)), ...idle];
   }
@@ -749,7 +775,10 @@ export default class Sidebar extends View {
       .child(v_flex().id("sidebar-tree").flex_1().min_h(0).px(6).overflow_y_scrollbar()
         .on_mouse_up("left", (_e, cx) => this.drop(cx))
         // Released outside the tree: the drag is dropped where it started.
-        .on_hover((hovered, cx) => { if (!hovered && this.drag) { this.drag = null; this.dropAt = null; this.wasMoving = false; this.dragged = false; cx.notify(); } })
+        .on_hover((hovered, cx) => {
+          if (!hovered && this.drag) { this.drag = null; this.dropAt = null; this.wasMoving = false; this.dragged = false; cx.notify(); }
+          if (!hovered && this.tabDrag) { this.tabDrag = null; this.tabDragged = false; cx.notify(); }
+        })
         .when(Boolean(need), (e) => e.child(need))
         .child(v_flex().children(body))
         .when(rest.length > 0, (e) => e.child(v_flex().pt(6).mt(4).border_t(1).border_color(t.border).children(rest)))

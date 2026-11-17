@@ -50,3 +50,4 @@ test("tabs: only a shell's folder label is a path", () => {
   assert.equal(tabLabelIsPath({ named: false, name: "2", lead: { app: "pi", title: "π - a long session - wt-a", program: { agent: true } }, folder: W }), false);
   assert.equal(tabLabelIsPath({ named: false, name: "2", lead: { cwd: W, program: { shell: false, agent: false, name: "sleep" } }, folder: W }), false);
 });
+test("tabs: a tab dropped on another space's list doesn't move", () => assert.equal(tabMoveIndex(["a", "b"], ["a", "b"], "z", 1), null));
