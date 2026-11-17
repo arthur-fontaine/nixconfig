@@ -9,7 +9,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoLastCall, infoLines, infoNewSession, infoParseTitle, infoResultLines, infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoLastCall, infoLines, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
 
 // The editor (../_lib/editor.js) gets the herdr functions it uses.
 const HERDR = { spaces, panes, run, shared, setShared, notify };
@@ -79,6 +79,8 @@ export default class Info extends View {
     this.pane = null;
     this.usage = null;
     this.windows = {}; // model id → context window
+    this.titles = null; // bash-titles.json: codemode scripts' titles by key
+    this.titlesText = null;
     this.resolved = new Map(); // terminal + title → session file
     this.loop = false;
     // "context" | "activity" | "lines"; a layout may open on one (props.detail).
@@ -173,6 +175,12 @@ export default class Info extends View {
   async readUsage() {
     const text = await readFile(`${home()}/.pi/agent/claude-usage.json`, "utf8").catch(() => null);
     try { this.usageRecord = text ? JSON.parse(text) : null; } catch { this.usageRecord = null; }
+    // Pi's bash-titles writes it whole (a rename): parsed again only when it changed.
+    const titles = await readFile(`${home()}/.pi/agent/bash-titles.json`, "utf8").catch(() => null);
+    if (titles !== this.titlesText) {
+      this.titlesText = titles;
+      try { this.titles = titles ? JSON.parse(titles) : null; } catch { this.titles = null; }
+    }
     if (!Object.keys(this.windows).length) {
       const store = await readFile(`${home()}/.pi/agent/models-store.json`, "utf8").catch(() => null);
       try {
@@ -421,9 +429,9 @@ export default class Info extends View {
     if (!s) return { usage };
     const window = this.windows[s.model] ?? 1_000_000;
     const working = p?.status === "working";
-    const tools = infoTools(s);
+    const tools = infoTools(s, this.titles);
     // A call without a result runs only while the agent works (a session that died mid-call keeps one).
-    const running = working ? infoRunning(s) : [];
+    const running = working ? tools.filter((c) => c.running) : [];
     const history = tools.filter((c) => !running.some((r) => r.id === c.id));
     return {
       usage, window, working, running, history,
