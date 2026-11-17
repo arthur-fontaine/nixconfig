@@ -5,6 +5,7 @@ import {
   infoRunning, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length,
   infoCapValue, infoClock, infoEditDiff, infoJsonLines, infoParseDiff, infoResultLines, RESULT_CAP,
   infoPace, FIVE_HOURS, SEVEN_DAYS, infoTokensLeft, infoScriptKey, infoNeedsTitles,
+  infoKeep,
 } from "../model.js";
 import { keyOf, scriptKey } from "../../../../pi/extensions/bash-titles/titles.ts";
 
@@ -328,3 +329,123 @@ test("a late title fed before its call is kept for it", () => {
   assert.equal(rows(s)[0][2], "Early");
 });
 
+// ---- calls made inside codemode scripts: the filters, the errors, the lines changed ---------
+// Real toolResult lines from a session of 439 codemode calls (outputs and long strings cut,
+// paths anonymised): a nested bash that failed in a script that didn't throw; two writes, one
+// carrying only argumentsBytes, with bash-changes' fileChanges on the script's result (the
+// write of mods.nix is in both: counted once); a nested edit without fileChanges.
+const REAL = [
+  line({ type: "session", cwd: "/repo", timestamp: "2026-11-16T21:28:45.145Z" }),
+  assistant("2026-11-16T21:29:00.000Z", { input: 1, output: 1 }, [
+    { id: "toolu_01NZrSTC2p7ssRymJ4A1iLvk", name: "codemode", arguments: { code: "const r=await tools.bash({command:\"which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr\"});text(r.output)" } },
+  ]),
+  line({ type: "message", timestamp: "2026-11-16T21:29:18.778Z", message: { role: "toolResult", toolCallId: "toolu_01NZrSTC2p7ssRymJ4A1iLvk", toolName: "codemode", content: [{ type: "text", text: "…" }],
+    details: { calls: [{ id: "toolu_01NZrSTC2p7ssRymJ4A1iLvk/1", name: "bash", args: "{\"command\":\"which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr\"}", status: "error", durationMs: 1943.7231250000004, error: "/opt/homebrew/bin/herdr-app\n…" }], autoMode: { allowed: true } },
+    isError: false, durationMs: 1977, timestamp: 1794864558778,
+    nestedCalls: { calls: [{ id: "toolu_01NZrSTC2p7ssRymJ4A1iLvk/1", name: "bash", status: "error", arguments: { command: "which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr" }, durationMs: 1943, error: "/opt/homebrew/bin/herdr-app\n…" }], complete: true } } }),
+  assistant("2026-11-16T21:30:00.000Z", { input: 1, output: 1 }, [
+    { id: "toolu_01CdG5Nu7zL7rxJuWhL1CZjt", name: "codemode", arguments: { code: "const p=\"modules/home/programs/herdr/\";\nawait tools.write({path:p+\"mods.nix\",content:mods});\nconst src=await tools.read({path:p+\"default.nix\"});\nawait tools.write({path:p+\"default.nix\",content:src});\nconst r=await tools.bash({command:\"cd \"+p+\" && git add mods.nix default.nix && git diff --cached --stat\"});\ntext(r.output)" } },
+  ]),
+  line({ type: "message", timestamp: "2026-11-16T21:30:55.879Z", message: { role: "toolResult", toolCallId: "toolu_01CdG5Nu7zL7rxJuWhL1CZjt", toolName: "codemode", content: [{ type: "text", text: "…" }],
+    details: {
+      calls: [
+        { id: "toolu_01CdG5Nu7zL7rxJuWhL1CZjt/1", name: "write", args: "{\"path\":\"modules/home/programs/herdr/mods.nix\",\"content\":\"# The mods deployed to Herdr's home, and how each main.js is made (default.nix's bundle):\\n# shared mods/_lib files and the mod's own modul...", status: "ok", durationMs: 4.108208999998169 },
+        { id: "toolu_01CdG5Nu7zL7rxJuWhL1CZjt/2", name: "read", args: "{\"path\":\"modules/home/programs/herdr/default.nix\"}", status: "ok", durationMs: 1.767707999999402 },
+        { id: "toolu_01CdG5Nu7zL7rxJuWhL1CZjt/3", name: "write", args: "{\"path\":\"modules/home/programs/herdr/default.nix\",\"content\":\"{ config, lib, pkgs, ... }:\\nlet\\n  # herdr-core (hc) runs the Herdr app's terminals and agents; the app (the\\n  # herdr-app cask) w...", status: "ok", durationMs: 3.7022500000020955 },
+        { id: "toolu_01CdG5Nu7zL7rxJuWhL1CZjt/4", name: "bash", args: "{\"command\":\"cd modules/home/programs/herdr/ && git add mods.nix default.nix && git diff --cached --stat\"}", status: "ok", durationMs: 2194.7288750000007 },
+      ],
+      autoMode: { allowed: true },
+      fileChanges: { root: "/repo", before: "d053cf387d8f3468f486ee0089ffd3d82fefc9c0", after: "eeb5186b0198be5774b8840458d2118ab9910173",
+        files: [{ path: "modules/home/programs/herdr/default.nix", status: "M", added: 2, removed: 28 }, { path: "modules/home/programs/herdr/mods.nix", status: "A", added: 31, removed: 0 }], patch: "" },
+    },
+    isError: false, durationMs: 2244, timestamp: 1794864655879,
+    nestedCalls: { calls: [
+      { id: "toolu_01CdG5Nu7zL7rxJuWhL1CZjt/1", name: "write", status: "ok", arguments: { path: "modules/home/programs/herdr/mods.nix", content: "# The mods deployed to Herdr's home\n{\n  nix-info = { shared = [ \"editor.js\" ]; modules = [ \"model.js\" ]; };\n}\n" }, durationMs: 4 },
+      { id: "toolu_01CdG5Nu7zL7rxJuWhL1CZjt/2", name: "read", status: "ok", arguments: { path: "modules/home/programs/herdr/default.nix" }, durationMs: 2 },
+      { id: "toolu_01CdG5Nu7zL7rxJuWhL1CZjt/3", name: "write", status: "ok", argumentsBytes: 11317, durationMs: 3 },
+      { id: "toolu_01CdG5Nu7zL7rxJuWhL1CZjt/4", name: "bash", status: "ok", arguments: { command: "cd modules/home/programs/herdr/ && git add mods.nix default.nix && git diff --cached --stat" }, durationMs: 2195 },
+    ], complete: false } } }),
+  assistant("2026-11-16T22:02:00.000Z", { input: 1, output: 1 }, [
+    { id: "toolu_01CLKS9CX6zyphy73bQpqtZU", name: "codemode", arguments: { code: "const D=\"/home/u/notes\";\nawait tools.edit({path:D+\"/feasibility.md\",edits});\nconst r=await tools.bash({command:\"sed -n 112,118p modules/home/programs/herdr/mods/nix-tabs/main.js\"});text(r.output)" } },
+  ]),
+  line({ type: "message", timestamp: "2026-11-16T22:02:56.767Z", message: { role: "toolResult", toolCallId: "toolu_01CLKS9CX6zyphy73bQpqtZU", toolName: "codemode", content: [{ type: "text", text: "…" }],
+    details: { calls: [
+      { id: "toolu_01CLKS9CX6zyphy73bQpqtZU/1", name: "edit", args: "{\"path\":\"/home/u/notes/feasibility.md\",\"edits\":[...", status: "ok", durationMs: 15886.733042000094 },
+      { id: "toolu_01CLKS9CX6zyphy73bQpqtZU/2", name: "bash", args: "{\"command\":\"sed -n 112,118p modules/home/programs/herdr/mods/nix-tabs/main.js\"}", status: "ok", durationMs: 48.59408299997449 },
+    ], autoMode: { allowed: true } },
+    isError: false, durationMs: 15965, timestamp: 1794866576767,
+    nestedCalls: { calls: [
+      { id: "toolu_01CLKS9CX6zyphy73bQpqtZU/1", name: "edit", status: "ok", arguments: { path: "/home/u/notes/feasibility.md", edits: [
+        { oldText: "(lightsPadding, mods/nix-tabs/main.js:124-127)", newText: "(lightsPadding, mods/nix-tabs/main.js:114-117)" },
+        { oldText: "(nix-sidebar render() .bg(t.chrome), nix-tabs, nix-head)", newText: "(mods/nix-sidebar/main.js:671,706, mods/nix-tabs/main.js:131, nix-head)" },
+      ] }, durationMs: 15886 },
+      { id: "toolu_01CLKS9CX6zyphy73bQpqtZU/2", name: "bash", status: "ok", arguments: { command: "sed -n 112,118p modules/home/programs/herdr/mods/nix-tabs/main.js" }, durationMs: 48 },
+    ], complete: true } } }),
+].join("");
+
+// Shaped like the real ones above: a script editing mods.nix again (relative path) and failing
+// an edit; a top-level bash that went on in the background, whose fileChanges came as a real
+// bash-changes entry (paths renamed), and again on its result: counted once.
+const BG_CHANGES = { root: "/repo", before: "f3b48c3bbf960cb5a81038c41f4050bf7f92c0e8", after: "beff30b1bfba5cf0242be062dd51d8c96bbf6ccd",
+  files: [{ path: ".env.base", status: "M", added: 4, removed: 0 }, { path: "infra/gcloud.yml", status: "M", added: 6, removed: 0 }, { path: "src/http/api.ts", status: "M", added: 4, removed: 1 }], patch: "", overlapping: true };
+const MORE = [
+  assistant("2026-11-16T22:10:00.000Z", { input: 1, output: 1 }, [codemode("again", "for (const e of edits) await tools.edit(e)")]),
+  result("2026-11-16T22:10:01.000Z", "again", { isError: false, nestedCalls: { complete: true, calls: [
+    { id: "again/1", name: "edit", status: "ok", arguments: { path: "modules/home/programs/herdr/mods.nix", edits: [{ oldText: "{", newText: "{\n  # one more" }] } },
+    { id: "again/2", name: "edit", status: "error", arguments: { path: "/repo/x.ts", edits: [{ oldText: "a", newText: "b\nc" }] }, error: "Could not find the exact text" },
+  ] } }),
+  assistant("2026-11-16T22:11:00.000Z", { input: 1, output: 1 }, [{ id: "bg", name: "bash", arguments: { command: "pnpm install" } }]),
+  result("2026-11-16T22:11:01.000Z", "bg", { details: { fileChanges: BG_CHANGES } }),
+  line({ type: "custom", customType: "bash-changes", data: { toolCallId: "bg", fileChanges: BG_CHANGES }, id: "1630dee6", parentId: "117a0f58", timestamp: "2026-11-16T22:12:03.999Z" }),
+].join("");
+
+test("lines changed count a script's edits and writes and bash-changes' fileChanges, a file once", () => {
+  const s = infoNewSession("f");
+  infoFeed(s, REAL);
+  assert.deepEqual(infoLines(s), { files: 3, rows: [{ category: "Config", files: 2, added: 33, removed: 28 }, { category: "Docs", files: 1, added: 2, removed: 2 }] });
+  infoFeed(s, MORE);
+  // mods.nix again (+1), the failed edit nothing, the background bash's three files once.
+  assert.deepEqual(infoLines(s), { files: 6, rows: [
+    { category: "Code", files: 1, added: 4, removed: 1 },
+    { category: "Config", files: 4, added: 44, removed: 28 },
+    { category: "Docs", files: 1, added: 2, removed: 2 },
+  ] });
+  assert.deepEqual(infoFiles(s).map((f) => [f.rel, f.added, f.removed]).slice(0, 2), [["modules/home/programs/herdr/mods.nix", 32, 0], ["modules/home/programs/herdr/default.nix", 2, 28]]);
+});
+
+test("a nested call that failed makes its script an error, though the script didn't throw", () => {
+  const s = infoNewSession("f");
+  infoFeed(s, REAL + MORE);
+  const byId = Object.fromEntries(infoTools(s).map((c) => [c.id, c]));
+  assert.equal(byId.toolu_01NZrSTC2p7ssRymJ4A1iLvk.error, true);
+  assert.equal(byId.toolu_01NZrSTC2p7ssRymJ4A1iLvk.threw, false);
+  assert.equal(byId.again.error, true);
+  assert.equal(byId.toolu_01CdG5Nu7zL7rxJuWhL1CZjt.error, false);
+  assert.equal(infoTools(s).filter((c) => c.error).length, 2);
+});
+
+test("the kind filters match a script by the calls it made, and say which", () => {
+  const s = infoNewSession("f");
+  infoFeed(s, REAL + MORE);
+  const kept = (kind) => infoTools(s).map((c) => infoKeep(c, kind)).filter(Boolean).map((c) => [c.id, c.arg]);
+  const [fail, edit, nofc] = ["toolu_01NZrSTC2p7ssRymJ4A1iLvk", "toolu_01CdG5Nu7zL7rxJuWhL1CZjt", "toolu_01CLKS9CX6zyphy73bQpqtZU"];
+  assert.deepEqual(kept("bash"), [
+    ["bg", "pnpm install"],
+    [nofc, "bash: sed -n 112,118p modules/home/programs/herdr/mods/nix-tabs/main.js"],
+    [edit, "bash: git add mods.nix default.nix && git diff --cached --stat"],
+    [fail, "bash: which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"],
+  ]);
+  assert.deepEqual(kept("read"), [[edit, "read: modules/home/programs/herdr/default.nix"]]);
+  // The write with argumentsBytes only is named from details.calls' cut JSON.
+  assert.deepEqual(kept("edit"), [
+    ["again", "edit ×2 · modules/home/programs/herdr/mods.nix"],
+    [nofc, "edit: /home/u/notes/feasibility.md"],
+    [edit, "write ×2 · modules/home/programs/herdr/mods.nix"],
+  ]);
+  assert.deepEqual(kept("errors"), [["again", "edit: x.ts"], [fail, "bash: which herdr-app hc; herdr-app --help 2>&1 | head -60; ls /tmp | grep -i herdr"]]);
+  assert.deepEqual(kept("ask"), []);
+  assert.equal(kept("all").length, 5);
+  // The tooltip lists every matched call; All leaves rows as they are.
+  assert.equal(infoKeep(infoTools(s).find((c) => c.id === edit), "edit").tip, "write: modules/home/programs/herdr/mods.nix\nwrite: modules/home/programs/herdr/default.nix");
+  assert.equal(infoKeep(infoTools(s).find((c) => c.id === edit), "all").arg, "write ×2, read, bash");
+});

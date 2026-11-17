@@ -9,7 +9,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoLastCall, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoLastCall, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
 
 // The editor (../_lib/editor.js) gets the herdr functions it uses.
 const HERDR = { spaces, panes, run, shared, setShared, notify };
@@ -57,13 +57,14 @@ const MONO = "JetBrains Mono";
 const SHOWN = 200;
 const TOOL_ICON = { bash: "terminal", read: "file", edit: "pen", write: "pen", ask: "help-circle", fetch: "globe", agent: "user", code: "code" };
 const LABELS = { context: "Context window", activity: "Agent activity", lines: "Lines changed" };
+// The activity detail's filters (infoKeep's kinds): a script counts for the calls it made.
 const KINDS = [
   { key: "all", label: "All" },
-  { key: "bash", label: "bash", keep: (c) => c.kind === "bash" },
-  { key: "read", label: "read", keep: (c) => c.kind === "read" },
-  { key: "edit", label: "edit/write", keep: (c) => c.kind === "edit" || c.kind === "write" },
-  { key: "ask", label: "ask", keep: (c) => c.kind === "ask" },
-  { key: "errors", label: "errors", keep: (c) => c.error === true },
+  { key: "bash", label: "bash" },
+  { key: "read", label: "read" },
+  { key: "edit", label: "edit/write" },
+  { key: "ask", label: "ask" },
+  { key: "errors", label: "errors" },
 ];
 // "in 2h 10m" reads as is; days read as words in the sub-lines ("in 4 days").
 const days = (msec) => { const d = Math.round(msec / 86400000); return d >= 1 && msec >= 86400000 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(msec); };
@@ -312,7 +313,7 @@ export default class Info extends View {
       .when(path, (e) => e.text_ellipsis_start()).when(!path, (e) => e.truncate()).child(c.arg || c.name);
     return h_flex().id(`call-${c.id}`).h(big ? 32 : 28).flex_none().px(big ? 6 : 16).when(big, (e) => e.mx(10).rounded(6)).gap(big ? 10 : 8).items_center()
       .when(on, (e) => e.bg(t.selected)).when(!on && c.running, (e) => e.bg(t.hover)).when(!on && !c.running, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
-      .when(Boolean(c.full || c.arg) && !on, (e) => e.tooltip(c.full || c.arg))
+      .when(Boolean(c.tip || c.full || c.arg) && !on, (e) => e.tooltip(c.tip || c.full || c.arg))
       .cursor_pointer().on_click((_e, cx) => this.select(c.id, cx))
       .child(svg(ICON(icon)).size(big ? 13 : 14).flex_none().text_color(t.dim))
       // A long tool name would wrap onto a second line, over the next row: cut instead.
@@ -372,9 +373,12 @@ export default class Info extends View {
     const opens = (c.kind === "edit" || c.kind === "write" || c.kind === "read") && c.path;
     const range = c.kind === "edit" && c.diff?.from ? (c.diff.from === c.diff.to ? `line ${c.diff.from}` : `lines ${c.diff.from}–${c.diff.to}`) : "";
     const took = infoDuration(c.duration) || "<0.1s";
+    // A script that caught a failed call went on: its output isn't an error message.
+    const failed = c.nested?.filter((n) => n.error).length ?? 0;
+    const said = c.threw ? `failed · ${took}` : c.error ? `${failed} call${failed > 1 ? "s" : ""} failed · ${took}` : took;
     const status = c.running
       ? h_flex().gap(5).items_center().text_color(t.working).child(this.spinner(t)).child(`running ${infoDuration(now - (c.started ?? now))}`)
-      : div().text_color(c.error ? t.blocked : t.dim).child(c.error ? `failed · ${took}` : took);
+      : div().text_color(c.error ? t.blocked : t.dim).child(said);
     const button = (id, child, tip, action) => div().id(id).h(24).px(8).flex_none().flex().items_center().gap(6).rounded(6).cursor_pointer()
       .text_size(12).text_color(t.muted).hover((e) => e.bg(t.hover).text_color(t.foreground)).active((e) => e.bg(t.selected)).tooltip(tip).on_click(action).child(child);
     const args = c.args ?? {};
@@ -401,9 +405,9 @@ export default class Info extends View {
     else {
       const r = infoResultLines(c.result ?? "");
       const extra = r.more ? `+${r.more} more lines` : c.resultCut ? "cut at 64 KB" : r.lines.length > 1 ? `${r.lines.length} lines` : "";
-      sections.push(this.label(t, c.error ? "Error" : "Result", extra),
+      sections.push(this.label(t, c.threw ? "Error" : "Result", extra),
         (c.result ?? "") === "" ? div().px(16).py(4).text_size(12).text_color(t.dim).child("Nothing")
-          : this.code(t, r.lines.map((l) => this.line(t, { text: l, color: c.error ? t.blocked : t.foreground }))));
+          : this.code(t, r.lines.map((l) => this.line(t, { text: l, color: c.threw ? t.blocked : t.foreground }))));
     }
     const kv = (k, v) => h_flex().h(22).px(16).gap(10).items_center().text_size(12)
       .child(div().w(70).flex_none().text_color(t.muted).child(k)).child(div().font_family(MONO).text_color(t.foreground).child(v));
@@ -537,8 +541,8 @@ export default class Info extends View {
       }
       case "activity": {
         if (!s) return [];
-        const keep = KINDS.find((k) => k.key === this.kind)?.keep ?? (() => true);
-        const running = f.running.filter(keep), history = f.history.filter(keep);
+        const keep = (list) => list.map((c) => infoKeep(c, this.kind)).filter(Boolean);
+        const running = keep(f.running), history = keep(f.history);
         const chip = (k) => {
           const on = this.kind === k.key;
           return div().id(`kind-${k.key}`).h(22).px(8).flex_none().flex().items_center().rounded(6).cursor_pointer().text_size(12)
@@ -588,7 +592,7 @@ export default class Info extends View {
     const t = theme(), now = Date.now();
     const f = this.figures(now);
     const name = this.session?.name ?? (this.pane ? infoParseTitle(this.pane.title)?.name : null);
-    const meta = this.detail === "lines" && this.session ? `from edits · ${f.lines.files} files` : name;
+    const meta = this.detail === "lines" && this.session ? `from edits and bash-changes · ${f.lines.files} files` : name;
     const header = h_flex().h(36).flex_none().px(16).gap(6).items_center().border_b(1).border_color(t.border)
       .when(Boolean(this.detail), (e) => e.child(div().id("info-back").ml(-8).size(24).flex_none().flex().items_center().justify_center().rounded(6)
         .text_color(t.dim).cursor_pointer().hover((x) => x.bg(t.hover).text_color(t.foreground)).active((x) => x.bg(t.selected)).tooltip("Back")

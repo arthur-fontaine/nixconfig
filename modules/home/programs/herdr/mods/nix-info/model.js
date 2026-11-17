@@ -49,6 +49,7 @@ export function infoNewSession(file) {
     files: new Map(), // path → { added, removed }
     written: new Map(), // path → content of its last write, for diffing the next one
     pendingCompaction: false,
+    changed: new Set(), // ids of the calls whose bash-changes record was counted
     untitled: 0, // codemode calls without a title of their own (details.title or a late one)
     early: new Map(), // id → a late title fed before its call
   };
@@ -168,19 +169,9 @@ export function infoScriptArg(code, cwd) {
   return line ?? firstLine(code).trim();
 }
 
-// A finished script's arg from the calls it made: Pi's nestedCalls (whole arguments), else
-// details.calls, whose arguments are JSON cut at some length, so read by regex. Null when it
-// made none (it threw first).
-function infoNestedArg(m, cwd) {
-  const nested = m.nestedCalls?.calls;
-  if (Array.isArray(nested)) {
-    if (nested.length > 1) return infoCallNames(nested.map((c) => c.name));
-    return nested.length ? infoCallLabel(nested[0].name, nested[0].arguments ?? {}, cwd) : null;
-  }
-  const calls = m.details?.calls;
-  if (!Array.isArray(calls) || !calls.length) return null;
-  if (calls.length > 1) return infoCallNames(calls.map((c) => c.name));
-  const raw = String(calls[0].args ?? "");
+// details.calls' arguments: JSON cut at some length, so read by regex when they don't parse.
+function infoCutArgs(raw) {
+  raw = String(raw ?? "");
   let args = null;
   try { args = JSON.parse(raw); } catch {
     args = {};
@@ -190,7 +181,26 @@ function infoNestedArg(m, cwd) {
       try { args[key] = JSON.parse(`"${v}"`); } catch { args[key] = v.replace(/\\n/g, "\n").replace(/\\(.)/g, "$1"); }
     }
   }
-  return infoCallLabel(calls[0].name, args && typeof args === "object" ? args : {}, cwd);
+  return args && typeof args === "object" ? args : {};
+}
+
+// The calls a finished script made: Pi's nestedCalls, else details.calls. A nested call whose
+// arguments were too big carries only argumentsBytes: its details.calls twin's cut ones name it,
+// but `whole` stays false, so its lines aren't counted from them.
+function infoNestedCalls(m) {
+  const details = Array.isArray(m.details?.calls) ? m.details.calls : [];
+  const nested = Array.isArray(m.nestedCalls?.calls) ? m.nestedCalls.calls : null;
+  const byId = new Map(details.map((c) => [c?.id, c]));
+  return (nested ?? details).filter((c) => c && typeof c.name === "string").map((c) => {
+    const whole = Boolean(c.arguments && typeof c.arguments === "object");
+    return { name: c.name, error: c.status === "error", whole, args: whole ? c.arguments : infoCutArgs(byId.get(c.id)?.args ?? c.args) };
+  });
+}
+
+// A finished script's arg from the calls it made; null when it made none (it threw first).
+function infoNestedArg(calls, cwd) {
+  if (calls.length > 1) return infoCallNames(calls.map((c) => c.name));
+  return calls.length ? infoCallLabel(calls[0].name, calls[0].args, cwd) : null;
 }
 
 // sha256 as hex, of a string's UTF-8 (a lone surrogate as U+FFFD, as Node encodes it), which
@@ -261,9 +271,46 @@ export function infoLineDiff(before, after) {
   return { added, removed };
 }
 
-function countLines(state, call) {
+// A path made absolute against `base` (the session's cwd, a git root), "." and ".." resolved,
+// so a file named relatively and absolutely counts once.
+function infoAbs(path, base) {
+  if (typeof path !== "string" || !path) return null;
+  if (path.startsWith("~")) return path;
+  const full = path.startsWith("/") || !base ? path : `${base}/${path}`;
+  const out = [];
+  for (const part of full.split("/")) {
+    if (part === "..") out.pop();
+    else if (part && part !== ".") out.push(part);
+  }
+  return `${full.startsWith("/") ? "/" : ""}${out.join("/")}`;
+}
+
+function infoAddLines(state, path, added, removed) {
+  const f = state.files.get(path) ?? { added: 0, removed: 0 };
+  f.added += added; f.removed += removed;
+  state.files.set(path, f);
+}
+
+// bash-changes' record of a call (on its result, or a session entry for one that went on in the
+// background): once per call. Returns the files it covers, whose edits and writes inside the same
+// script it already counts.
+function infoCountChanges(state, id, changes) {
+  const covered = new Set();
+  if (!changes || !Array.isArray(changes.files)) return covered;
+  for (const f of changes.files) {
+    const path = infoAbs(f?.path, changes.root ?? state.cwd);
+    if (!path) continue;
+    covered.add(path);
+    if (!state.changed.has(id)) infoAddLines(state, path, Number(f.added) || 0, Number(f.removed) || 0);
+  }
+  if (typeof id === "string") state.changed.add(id);
+  return covered;
+}
+
+function countLines(state, call, covered = null) {
   const a = call.arguments ?? {};
-  if (!a.path) return;
+  const path = infoAbs(a.path, state.cwd);
+  if (!path) return;
   let d = null;
   if (call.name === "edit") {
     const edits = Array.isArray(a.edits) ? a.edits : [{ oldText: a.oldText, newText: a.newText }];
@@ -274,18 +321,15 @@ function countLines(state, call) {
     }
   } else if (call.name === "write") {
     // Against the last write when known; else the whole content is new.
-    d = infoLineDiff(state.written.get(a.path) ?? "", a.content ?? "");
-    state.written.set(a.path, a.content ?? "");
+    d = infoLineDiff(state.written.get(path) ?? "", a.content ?? "");
+    state.written.set(path, a.content ?? "");
   }
-  if (!d) return;
-  const f = state.files.get(a.path) ?? { added: 0, removed: 0 };
-  f.added += d.added; f.removed += d.removed;
-  state.files.set(a.path, f);
+  if (d && !covered?.has(path)) infoAddLines(state, path, d.added, d.removed);
 }
 
 // A codemode call has a title of its own: bash-titles.json is no longer needed for it.
 function infoTitled(state, call) {
-  if (call.name !== "codemode" || call.titled) return;
+  if (!call.needsTitle || call.titled) return;
   call.titled = true;
   state.untitled--;
 }
@@ -308,11 +352,13 @@ function apply(state, entry) {
       state.thinking = entry.thinkingLevel ?? state.thinking;
       return;
     case "custom": {
+      if (entry.customType === "bash-changes") { infoCountChanges(state, entry.data?.toolCallId, entry.data?.fileChanges); return; }
       // A title Pi learned after the result: the latest entry for a call counts.
       const id = entry.data?.toolCallId, title = entry.data?.title;
       if (entry.customType !== "bash-titles" || typeof id !== "string" || typeof title !== "string" || !title.trim()) return;
       const call = state.tools.get(id);
       if (!call) { state.early.set(id, title.trim()); return; }
+      if (!call.needsTitle) return;
       call.lateTitle = title.trim();
       infoTitled(state, call);
       return;
@@ -347,13 +393,18 @@ function apply(state, entry) {
         args: infoCapValue(b.arguments ?? {}), result: null, resultCut: false, finished: null });
       state.order.push(b.id);
       const call = state.tools.get(b.id);
-      if (b.name === "codemode") state.untitled++;
-      if (state.early.has(b.id)) { call.lateTitle = state.early.get(b.id); state.early.delete(b.id); infoTitled(state, call); }
+      call.needsTitle = b.name === "codemode";
+      if (call.needsTitle) state.untitled++;
+      if (state.early.has(b.id)) {
+        if (call.needsTitle) { call.lateTitle = state.early.get(b.id); infoTitled(state, call); }
+        state.early.delete(b.id);
+      }
     }
   } else if (m.role === "toolResult") {
     const call = state.tools.get(m.toolCallId);
     if (!call) return;
-    call.error = m.isError === true;
+    call.threw = m.isError === true;
+    call.error = call.threw;
     call.finished = ms(m.timestamp) ?? t;
     call.duration = typeof m.durationMs === "number" ? m.durationMs : call.finished - (call.started ?? t);
     const text = resultText(m.content);
@@ -362,13 +413,23 @@ function apply(state, entry) {
     // Pi's edit result carries the diff with line numbers: the inspector shows it as is.
     const diff = m.details?.diff;
     if (typeof diff === "string") call.diff = infoParseDiff(diff.length > RESULT_CAP ? diff.slice(0, RESULT_CAP) : diff);
+    const title = m.details?.title;
+    if (call.needsTitle && typeof title === "string" && title.trim()) { call.title = title.trim(); infoTitled(state, call); }
+    // Changes bash-changes saw happened, whether the call failed or not.
+    const covered = infoCountChanges(state, m.toolCallId, m.details?.fileChanges);
     if (call.name === "codemode") {
-      call.arg = infoNestedArg(m, state.cwd) ?? call.arg;
-      const title = m.details?.title;
-      if (typeof title === "string" && title.trim()) { call.title = title.trim(); infoTitled(state, call); }
+      const calls = infoNestedCalls(m);
+      call.arg = infoNestedArg(calls, state.cwd) ?? call.arg;
+      // A failed nested call is an error, though the script caught it and went on.
+      call.error ||= calls.some((c) => c.error);
+      call.nested = calls.slice(0, INFO_NESTED_CAP).map((c) => {
+        const t = infoTool({ name: c.name, arguments: c.args }, state.cwd);
+        return { name: c.name, kind: t.kind, arg: t.arg, label: t.arg ? `${t.kind}: ${t.arg}` : t.kind, error: c.error };
+      });
+      for (const c of calls) if (!c.error && c.whole) countLines(state, { name: c.name, arguments: c.args }, covered);
     }
     // Lines count once the edit or write went through.
-    if (!call.error) countLines(state, call.call);
+    else if (!call.threw) countLines(state, call.call, covered);
     delete call.call;
   }
 }
@@ -377,6 +438,8 @@ function apply(state, entry) {
 
 // The stored text of one call's result (and of each long argument string) stops here.
 export const RESULT_CAP = 64 * 1024;
+// The nested calls kept per script, for the kind filters.
+const INFO_NESTED_CAP = 200;
 const ARG_STRING_CAP = 16 * 1024;
 
 function resultText(content) {
@@ -506,14 +569,30 @@ export function infoTools(state, titles = null) {
   return state.order.slice().reverse().map((id) => {
     const c = state.tools.get(id);
     let arg = c.title ?? c.lateTitle ?? c.arg;
-    if (titles && c.name === "codemode" && !c.titled) {
+    if (titles && c.needsTitle && !c.titled) {
       c.titleKey ??= infoScriptKey(c.full);
       const title = titles[c.titleKey];
       if (typeof title === "string" && title && !title.endsWith("…")) arg = title;
     }
     return { id: c.id, kind: c.kind, name: c.name, arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null,
+      threw: c.threw ?? null, nested: c.nested ?? null,
       args: c.args, result: c.result, resultCut: c.resultCut, finished: c.finished, diff: c.diff ?? null };
   });
+}
+
+const INFO_KINDS = { bash: ["bash"], read: ["read"], edit: ["edit", "write"], ask: ["ask"] };
+
+// A listed call under a kind filter ("all", "bash", "read", "edit", "ask", "errors"): null when
+// left out. A script is kept for the calls it made, and then named by those (`tip` lists them all).
+export function infoKeep(c, kind) {
+  const kinds = INFO_KINDS[kind];
+  if (kind !== "errors" && !kinds) return c;
+  const pick = kind === "errors" ? (n) => n.error : (n) => kinds.includes(n.kind);
+  const matched = c.nested?.filter(pick) ?? [];
+  if (kind === "errors" ? !c.error : !kinds.includes(c.kind) && !matched.length) return null;
+  if (!matched.length) return c;
+  const arg = matched.length === 1 ? matched[0].label : `${infoCallNames(matched.map((n) => n.name))} · ${matched[0].arg}`;
+  return { ...c, arg, tip: matched.map((n) => n.label).join("\n") };
 }
 
 // Whether bash-titles.json could name a call: some codemode call has no title of its own.
