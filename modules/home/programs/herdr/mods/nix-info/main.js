@@ -340,7 +340,7 @@ export default class Info extends View {
     if (s && f.started) {
       const c = f.context, cache = f.cache;
       const known = Boolean(this.windows[s.model]);
-      out.push(this.meter(t, "meter-context", { label: "Context", ratio: c.ratio, right: `${infoTokens(c.used)} / ${infoTokens(c.window)}`,
+      out.push(this.meter(t, "meter-context", { label: "Context", ratio: c.ratio, right: `${infoTokens(c.used)} / ${known ? infoTokens(c.window) : `${infoTokens(c.window)} assumed`}`,
         tip: known ? `${infoTokens(c.window)} window for ${s.model}` : `Window size unknown for ${s.model}: 1M assumed`,
         expand: { open: this.context, onClick: (_e, cx) => { this.context = !this.context; cx.notify(); } } }));
       if (this.context) {
@@ -473,7 +473,8 @@ export default class Info extends View {
         .when(!st, (x) => x.child(div().flex_none().text_size(12).text_color(t.dim).child(this.git ? "unchanged" : "")))
         .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.dim));
     };
-    const out = [this.section(t, "In this repo", `${e.files.length} file${e.files.length === 1 ? "" : "s"}`), ...e.files.map(row)];
+    const n = `${e.files.length} file${e.files.length === 1 ? "" : "s"}`;
+    const out = [this.section(t, "In this repo", this.git?.exact ? `${n} · lines since the session began` : n), ...e.files.map(row)];
     if (e.atLeast) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("Some edits kept no file name: there may be more."));
     if (this.git && !this.git.exact) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("Line counts need the commit the session started from: git status only."));
     if (e.outside.length) {
