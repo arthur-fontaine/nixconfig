@@ -386,21 +386,33 @@ export default class Info extends View {
   // it failed; hollow: a script went on after a failed step), the duration, a chevron.
   callRow(t, c, { on = false, onClick = null, disclose = null, more = null, inList = false } = {}) {
     const state = infoCallState(c, this.pane?.status === "working");
-    const path = (c.kind === "read" || c.kind === "edit" || c.kind === "write") && c.path;
     const root = this.root();
-    const rel = path && root && c.path.startsWith(root + "/") ? c.path.slice(root.length + 1) : c.arg;
+    // R2-3, the type rule: what the text names decides its face. A script's own text names what
+    // its one call names (argKind): a file, a command, a line of its code, or a list of calls.
+    const fileKind = (k) => k === "read" || k === "edit" || k === "write";
+    const file = c.titled || c.placeholder ? null
+      : fileKind(c.kind) && c.path ? c.path
+      : c.kind === "code" && fileKind(c.argKind) && c.arg ? (c.arg.startsWith("/") || !root ? c.arg : `${root}/${c.arg}`) : null;
+    const rel = file && root && file.startsWith(root + "/") ? file.slice(root.length + 1) : file;
     const cut = rel ? rel.lastIndexOf("/") : -1;
     const untitled = c.untitled && c.nested?.length ? infoStepsLabel(c.steps ?? c.nested) : null;
-    const prose = c.kind === "ask" || c.kind === "agent" || (c.kind === "code" && !untitled && !/^(\w+)(: |\s×)/.test(c.arg ?? ""));
+    const command = !c.titled && (c.kind === "bash" || c.kind === "fetch" || (c.kind === "code" && (c.argKind === "bash" || c.argKind === "code")));
+    const unknown = !TOOL_ICON[c.kind];
     // A parent kept only for its matching steps reads as context (R2-2).
     const fg = c.context ? t.muted : t.foreground;
+    const sans = (color, s) => div().flex_1().min_w(0).truncate().text_color(color).child(s);
     const text = more ? div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(more)
-      : path ? h_flex().flex_1().min_w(0).gap(6).items_baseline()
+      : c.placeholder ? sans(t.muted, c.arg)
+      : file ? h_flex().flex_1().min_w(0).gap(6).items_baseline()
         .child(div().flex_none().max_w("70%").truncate().text_color(fg).child(cut < 0 ? rel : rel.slice(cut + 1)))
         .child(div().flex_1().min_w(0).text_ellipsis_start().text_size(12).text_color(t.muted).child(cut < 0 ? "" : rel.slice(0, cut)))
-      : untitled ? div().flex_1().min_w(0).truncate().text_color(t.muted).child(untitled)
-      : prose ? div().flex_1().min_w(0).truncate().text_color(fg).child(c.arg || c.name)
-      : div().flex_1().min_w(0).truncate().font_family(MONO()).text_size(12).text_color(fg).child(c.arg || c.name);
+      : untitled ? sans(t.muted, untitled)
+      : c.kind === "code" && c.argKind === "calls" && !c.titled ? sans(t.muted, c.arg)
+      : unknown && !c.titled ? h_flex().flex_1().min_w(0).gap(6).items_baseline()
+        .child(div().flex_none().text_color(fg).child(c.name))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(c.arg ?? ""))
+      : command ? div().flex_1().min_w(0).truncate().font_family(MONO()).text_size(12.5).text_color(fg).child(c.arg || c.name)
+      : sans(fg, c.arg || c.name);
     const KIND = { code: "Script", bash: "Bash", read: "Read", edit: "Edit", write: "Write", ask: "Question", fetch: "Fetch", agent: "Agent" };
     return chromeRow(UI, t, `call-${c.id}`, { on, onClick: inList ? null : onClick, clickable: inList || Boolean(onClick) })
       .when(Boolean(c.full || c.arg) && !more, (e) => e.tooltip(tipText(c.merged ? `${c.tip}\n${c.full || c.arg}` : `${KIND[c.kind] ?? c.name}: ${c.full || c.arg}`)))
