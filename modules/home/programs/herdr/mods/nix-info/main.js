@@ -665,8 +665,15 @@ export default class Info extends View {
   // D1–D4, O1–O3: status, limits, edited files, recent calls; spacing instead of dividers but one
   // above the calls.
   overview(t, f, now) {
+    // D11: what the panel needs, said plainly; the limits are the account's, so they stay.
     if (!this.pane) {
-      return [div().px(CHROME.headerX).py(14).text_size(13).text_color(t.dim).child("No Pi session in this tab"), this.limits(t, f, now)];
+      return [v_flex().px(CHROME.headerX).pt(14).gap(4)
+        .child(div().font_medium().text_color(t.foreground).child("This tab isn't running Pi"))
+        .child(h_flex().flex_wrap().text_size(12).text_color(t.muted)
+          .child(div().child("Start "))
+          .child(div().px(4).rounded(4).bg(t.raised).font_family(MONO()).text_color(t.foreground).child("pi"))
+          .child(div().child(" in the terminal to see its activity here."))),
+        this.limits(t, f, now)];
     }
     const top = [this.statusBlock(t, f, now), this.limits(t, f, now)];
     const edited = this.editedRow(t);
