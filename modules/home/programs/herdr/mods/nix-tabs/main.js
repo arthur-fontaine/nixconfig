@@ -183,7 +183,7 @@ export default class Tabs extends View {
       // The ghost: no id and no handlers, so the release still reaches the tabs under it.
       .when(Boolean(ghost), el => el.child(div().absolute().top(6).h(24).left(Math.max(0, this.ghostX - 60)).px(12).flex().items_center()
         .rounded(8).bg(t.popover).border_1().border_color(t.input).shadow_md().text_size(13).text_color(t.foreground).opacity(0.92)
-        .child(tabLabel({ named: ghost.named, name: ghost.name, lead: panes().find(p => p.tab === ghost.id), folder: space?.folder }))))
+        .child(tabLabel({ named: ghost.named, name: ghost.name, lead: (() => { const own = panes().filter(p => p.tab === ghost.id); return own.find(p => p.program?.agent) ?? own.find(p => p.focused) ?? own[0]; })(), folder: space?.folder }))))
       // + right after the last tab, as in a browser; the right group is the panels.
       // Handle style: tabs touch (their fillets), and no scrollbar is painted over the junction.
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_stretch().gap(style === "handle" ? 0 : 2)

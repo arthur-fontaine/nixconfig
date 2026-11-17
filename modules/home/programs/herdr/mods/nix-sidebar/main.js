@@ -255,6 +255,8 @@ export default class Sidebar extends View {
 
   // The drag ends where the pointer is released: the project moves there, and the order is kept.
   drop(cx) {
+    // A tab row's drag released off the tab rows: dropped where it started.
+    if (this.tabDrag) { this.tabDrag = null; cx.timer.after(50, () => { this.tabDragged = false; }); cx.notify(); }
     const d = this.drag, at = this.dropAt;
     this.drag = null; this.dropAt = null; this.wasMoving = false;
     if (!d?.moved) return;

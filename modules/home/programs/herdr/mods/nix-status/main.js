@@ -51,7 +51,10 @@ export default class Status extends View {
   // resumable only when the + popover would offer it (its git top's session folder, not hidden).
   async closeDecision(target) {
     const tops = {};
-    for (const p of panes()) {
+    // Only the panes this close would end (a pane, a tab, or whole spaces).
+    const tabs = new Set(target.spaces ? spaces().filter((s) => target.spaces.includes(s.id)).flatMap((s) => (s.tabs ?? []).map((x) => x.id))
+      : [target.tab ?? panes().find((p) => p.pane === target.pane)?.tab]);
+    for (const p of panes().filter((x) => tabs.has(x.tab))) {
       const label = terminals().find((x) => x.address === p.terminal)?.labels?.["pi.session"];
       if (p.app !== "pi" || !label || !p.cwd) continue;
       const r = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: p.cwd }).catch(() => null);
