@@ -9,7 +9,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTip, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length } from "./model.js";
 
 // The editor (../_lib/editor.js) gets the herdr functions it uses.
 const HERDR = { spaces, panes, run, shared, setShared, notify };
@@ -325,7 +325,7 @@ export default class Info extends View {
       // A script's own calls sit under it, one step in.
       .when(c.level === 1, (e) => e.pl(big ? 24 : 34))
       .when(on, (e) => e.bg(t.selected)).when(!on && c.running, (e) => e.bg(t.hover)).when(!on && !c.running, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
-      .when(Boolean(c.full || c.arg) && !on, (e) => e.tooltip(c.full || c.arg))
+      .when(Boolean(c.full || c.arg) && !on, (e) => e.tooltip(infoTip(c.full || c.arg)))
       .cursor_pointer().on_click((_e, cx) => this.select(c.id, cx))
       .child(svg(ICON(icon)).size(big ? 13 : 14).flex_none().text_color(t.dim))
       // A long tool name would wrap onto a second line, over the next row: cut instead.
