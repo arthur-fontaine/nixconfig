@@ -153,6 +153,8 @@ export default function (pi: ExtensionAPI) {
 	const titles = (holder[Symbol.for("pi-extension-bash-titles")] ??= { get: () => undefined, script: () => undefined, listeners: new Set() }) as {
 		get(command: string): string | undefined;
 		script?(code: string): string | undefined;
+		// The session's title for a call (a resumed row whose title another Pi's cache has).
+		call?(toolCallId: string): string | undefined;
 		listeners: Set<() => void>;
 	};
 	const nested = new NestedCalls();
@@ -165,7 +167,7 @@ export default function (pi: ExtensionAPI) {
 			const raw = (args as { command?: unknown } | undefined)?.command;
 			if (typeof raw !== "string") return new Recolored(inner(args, theme, innerContext(context)), theme, (lines) => lines);
 			const writing = settings.expandWhileWriting && !context.argsComplete && !context.executionStarted && context.isPartial;
-			const title = !writing && !showWholeCommands ? titles.get(raw) : undefined;
+			const title = !writing && !showWholeCommands ? (titles.get(raw) ?? titles.call?.(context.toolCallId)) : undefined;
 			const lines = displayedCommand(normalizeCommand(raw), context.cwd).split("\n");
 			if (title) {
 				const component = inner({ ...(args as object), command: title }, theme, innerContext(context));
@@ -235,7 +237,7 @@ export default function (pi: ExtensionAPI) {
 			remember(context);
 			const code = (args as { code?: unknown } | undefined)?.code;
 			if (typeof code !== "string") return new Recolored(inner(args, theme, innerContext(context)), theme, (lines) => lines);
-			const title = titles.script?.(code) ?? scriptTitle(code, nested.of(context.toolCallId), (command) => titles.get(command), context.cwd, Boolean(context.argsComplete || context.executionStarted || !context.isPartial));
+			const title = titles.script?.(code) ?? titles.call?.(context.toolCallId) ?? scriptTitle(code, nested.of(context.toolCallId), (command) => titles.get(command), context.cwd, Boolean(context.argsComplete || context.executionStarted || !context.isPartial));
 			const component = inner(title ? { ...(args as object), code: title } : args, theme, innerContext(context));
 			if (!context.expanded || !code.trim()) return new Recolored(component, theme, (drawn) => drawn);
 			const styled = memo(() => scriptLines(paintFor(theme), code));
