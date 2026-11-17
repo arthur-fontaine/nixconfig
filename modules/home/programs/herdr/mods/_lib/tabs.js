@@ -46,3 +46,16 @@ export function tabMoveIndex(all, shown, id, slot) {
   const at = slot === 0 ? rest.indexOf(shown[0]) : rest.indexOf(shown[slot - 1]) + 1;
   return at + 1;
 }
+
+// The wheel over the tab strip: Herdr's scroller takes horizontal swipes, and can only be moved
+// to a child (ScrollHandle.scroll_to_item), so a vertical wheel steps one tab per 40 px.
+// state { acc, index }; returns the new state and whether to scroll to index.
+export function tabWheel({ acc, index }, dy, dx, count) {
+  if (Math.abs(dy) <= Math.abs(dx)) return { acc, index, step: false };
+  let a = acc + dy, i = index;
+  while (a >= 40 && i < count - 1) { a -= 40; i++; }
+  while (a <= -40 && i > 0) { a += 40; i--; }
+  if (i === count - 1 && a > 0) a = 0;
+  if (i === 0 && a < 0) a = 0;
+  return { acc: a, index: i, step: i !== index };
+}

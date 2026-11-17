@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { tabLabel, tabLabelIsPath, tabSlot, tabMoveIndex } from "../tabs.js";
+import { tabLabel, tabLabelIsPath, tabSlot, tabMoveIndex, tabWheel } from "../tabs.js";
 
 const W = "/r/wt-a";
 const sh = (cwd, name = "zsh") => ({ cwd, title: "", program: { shell: true, agent: false, name } });
@@ -51,3 +51,15 @@ test("tabs: only a shell's folder label is a path", () => {
   assert.equal(tabLabelIsPath({ named: false, name: "2", lead: { cwd: W, program: { shell: false, agent: false, name: "sleep" } }, folder: W }), false);
 });
 test("tabs: a tab dropped on another space's list doesn't move", () => assert.equal(tabMoveIndex(["a", "b"], ["a", "b"], "z", 1), null));
+// The wheel over the strip: mostly-vertical deltas add up; every 40 px steps one tab (clamped).
+test("tabs: small vertical wheel deltas add up before a step", () => {
+  let s = { acc: 0, index: 2 };
+  s = tabWheel(s, 15, 0, 6); assert.deepEqual(s, { acc: 15, index: 2, step: false });
+  s = tabWheel(s, 30, 0, 6); assert.deepEqual(s, { acc: 5, index: 3, step: true });
+});
+test("tabs: wheel up steps back, and stops at the ends", () => {
+  assert.deepEqual(tabWheel({ acc: 0, index: 1 }, -45, 0, 6), { acc: 0, index: 0, step: true });
+  assert.deepEqual(tabWheel({ acc: 0, index: 0 }, -45, 0, 6), { acc: 0, index: 0, step: false });
+  assert.deepEqual(tabWheel({ acc: 0, index: 5 }, 90, 0, 6), { acc: 0, index: 5, step: false });
+});
+test("tabs: a mostly-horizontal swipe is left to the strip", () => assert.deepEqual(tabWheel({ acc: 10, index: 2 }, 5, 30, 6), { acc: 10, index: 2, step: false }));
