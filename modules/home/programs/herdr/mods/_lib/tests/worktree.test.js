@@ -22,3 +22,9 @@ test("worktree: the mods' orchestrator names match the kanban's", () => {
     assert.equal(ORCHESTRATOR_RE.test(name), isOrchestratorTab(name), name);
   for (const name of ["Pi", "orchestrator-notes", "shell-1"]) assert.equal(ORCHESTRATOR_RE.test(name), false, name);
 });
+test("worktree: Orchestrator finds the one there under any worktree name, never the project's", () => {
+  const space = { id: "s1", tabs: [{ id: "tp", named: true, name: "repo-project-orchestrator" }, { id: "t2", named: true, name: "old-name-orchestrator" }] };
+  assert.deepEqual(wtOrchestrator({ space, label: "wt-a", folder: "/r/wt-a", argv: ["pi"] }), [["space.select", { id: "s1" }], ["tab.select", { id: "t2" }]]);
+});
+test("worktree: an unnamed tab is never taken for an orchestrator", () =>
+  assert.equal(wtOrchestrator({ space: { id: "s1", tabs: [{ id: "t1", named: false, name: "wt-a-orchestrator" }] }, label: "wt-a", folder: "/r/wt-a", argv: ["pi"] })[1][0], "tab.new"));

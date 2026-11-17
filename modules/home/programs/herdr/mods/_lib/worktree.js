@@ -19,7 +19,8 @@ export function wtClick({ space, path, machine }) {
 export function wtOrchestrator({ space, label, folder, argv, machine }) {
   const name = wtName(label);
   if (!space) return [["space.new", { folder, machine: machine ?? "", tab: name, argv }]];
-  const tab = (space.tabs ?? []).find((t) => t.named && (t.name === name || t.name === "Orchestrator"));
+  // Any worktree orchestrator in the space: its name may be from another folder (a cd, a rename).
+  const tab = (space.tabs ?? []).find((t) => t.named && ORCHESTRATOR_RE.test(t.name) && !/-project-orchestrator$/.test(t.name));
   return tab ? [["space.select", { id: space.id }], ["tab.select", { id: tab.id }]]
     : [["space.select", { id: space.id }], ["tab.new", { space: space.id, name, folder, argv }]];
 }
