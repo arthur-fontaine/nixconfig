@@ -3,20 +3,39 @@
 # scripts/sandbox deploys the same set.
 {
   # The patched copies of shipped mods, and nix-diff (the diff tab nix-changes opens).
-  nix-sidebar = { };
+  nix-sidebar = {
+    shared = [
+    ];
+  };
   nix-files = { shared = [ "editor.js" ]; };
   nix-changes = { };
   # The diff tab, editable: edit.js (its figures), and the editor's grid.js (key notation) and
   # nvim.js (its Neovim, started on diff.lua) joined in.
   nix-diff = { shared = [ "editor.js" ]; modules = [ "model.js" "syntax.js" "edit.js" "../nix-editor/grid.js" "../nix-editor/nvim.js" ]; };
   nix-worktree = { shared = [ "repo.js" ]; };
-  nix-menu = { };
-  nix-tabs = { };
-  nix-status = { };
-  nix-pane = { };
+  nix-menu = {
+    shared = [
+    ];
+  };
+  nix-tabs = {
+    shared = [
+    ];
+  };
+  nix-status = {
+    shared = [
+    ];
+  };
+  nix-pane = {
+    shared = [
+    ];
+  };
   nix-head = { };
   # The + popover: an open or idle worktree, or a new one, then Pi or a terminal.
-  nix-new = { shared = [ "repo.js" ]; };
+  nix-new = {
+    shared = [
+      "repo.js"
+    ];
+  };
   # The code editor: a renderer for a headless Neovim; grid.js (its UI as a grid) and
   # nvim.js (msgpack-RPC to it) joined in.
   nix-editor = { modules = [ "grid.js" "nvim.js" ]; };
