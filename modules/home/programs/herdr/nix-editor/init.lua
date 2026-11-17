@@ -122,6 +122,21 @@ local function apply_theme()
     hl("IncSearch", { fg = theme.accent_foreground, bg = theme.accent })
     hl("Visual", { bg = theme.selection })
     hl("MatchParen", { bg = theme.raised, bold = true })
+    -- Ayu's own surfaces, which Normal doesn't reach: the completion menu, split lines,
+    -- folds, the current/80th column, and the line numbers (Ayu's are near-invisible here).
+    hl("Pmenu", { fg = theme.foreground, bg = theme.popover })
+    hl("PmenuSel", { fg = theme.foreground, bg = theme.selection })
+    hl("PmenuSbar", { bg = theme.popover })
+    hl("PmenuThumb", { bg = theme.border })
+    hl("PmenuExtra", { fg = theme.dim, bg = theme.popover })
+    hl("PmenuKind", { fg = theme.dim, bg = theme.popover })
+    hl("WinSeparator", { fg = theme.border, bg = theme.background })
+    hl("Folded", { fg = theme.dim, bg = theme.raised })
+    hl("FoldColumn", { fg = theme.dim, bg = theme.background })
+    hl("CursorLine", { bg = theme.raised })
+    hl("ColorColumn", { bg = theme.raised })
+    hl("LineNr", { fg = theme.dim })
+    hl("EndOfBuffer", { fg = theme.background })
     for level, color in pairs(levels) do hl("Diagnostic" .. level, { fg = color }) end
   end
   -- Signs and wavy lines from the diagnostic colors, the theme's or the scheme's.
