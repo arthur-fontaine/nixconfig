@@ -85,16 +85,16 @@ test("fed from a session: the tick follows the compaction entry", () => {
 
 // ---- the words pass: numbers and names first, the essential part never cut ----------------
 
-test("a limit's right side: the reset time is the essential part, pace and staleness secondary", () => {
+test("a limit's right side: the reset time is the essential part, pace and staleness secondary; no tooltip", () => {
   const now = Date.parse("2026-11-18T12:00:00Z");
   const H = 3600_000;
   assert.deepEqual(infoMeterRight({ resetsAt: now + 4 * H + 43 * MIN, ahead: 0.1 }, "five", { now }),
-    { essential: "4h 43m", secondary: "10 pts ahead", tip: "Resets in 4h 43m" });
+    { essential: "4h 43m", secondary: "10 pts ahead" });
   assert.deepEqual(infoMeterRight({ resetsAt: now + 3 * 24 * H, ahead: -0.2 }, "week", { now }),
-    { essential: "3 days", secondary: "", tip: "Resets in 3 days" });
+    { essential: "3 days", secondary: "" });
   assert.deepEqual(infoMeterRight({ resetsAt: now + 2 * H, ahead: 0.05 }, "five", { now, staleFor: 12 * MIN }),
-    { essential: "2h", secondary: "5 pts ahead · as of 12m ago", tip: "Resets in 2h" });
-  assert.deepEqual(infoMeterRight({ resetsAt: null, ahead: null }, "five", { now }), { essential: "", secondary: "", tip: null });
+    { essential: "2h", secondary: "5 pts ahead · as of 12m ago" });
+  assert.deepEqual(infoMeterRight({ resetsAt: null, ahead: null }, "five", { now }), { essential: "", secondary: "" });
 });
 
 test("the edited files row: the count first, + when it is a floor", () => {

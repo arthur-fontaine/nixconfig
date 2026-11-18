@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -398,11 +398,10 @@ export default class Info extends View {
     }
     const win = (key, label, w, length) => {
       if (!w) return null;
-      const left = infoTokensLeft(w.left, key === "week" ? "weekly" : "5-hour");
-      // Round 3: the reset time alone on the right; "resets in" in the tooltip, before the tokens left.
+      // Round 3: the reset time alone on the right; no tokens-left figure and no tooltip (the
+      // person's decision: it would only repeat the meter).
       const right = infoMeterRight(w, key, { now, staleFor: u.stale ? now - (u.at ?? now) : null });
-      const tip = [right.tip, left?.tip].filter(Boolean).join("\n");
-      return this.meter(t, `meter-${key}`, { label, ratio: w.ratio, right, pace: w.pace, tip: tip ? tipText(tip) : null });
+      return this.meter(t, `meter-${key}`, { label, ratio: w.ratio, right, pace: w.pace });
     };
     if (u) out.push(...[win("five", "5h", u.fiveHour), win("week", "Week", u.sevenDay)].filter(Boolean));
     else out.push(div().px(CHROME.rowX).py(4).text_size(12).text_color(t.dim).child("Limits not reported yet"));

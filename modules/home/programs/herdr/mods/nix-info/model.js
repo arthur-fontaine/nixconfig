@@ -670,13 +670,13 @@ export function infoCommandText(cmd) {
 }
 
 // A limit meter's right side (round 3): the reset time is essential (never cut), pace and
-// staleness secondary (cut first); "resets in" goes to the tooltip.
+// staleness secondary (cut first). No tooltip: it would only repeat the meter.
 export function infoMeterRight(w, key, { now, staleFor = null } = {}) {
   const left = w.resetsAt ? w.resetsAt - now : null;
   const d = left === null ? null : Math.round(left / 86400000);
   const essential = left === null ? "" : key === "week" && left >= 86400000 && d >= 1 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(left);
   const secondary = [infoPaceText(w.ahead), staleFor !== null ? `as of ${infoAge(staleFor)} ago` : null].filter(Boolean).join(" · ");
-  return { essential, secondary, tip: essential ? `Resets in ${essential}` : null };
+  return { essential, secondary };
 }
 
 // The overview's Edited row: the count first, "+" when some edit kept no file name.
@@ -1067,8 +1067,8 @@ export function infoPace(resetsAt, length, now = Date.now()) {
 
 // ~/.pi/agent/claude-usage.json (herdr-session's) as the panel reads it. Utilization is 0–1;
 // stale when the file is older than 10 minutes. Each window has its pace, how far usage
-// is ahead of it (negative: under it), and the tokens left herdr-session estimated (`left`,
-// null when it estimated nothing; `tokens` null until its fit has enough data).
+// is ahead of it (negative: under it). herdr-session's tokens-left estimate isn't read: the
+// panel doesn't show it (round 3).
 export function infoUsage(record, now = Date.now()) {
   if (!record || (!record.fiveHour && !record.sevenDay)) return null;
   const stale = now - (record.at ?? 0) > 10 * 60 * 1000;
@@ -1076,25 +1076,9 @@ export function infoUsage(record, now = Date.now()) {
     if (!w || typeof w.utilization !== "number") return null;
     const resetsAt = typeof w.resetsAt === "number" ? w.resetsAt * 1000 : null;
     const pace = infoPace(resetsAt, length, now);
-    const e = w.estimate;
-    const left = e && typeof e === "object" ? { tokens: typeof w.tokensLeft === "number" ? w.tokensLeft : null, spread: e.spread ?? null, stretches: e.stretches ?? 0, needed: e.needed ?? 0 } : null;
-    return { ratio: w.utilization, resetsAt, pace, ahead: pace === null ? null : w.utilization - pace, left };
+    return { ratio: w.utilization, resetsAt, pace, ahead: pace === null ? null : w.utilization - pace };
   };
   return { at: record.at ?? null, stale, fiveHour: window(record.fiveHour, FIVE_HOURS), sevenDay: window(record.sevenDay, SEVEN_DAYS), overage: record.usingOverage === true, overageStatus: record.overageStatus ?? null };
-}
-
-// A window's tokens left as its row shows them: a short text and a one-sentence tooltip;
-// null when nothing was estimated. `limit` names the window ("5-hour", "weekly").
-export function infoTokensLeft(left, limit) {
-  if (!left) return null;
-  if (left.tokens === null) {
-    return { text: "estimating…", tip: `Estimating the tokens left before the ${limit} limit: ${left.stretches} of the ${left.needed} stretches of 5 points it needs so far` };
-  }
-  const spread = left.spread === null ? "" : ` (±${Math.round(left.spread * 100)}%)`;
-  return {
-    text: `≈ ${infoTokens(left.tokens)} left`,
-    tip: `About ${infoTokens(left.tokens)} tokens${spread} before the ${limit} limit, at the token mix of your last 5 hours, cache reads included, from ${left.stretches} stretches of your past usage`,
-  };
 }
 
 // ---- Formatting ----------------------------------------------------------------------
