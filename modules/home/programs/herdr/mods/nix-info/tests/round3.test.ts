@@ -9,16 +9,16 @@ const session = (o) => ({ ...infoNewSession("f"), ...o });
 
 // ---- the second status line --------------------------------------------------------------
 
-test("the session line: prompts, replies and how long ago it started", () => {
+test("the session name's tooltip: prompts, replies and how long ago it started", () => {
   const now = Date.parse("2026-11-18T12:00:00Z");
-  assert.equal(infoSessionLine(session({ prompts: 3, replies: 76, started: now - 52 * MIN }), now), "3 prompts · 76 replies · 52m");
-  assert.equal(infoSessionLine(session({ prompts: 1, replies: 1, started: now - 3 * 60 * MIN }), now), "1 prompt · 1 reply · 3h");
+  assert.equal(infoSessionLine(session({ prompts: 3, replies: 76, started: now - 52 * MIN }), now), "3 prompts · 76 replies · started 52m ago");
+  assert.equal(infoSessionLine(session({ prompts: 1, replies: 1, started: now - 3 * 60 * MIN }), now), "1 prompt · 1 reply · started 3h ago");
 });
 
-test("the session line without a start time, and before any message", () => {
+test("the session name's tooltip without a start time, and before any message", () => {
   const now = Date.parse("2026-11-18T12:00:00Z");
   assert.equal(infoSessionLine(session({ prompts: 2, replies: 5, started: null }), now), "2 prompts · 5 replies");
-  assert.equal(infoSessionLine(session({ prompts: 0, replies: 0, started: now - MIN }), now), "No prompts yet · 1m");
+  assert.equal(infoSessionLine(session({ prompts: 0, replies: 0, started: now - MIN }), now), "No prompts yet · started 1m ago");
   assert.equal(infoSessionLine(session({ prompts: 0, replies: 0, started: null }), now), "No prompts yet");
 });
 

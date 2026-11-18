@@ -318,18 +318,16 @@ export default class Info extends View {
     const s = this.session;
     const status = this.pane?.status ?? null;
     const line = s && f.tools ? infoStatusLine({ status, since: this.workingSince(), state: s, tools: f.tools ?? [], now }) : { tone: "idle", text: "Loading session…" };
-    const tip = s && f.tools ? `${s.prompts} prompt${s.prompts === 1 ? "" : "s"}, ${s.replies} repl${s.replies === 1 ? "y" : "ies"}${s.started ? ` · started ${infoAge(now - s.started)} ago` : ""}` : null;
+    // The counts and age as the name's tooltip, not a visible line (the person's call, round 3).
+    const tip = s && f.tools ? infoSessionLine(s, now) : null;
     const color = line.tone === "waiting" ? t.blocked : line.tone === "working" ? t.foreground : t.muted;
-    return v_flex().id("status").px(CHROME.headerX).pt(12).gap(2).when(Boolean(tip), (e) => e.tooltip(tip))
+    return v_flex().id("status").px(CHROME.headerX).pt(12).gap(2)
       .child(h_flex().gap(8).items_center().child(this.piMark(t))
-        .child(div().flex_1().min_w(0).truncate().font_medium().text_color(t.foreground).child(s?.name ?? infoParseTitle(this.pane?.title)?.name ?? "Pi"))
+        .child(div().id("session-name").flex_1().min_w(0).truncate().font_medium().when(Boolean(tip), (e) => e.tooltip(tip)).text_color(t.foreground).child(s?.name ?? infoParseTitle(this.pane?.title)?.name ?? "Pi"))
         .when(line.tone === "working", (e) => e.child(this.spinner(t, 13))))
       .child(div().pl(22).min_w(0).truncate().text_size(12).text_color(color).child(line.text))
       // The running command, the line's essential part, on a line of its own (round 3).
-      .when(Boolean(line.call), (e) => e.child(div().pl(22).min_w(0).truncate().font_family(MONO()).text_size(12).text_color(t.foreground).child(infoCommandText(line.call))))
-      // Round 3: the counts and age, visible rather than only in the tooltip (which keeps them, for
-      // a narrow panel where this line is cut).
-      .when(Boolean(tip), (e) => e.child(div().pl(22).min_w(0).truncate().text_size(12).text_color(t.muted).child(infoSessionLine(s, now))));
+      .when(Boolean(line.call), (e) => e.child(div().pl(22).min_w(0).truncate().font_family(MONO()).text_size(12).text_color(t.foreground).child(infoCommandText(line.call))));
   }
 
   // Round 3: context per request as a step chart, to the window (the top line, labelled), each

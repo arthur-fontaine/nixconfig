@@ -651,11 +651,11 @@ export function infoContextChart(state, window = 1_000_000, { known = true, max 
   return { bars, ticks, caption, ceiling: `${infoTokens(window)} window${known ? "" : ", assumed"}` };
 }
 
-// "3 prompts · 76 replies · 52m" (the session's age), under the status line (round 3).
+// "3 prompts · 76 replies · started 52m ago": the session name's tooltip (round 3).
 export function infoSessionLine(state, now) {
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   const counts = state.prompts + state.replies ? `${plural(state.prompts, "prompt", "prompts")} · ${plural(state.replies, "reply", "replies")}` : "No prompts yet";
-  return state.started ? `${counts} · ${infoAge(now - state.started)}` : counts;
+  return state.started ? `${counts} · started ${infoAge(now - state.started)} ago` : counts;
 }
 
 // A command as a row or the status line shows it (round 3): without a leading "cd <dir> &&" (or ";"),
