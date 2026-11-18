@@ -732,11 +732,12 @@ export function infoCallMeta(c, state) {
 }
 
 // The Context expansion's text lines, figures first.
+// Round 3b: one plain line for the cache (none before any request), then the compactions.
 export function infoContextLines(cache, ctx, now) {
-  const p = (r) => (r === null || r === undefined ? "—" : `${Math.round(r * 100)}%`);
   const n = ctx.compactions ?? 0;
-  const comp = n ? `Compacted ${n === 1 ? "once" : `${n} times`}${ctx.lastCompaction ? ` · ${infoAge(now - ctx.lastCompaction)} ago` : ""}` : "Not compacted yet";
-  return [`${p(cache.session)} reused from cache · last ${p(cache.last)}`, `${infoTokens(cache.read)} reused · ${infoTokens(cache.written)} newly cached`, comp];
+  const comp = n ? `Compacted ${n === 1 ? "once" : `${n} times`}${ctx.lastCompaction ? `, ${infoAge(now - ctx.lastCompaction)} ago` : ""}` : "Not compacted yet";
+  const hit = cache.session === null || cache.session === undefined ? null : `${Math.round(cache.session * 100)}% of input reused from cache`;
+  return [hit, comp].filter(Boolean);
 }
 
 const hit = (r) => { const all = r.input + r.cacheRead + r.cacheWrite; return all ? r.cacheRead / all : null; };

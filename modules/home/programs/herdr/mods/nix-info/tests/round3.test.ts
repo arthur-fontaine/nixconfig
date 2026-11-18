@@ -118,10 +118,10 @@ test("a call's meta: its time first, then when it ran, each figure with its word
 test("the Context expansion's lines: figures first", () => {
   const now = Date.parse("2026-11-18T12:00:00Z");
   assert.deepEqual(infoContextLines({ session: 0.92, last: 0.9, read: 3_200_000, written: 278_000 }, { compactions: 1, lastCompaction: now - 45 * MIN }, now),
-    ["92% reused from cache · last 90%", "3.2M reused · 278k newly cached", "Compacted once · 45m ago"]);
+    ["92% of input reused from cache", "Compacted once, 45m ago"]);
   assert.deepEqual(infoContextLines({ session: null, last: null, read: 0, written: 0 }, { compactions: 3, lastCompaction: null }, now),
-    ["— reused from cache · last —", "0 reused · 0 newly cached", "Compacted 3 times"]);
-  assert.equal(infoContextLines({ session: 1, last: 1, read: 1, written: 1 }, { compactions: 0 }, now)[2], "Not compacted yet");
+    ["Compacted 3 times"]);
+  assert.equal(infoContextLines({ session: 1, last: 1, read: 1, written: 1 }, { compactions: 0 }, now)[1], "Not compacted yet");
 });
 
 test("a command as a row shows it: the program first, not the folder it runs in or its path", () => {
