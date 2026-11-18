@@ -221,7 +221,9 @@ export default class Info extends View {
   }
 
   async readUsage() {
-    const text = await this.bounded(readFile(this.usageFile ?? `${home()}/.pi/agent/claude-usage.json`, "utf8"));
+    // A fixture usage file (nix-info.usage:) lives in /tmp, which Herdr's fs can't read (home only).
+    const text = this.usageFile ? (await this.bounded(exec("cat", [this.usageFile])))?.stdout ?? null
+      : await this.bounded(readFile(`${home()}/.pi/agent/claude-usage.json`, "utf8"));
     try { this.usageRecord = text ? JSON.parse(text) : null; } catch { this.usageRecord = null; }
     if (this.session && infoNeedsTitles(this.session)) await this.readTitles();
     if (!Object.keys(this.windows).length) {
