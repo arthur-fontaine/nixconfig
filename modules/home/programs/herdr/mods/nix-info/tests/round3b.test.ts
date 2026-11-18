@@ -75,10 +75,9 @@ test("the edits with no file name: one muted row in the detail", () => {
 
 // ---- 8. a row's time column: what the call is doing when it has no time ----------------------
 
-test("a row's time: its duration, \"running\" while it runs, \"stopped\" when cut off", () => {
+test("a row's time: its duration, \"stopped\" when cut off (a running one: running-time.test.ts)", () => {
   assert.equal(infoRowTime({ duration: 1300 }, "done"), "1.3s");
   assert.equal(infoRowTime({ duration: 40 }, "done"), "<0.1s");
-  assert.equal(infoRowTime({ duration: null }, "running"), "running");
   assert.equal(infoRowTime({ duration: null }, "no-result"), "stopped");
   assert.equal(infoRowTime({ duration: null }, "done"), "");
 });

@@ -283,6 +283,8 @@ export default class Info extends View {
           // Running calls' elapsed time ticks.
           if (changed || shown || (this.session && this.pane?.status === "working")) cx.notify();
         }
+        // A running call's elapsed time shows tenths, so its row is redrawn every POLL, not every TICK.
+        else if (p !== undefined && this.session && this.pane?.status === "working" && this.derived()?.running?.some((c) => typeof c.ranFrom === "number")) cx.notify();
         await new Promise((r) => { this.wake = r; cx.timer.after(POLL, r); });
         this.wake = null;
       }

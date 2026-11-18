@@ -9,6 +9,8 @@ import { claudeToken, INTERVAL, poll, writeUsage } from "./poll.ts";
 import { refresh } from "./estimate.ts";
 import { usageOf } from "./usage.ts";
 
+export const CALL_START = "call-start";
+
 // Herdr sets HC_TERMINAL_ID in the terminals it runs; elsewhere there is nothing to label.
 function label(value: string) {
 	const terminal = process.env.HC_TERMINAL_ID;
@@ -48,6 +50,16 @@ export default function (pi: ExtensionAPI) {
 		label("");
 		clearInterval(slot[TIMER]);
 		slot[TIMER] = undefined;
+	});
+
+	// When a call starts running, for the Info panel's elapsed time: the last hook before Pi runs
+	// the tool. Loaded after auto-mode (the manifest's order), so an approval wait isn't counted.
+	// Never blocks the call; a step of a script (parentToolCallId) has no row of its own.
+	pi.on("tool_call", (event) => {
+		if ((event as { parentToolCallId?: string }).parentToolCallId) return;
+		try {
+			pi.appendEntry(CALL_START, { toolCallId: event.toolCallId, at: Date.now() });
+		} catch {}
 	});
 
 	pi.on("message_end", async (event) => {

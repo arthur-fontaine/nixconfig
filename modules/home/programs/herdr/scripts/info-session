@@ -243,6 +243,8 @@ writeFileSync(join(dir, "session.jsonl"), base);
 // running: one more script, no result yet.
 const run = { id: "toolu_running", name: "codemode", arguments: { code: "await tools.bash({ command: \"node --test tests --watch\" });" } };
 out.length = 0; t = now - 20000; assistant([run], { grow: 500 });
+// herdr-session's start marker: the row counts from here (the time since this fixture was made).
+put({ type: "custom", customType: "call-start", timestamp: iso(now), data: { toolCallId: run.id, at: now } });
 writeFileSync(join(dir, "running.jsonl"), base + out.join("\n") + "\n");
 // waiting: an ask without an answer.
 const ask = { id: "toolu_waiting", name: "ask_user_question", arguments: { questions: [{ question: "Run the slow tide tests too?", header: "Tests", options: [] }] } };

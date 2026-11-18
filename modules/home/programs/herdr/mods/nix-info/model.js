@@ -58,6 +58,7 @@ export function infoNewSession(file) {
     untitled: 0,
     untitledNested: 0, // nested bash calls only bash-titles.json can name // codemode calls without a title of their own (details.title or a late one)
     early: new Map(), // id → a late title fed before its call
+    earlyStart: new Map(), // id → a call-start marker fed before its call
   };
 }
 
@@ -417,6 +418,15 @@ function apply(state, entry) {
       return;
     case "custom": {
       if (entry.customType === "bash-changes") { infoCountChanges(state, entry.data?.toolCallId, entry.data?.fileChanges); return; }
+      // herdr-session's marker: when the call began to run (after its approval), what a running
+      // row counts from. Kept apart from `started` (the message's time), which feeds the durations.
+      if (entry.customType === "call-start") {
+        const id = entry.data?.toolCallId, at = entry.data?.at;
+        if (typeof id !== "string" || typeof at !== "number") return;
+        const call = state.tools.get(id);
+        if (call) call.ranFrom = at; else state.earlyStart.set(id, at);
+        return;
+      }
       // A title Pi learned after the result: the latest entry for a call counts.
       const id = entry.data?.toolCallId, title = entry.data?.title;
       if (entry.customType !== "bash-titles" || typeof id !== "string" || typeof title !== "string" || !title.trim()) return;
@@ -466,6 +476,7 @@ function apply(state, entry) {
       const call = state.tools.get(b.id);
       call.needsTitle = b.name === "codemode" || (b.name === "bash" && infoWantsTitle(b.arguments?.command));
       if (call.needsTitle) state.untitled++;
+      if (state.earlyStart.has(b.id)) { call.ranFrom = state.earlyStart.get(b.id); state.earlyStart.delete(b.id); }
       if (state.early.has(b.id)) {
         if (call.needsTitle) { call.lateTitle = state.early.get(b.id); infoTitled(state, call); }
         state.early.delete(b.id);
@@ -797,7 +808,7 @@ export function infoTools(state, titles = null) {
     let arg = c.title ?? c.lateTitle ?? c.arg;
     if (c.titleKey && !c.titled) arg = fromFile(c.titleKey) ?? arg;
     const nested = titles && c.nested ? c.nested.map((sub) => (sub.titleKey && fromFile(sub.titleKey) ? { ...sub, arg: fromFile(sub.titleKey), titled: true } : sub)) : c.nested;
-    return { id: c.id, kind: c.kind, name: c.name, arg, argKind: c.argKind ?? null, titled: arg !== c.arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null,
+    return { id: c.id, kind: c.kind, name: c.name, arg, argKind: c.argKind ?? null, titled: arg !== c.arg, full: c.full ?? c.arg, path: c.path, started: c.started, ranFrom: c.ranFrom ?? null, duration: c.duration, error: c.error, running: c.duration === null,
       threw: c.threw ?? null, nested: nested ?? null,
       // Round 3b: only a tool call fails (the filled dot, what "failed N" counts); a script is a
       // container, with the hollow dot when it threw or a step failed (`threw` tells which).
@@ -944,10 +955,22 @@ export function infoRowIcon(c) {
   return c.kind === "code" && !c.titled && !c.nested?.length && INFO_ICON_KINDS.includes(c.argKind) ? c.argKind : c.kind;
 }
 
-// A row's time column (round 3b): the duration; "running" while the call runs, "stopped" when it
-// was cut off (no "No result").
-export function infoRowTime(c, state) {
-  return state === "running" ? "running" : state === "no-result" ? "stopped" : infoRowDuration(c.duration);
+// A row's time column (round 3b): the duration; "stopped" when it was cut off (no "No result").
+// A running call shows its elapsed time to the tenth ("12.3s"): that it runs goes without saying.
+// Counted from herdr-session's call-start marker only; "running" without it (awaiting approval, a
+// Claude Code session, a Pi started before the marker existed): the message's time isn't the start.
+export function infoRowTime(c, state, now = Date.now()) {
+  if (state === "running") return typeof c.ranFrom === "number" ? infoElapsed(now - c.ranFrom) : "running";
+  return state === "no-result" ? "stopped" : infoRowDuration(c.duration);
+}
+
+// 12340 → "12.3s", 65250 → "1m 05.2s", past an hour "1h 02m" (tenths no longer matter there).
+export function infoElapsed(msec) {
+  const tenths = Math.floor(Math.max(0, msec) / 100), s = tenths / 10;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${(s % 60).toFixed(1).padStart(4, "0")}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
 }
 
 // R2-6: a file as its name and a short folder. In the repo the last folder segment; outside, its
