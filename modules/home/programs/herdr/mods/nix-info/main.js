@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText, infoContextRight, infoHeadLine, infoCallsIn, infoUnnamedText, infoRowTime, infoOutsideText, infoRowIcon, infoMeterMuted } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText, infoContextRight, infoHeadLine, infoCallsIn, infoUnnamedText, infoRowTime, infoOutsideText, infoRowIcon, infoMeterMuted, infoChipCount } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -619,12 +619,13 @@ export default class Info extends View {
     const CHIPS = [["all", "All"], ["bash", "bash"], ["read", "read"], ["edit", "edit"], ["ask", "ask"], ["other", "other"], ["failed", "failed"]];
     const chip = ([key, label]) => {
       const on = this.kind === key;
-      // Round 3c: 4 pt in, 3 between label and count: six chips with four-digit counts fit one line
-      // at normal width (seven, in sessions that use ask and other tools alike, may wrap).
-      return div().id(`kind-${key}`).h(24).px(4).gap(3).flex_none().flex().items_center().rounded(CHROME.radius).cursor_pointer().text_size(12)
+      // Round 3c (option B): 11 pt, 4 pt in, 3 between label and count, counts from 1,000 as "4.4k"
+      // (the exact one in the tooltip): seven chips fit one line at normal width in nearly every session.
+      return div().id(`kind-${key}`).h(24).px(4).gap(3).flex_none().flex().items_center().rounded(CHROME.radius).cursor_pointer().text_size(11)
+        .tooltip(`${infoNum(n[key])} ${key === "all" ? "calls" : key === "failed" ? "failed calls" : `${label} calls`}`)
         .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
         .on_click((_e, cx) => this.command(`kind:${key}`, cx))
-        .child(div().child(label)).child(div().text_color(key === "failed" ? t.blocked : t.dim).child(infoNum(n[key])));
+        .child(div().child(label)).child(div().text_color(key === "failed" ? t.blocked : t.dim).child(infoChipCount(n[key])));
     };
     const rows = this.listRows(f), shown = this.all ? rows : rows.slice(0, SHOWN);
     const label = CHIPS.find(([k]) => k === this.kind)?.[1] ?? "All";

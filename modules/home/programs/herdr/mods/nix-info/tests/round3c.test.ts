@@ -1,7 +1,7 @@
 // Round 3c (brief-r3c.md), pure.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { infoContext, infoContextChart, infoFeed, infoNewSession, infoKindCounts, infoCounts, infoListRows, infoKeep, infoCallsIn, infoRowIcon, infoMeterMuted } from "../model.js";
+import { infoContext, infoContextChart, infoFeed, infoNewSession, infoKindCounts, infoCounts, infoListRows, infoKeep, infoCallsIn, infoRowIcon, infoMeterMuted, infoChipCount } from "../model.js";
 
 const line = (o) => JSON.stringify(o) + "\n";
 const it = (type, input, read, write, model) => ({ type, input_tokens: input, cache_read_input_tokens: read, cache_creation_input_tokens: write, ...(model ? { model } : {}) });
@@ -103,4 +103,17 @@ test("a limit is muted once its reset has passed or its usage is stale", () => {
   assert.equal(infoMeterMuted({ resetsAt: now - 5 * MIN }, { now }), true);
   assert.equal(infoMeterMuted({ resetsAt: now + 60 * MIN }, { now, staleFor: 12 * MIN }), true);
   assert.equal(infoMeterMuted({ resetsAt: null }, { now }), false);
+});
+
+// ---- 3. chip counts, abbreviated from a thousand (the person's option B) ------------------------
+
+test("a chip's count: exact under 1,000, then 1k, 4.4k, 12k", () => {
+  assert.equal(infoChipCount(0), "0");
+  assert.equal(infoChipCount(999), "999");
+  assert.equal(infoChipCount(1000), "1k");
+  assert.equal(infoChipCount(1050), "1.1k");
+  assert.equal(infoChipCount(4425), "4.4k");
+  assert.equal(infoChipCount(9960), "10k");
+  assert.equal(infoChipCount(12345), "12k");
+  assert.equal(infoChipCount(123456), "123k");
 });

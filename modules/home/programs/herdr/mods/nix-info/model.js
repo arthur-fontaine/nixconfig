@@ -900,6 +900,14 @@ export function infoListRows(calls, collapsed = []) {
   });
 }
 
+// A filter chip's count (round 3c, the person's option B): exact under 1,000, then "1k", "4.4k",
+// "12k", so seven chips fit one line; the chip's tooltip and the list header keep the exact number.
+export function infoChipCount(n) {
+  if (n < 1000) return String(n);
+  const k = n / 1000;
+  return k < 9.95 ? `${Math.round(k * 10) / 10}k` : `${Math.round(k)}k`;
+}
+
 // 1467 → "1,467".
 export function infoNum(n) {
   return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
