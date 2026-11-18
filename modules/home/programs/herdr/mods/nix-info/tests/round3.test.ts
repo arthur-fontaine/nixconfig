@@ -101,11 +101,12 @@ test("the Context meter's right side: used of the maximum, each figure with its 
 });
 
 test("the edited files row: the count first, + when it is a floor", () => {
-  assert.equal(infoEditedText({ files: [1, 2, 3, 4, 5, 6, 7, 8], atLeast: true }), "8+ files edited");
-  assert.equal(infoEditedText({ files: [1, 2], atLeast: false }), "2 files edited");
-  assert.equal(infoEditedText({ files: [1], atLeast: false }), "1 file edited");
-  assert.equal(infoEditedText({ files: [], atLeast: true }), "0+ files edited");
-  assert.equal(infoEditedText({ files: [], atLeast: false }), "No files edited yet");
+  // Round 3b: no "+": the edits with no file name get their own row in the detail.
+  assert.equal(infoEditedText({ files: [1, 2, 3, 4, 5, 6, 7, 8], atLeast: true, unnamed: 1 }), "8 files edited");
+  assert.equal(infoEditedText({ files: [1, 2], atLeast: false, unnamed: 0 }), "2 files edited");
+  assert.equal(infoEditedText({ files: [1], atLeast: false, unnamed: 0 }), "1 file edited");
+  assert.equal(infoEditedText({ files: [], atLeast: true, unnamed: 2 }), "2 edits with no file name");
+  assert.equal(infoEditedText({ files: [], atLeast: false, unnamed: 0 }), "No files edited yet");
 });
 
 test("the Edited files view's meta", () => {

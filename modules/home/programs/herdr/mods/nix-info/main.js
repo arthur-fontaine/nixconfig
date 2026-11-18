@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText, infoContextRight, infoHeadLine, infoCallsIn } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText, infoContextRight, infoHeadLine, infoCallsIn, infoUnnamedText } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -560,8 +560,10 @@ export default class Info extends View {
         .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.chevron));
     };
     const n = `${e.files.length} file${e.files.length === 1 ? "" : "s"}`;
-    // Round 3: no "some edits kept no file name" line: the overview's "8+" says it.
     const out = [this.section(t, "In this repo", infoFilesMeta(e.files.length, Boolean(git?.exact))), ...e.files.map((f) => row(f))];
+    // Round 3b: the edits Pi kept no file name for, said once, muted, under the files.
+    const unnamed = infoUnnamedText(e.unnamed ?? 0);
+    if (unnamed) out.push(chromeRow(UI, t, "unnamed", {}).child(div().w(14).flex_none()).child(div().w(10).flex_none()).child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(unnamed)));
     if (git && !git.exact) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("No line counts: the session's first commit is unknown."));
     if (e.outside.length) {
       const open = this.outside;

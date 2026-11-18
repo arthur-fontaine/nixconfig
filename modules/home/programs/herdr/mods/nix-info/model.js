@@ -702,10 +702,16 @@ export function infoContextRight(used, window, known) {
 }
 
 // The overview's Edited row: the count first, "+" when some edit kept no file name.
+// Round 3b: no "+" (it wasn't explained): the edits with no file name are a row in the detail.
 export function infoEditedText(e) {
   const n = e.files.length;
-  if (!n && !e.atLeast) return "No files edited yet";
-  return `${n}${e.atLeast ? "+" : ""} file${n === 1 && !e.atLeast ? "" : "s"} edited`;
+  if (!n) return infoUnnamedText(e.unnamed ?? 0) ?? "No files edited yet";
+  return `${n} file${n === 1 ? "" : "s"} edited`;
+}
+
+// "1 edit with no file name" (Pi kept neither its arguments nor its path), or null.
+export function infoUnnamedText(n) {
+  return n > 0 ? `${n} edit${n === 1 ? "" : "s"} with no file name` : null;
 }
 
 export function infoFilesMeta(n, exact) {
@@ -986,7 +992,7 @@ export function infoEdited(state, root) {
   }
   files.sort((a, b) => a.rel.localeCompare(b.rel));
   outside.sort((a, b) => a.path.localeCompare(b.path));
-  return { files, outside, atLeast: state.unreadable > 0 };
+  return { files, outside, atLeast: state.unreadable > 0, unnamed: state.unreadable };
 }
 
 // git's per-file view of the session's files: `git diff --numstat <base>` and `--name-status`,

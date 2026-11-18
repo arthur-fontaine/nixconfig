@@ -7,7 +7,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { infoFeed, infoKeep, infoKindCounts, infoCounts, infoListRows, infoNewSession, infoTools, infoListMeta, infoCallsIn } from "../model.js";
+import { infoFeed, infoKeep, infoKindCounts, infoCounts, infoListRows, infoNewSession, infoTools, infoListMeta, infoCallsIn, infoUnnamedText, infoEdited } from "../model.js";
 
 // The fixture sessions, as info-shots shoots them.
 const here = dirname(fileURLToPath(import.meta.url));
@@ -57,4 +57,17 @@ test("the Calls header: the latest N of the total, in calls, only when the list 
   assert.equal(infoListMeta(200, 214, true), "latest 200 of 214 calls");
   assert.equal(infoListMeta(1, 1467, true), "latest 1 of 1,467 calls");
   assert.equal(infoListMeta(214, 214, false), "");
+});
+
+// ---- 2. the edits with no file name, said once, in the detail --------------------------------
+
+test("the edits with no file name: one muted row in the detail", () => {
+  assert.equal(infoUnnamedText(1), "1 edit with no file name");
+  assert.equal(infoUnnamedText(3), "3 edits with no file name");
+  assert.equal(infoUnnamedText(0), null);
+  const s = infoNewSession("session");
+  infoFeed(s, readFileSync(join(dir, "session.jsonl"), "utf8"));
+  const e = infoEdited(s, s.cwd);
+  assert.equal(e.unnamed, 1);
+  assert.equal(e.files.length, 8);
 });
