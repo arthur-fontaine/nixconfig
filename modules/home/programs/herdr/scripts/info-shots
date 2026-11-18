@@ -127,7 +127,7 @@ state_() { # <state> <theme>
     big-all) act nix-info.detail:calls; act nix-info.all ;;
     big-call) act nix-info.detail:calls; act nix-info.all; act "nix-info.select:$big_call" ;;
     # git runs in the panel's loop: its figures come a moment after the view.
-    files) act nix-info.detail:files; sleep 2 ;;
+    files) act nix-info.detail:files; sleep 4 ;;
     files-outside) act nix-info.detail:files; act nix-info.open:outside ;;
     no-pi) "$S" do tab.select --id "$shell_tab" >/dev/null ;;
     no-calls) show pi-empty ;;
