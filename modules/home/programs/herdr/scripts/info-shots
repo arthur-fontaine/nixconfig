@@ -12,7 +12,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 S=$here/sandbox
 STATES=(overview context calls calls-bash calls-failed calls-nomatch collapsed call-script call-step call-edit call-next
   show-all back files files-outside no-pi no-calls running dead claude-code narrow narrow-context narrow-calls narrow-files-outside
-  narrow-call-script narrow-call-edit changes files-panel corners
+  narrow-call-script narrow-call-edit stale reset-past narrow-stale narrow-running changes files-panel corners
   big big-calls big-all big-call)
 # INFO_REAL=<a copy of a real session>: also its overview and calls (real-overview, real-calls),
 # lent to the idle pi-dead stand-in. Never a session in ~/.pi itself: the panel only reads, but
@@ -137,6 +137,15 @@ state_() { # <state> <theme>
     narrow) "$S" do layout.resize --id panel --px 260 >/dev/null ;;
     changes) panel changes ;;
     files-panel) panel files ;;
+    # The limits from a fixture usage file (nix-info.usage:), never the person's claude-usage.json:
+    # read 12 minutes ago (stale), or fresh with the 5-hour window's reset 5 minutes past.
+    stale|reset-past) local u=$root/usage-$base.json now; now=$(date +%s)
+      if [ "$base" = stale ]; then
+        jq -n --argjson n "$now" '{at: (($n - 720) * 1000), fiveHour: {utilization: 0.39, resetsAt: ($n + 13000)}, sevenDay: {utilization: 0.49, resetsAt: ($n + 259200)}}' >"$u"
+      else
+        jq -n --argjson n "$now" '{at: ($n * 1000), fiveHour: {utilization: 0.39, resetsAt: ($n - 300)}, sevenDay: {utilization: 0.49, resetsAt: ($n + 259200)}}' >"$u"
+      fi
+      act "nix-info.usage:$u"; sleep 1.5 ;;
     # A fill no theme uses, so the corner check sees the content's own corners.
     corners) act "nix-info.fill:#ff00ff" ;;
     *) echo "unknown state $1" >&2; return 1 ;;
@@ -146,6 +155,7 @@ state_() { # <state> <theme>
   case $base in
     changes|files-panel) panel info ;;
     corners) act nix-info.fill: ;;
+    stale|reset-past) act nix-info.usage: ;;
     big*) hc label "$(term_of pi-run)" "pi.session=$gen/running.jsonl" >/dev/null ;;
     real*) hc label "$(term_of pi-dead)" "pi.session=$gen/running.jsonl" >/dev/null ;;
   esac
