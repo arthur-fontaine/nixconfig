@@ -142,6 +142,17 @@ export function infoTool(raw, cwd) {
       return { ...base, kind: "agent", arg: firstLine([a.subagent_type, a.description ?? a.prompt].filter(Boolean).join(": ")) };
     case "codemode":
       return { ...base, kind: "code", ...infoScriptCall(String(a.code ?? ""), cwd), full: String(a.code ?? "") };
+    // Round 3b: what a search looked for, quoted, and where; not its first string argument.
+    case "Grep":
+    case "grep":
+      if (typeof a.pattern === "string") return { ...base, kind: call.name, arg: `"${firstLine(a.pattern)}"${a.path ? ` in ${rel(a.path, cwd)}` : ""}` };
+      break;
+    case "Glob":
+    case "glob":
+      if (typeof a.pattern === "string") return { ...base, kind: call.name, arg: firstLine(a.pattern) };
+      break;
+  }
+  switch (call.name) {
     default:
       return { ...base, kind: call.name, arg: firstLine(Object.values(a).find((v) => typeof v === "string") ?? "") };
   }

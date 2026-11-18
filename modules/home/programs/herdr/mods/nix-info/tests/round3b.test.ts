@@ -7,7 +7,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { infoFeed, infoKeep, infoKindCounts, infoCounts, infoListRows, infoNewSession, infoTools, infoListMeta, infoCallsIn, infoUnnamedText, infoEdited, infoRowTime, infoOutsideText } from "../model.js";
+import { infoFeed, infoKeep, infoKindCounts, infoCounts, infoListRows, infoNewSession, infoTools, infoListMeta, infoCallsIn, infoUnnamedText, infoEdited, infoRowTime, infoOutsideText, infoTool } from "../model.js";
 
 // The fixture sessions, as info-shots shoots them.
 const here = dirname(fileURLToPath(import.meta.url));
@@ -87,4 +87,15 @@ test("a row's time: its duration, \"running\" while it runs, \"stopped\" when cu
 test("files edited outside the repo: \"+2 outside repo\"", () => {
   assert.equal(infoOutsideText(2), "+2 outside repo");
   assert.equal(infoOutsideText(0), null);
+});
+
+// ---- 9. a Grep shows what it looked for, and where ------------------------------------------
+
+test("Grep: its pattern quoted and its folder; Glob: its pattern", () => {
+  // "DEFAULT" was the cc fixture's real pattern (the constant it searched for), read as a keyword.
+  assert.equal(infoTool({ name: "Grep", arguments: { pattern: "DEFAULT", path: "/repo/src" } }, "/repo").arg, "\"DEFAULT\" in src");
+  assert.equal(infoTool({ name: "Grep", arguments: { pattern: "TODO", output_mode: "count" } }, "/repo").arg, "\"TODO\"");
+  assert.equal(infoTool({ name: "Glob", arguments: { pattern: "src/**/*.js" } }, "/repo").arg, "src/**/*.js");
+  const cc = FIXTURES.cc.find((c) => c.name === "Grep");
+  assert.equal(cc.arg, "\"DEFAULT\" in src");
 });
