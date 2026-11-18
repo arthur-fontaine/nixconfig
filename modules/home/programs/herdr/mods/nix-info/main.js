@@ -478,8 +478,7 @@ export default class Info extends View {
       // R2-5: the disclosure is its own 16 × 26 cell with its own hover fill, over the 10 pt column
       // (3 pt each side), so the text column stays put; listClick's x test uses the same bounds.
       .child(div().w(DISCLOSE.w).h(CHROME.row).ml(-DISCLOSE.out).mr(-DISCLOSE.out).flex_none().flex().items_center().justify_center().rounded(CHROME.radius)
-        // R2-1: a script merged with its one step: the script's marker, muted, no action of its own.
-        .when(Boolean(c.merged), (e) => e.child(svg(ICON(TOOL_ICON.code)).size(10).text_color(t.dim)))
+        // Round 3b: a script merged with its one step shows the step's icon only (two icons said nothing).
         .when(Boolean(disclose), (e) => e.id(`toggle-${c.id}`).cursor_pointer().hover((x) => x.bg(t.selected)).when(!inList, (x) => x.on_click(disclose.onClick))
           .child(svg(ICON(disclose.open ? "chevron-down" : "chevron-right")).size(10).text_color(t.chevron))))
       .when(!more, (e) => e.child(svg(ICON(TOOL_ICON[c.kind] ?? "box")).size(14).flex_none().text_color(t.dim)))
