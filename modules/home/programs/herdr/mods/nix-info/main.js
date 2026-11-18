@@ -614,7 +614,8 @@ export default class Info extends View {
     const CHIPS = [["all", "All"], ["bash", "bash"], ["read", "read"], ["edit", "edit"], ["ask", "ask"], ["other", "other"], ["failed", "failed"]];
     const chip = ([key, label]) => {
       const on = this.kind === key;
-      return div().id(`kind-${key}`).h(24).px(8).gap(5).flex_none().flex().items_center().rounded(CHROME.radius).cursor_pointer().text_size(12)
+      // Round 3b: 6 pt in, 4 between label and count, so the chips fit one line at normal width.
+      return div().id(`kind-${key}`).h(24).px(6).gap(4).flex_none().flex().items_center().rounded(CHROME.radius).cursor_pointer().text_size(12)
         .bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted).when(!on, (e) => e.hover((x) => x.bg(t.hover)).active((x) => x.bg(t.selected)))
         .on_click((_e, cx) => this.command(`kind:${key}`, cx))
         .child(div().child(label)).child(div().text_color(key === "failed" ? t.blocked : t.dim).child(infoNum(n[key])));
