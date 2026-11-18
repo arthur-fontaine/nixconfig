@@ -522,8 +522,9 @@ export default class Info extends View {
         .child(div().w(10).flex_none().font_family(MONO()).text_size(11).font_medium().text_center().text_color(color[st?.status] ?? t.ansi3).child(st?.status ?? ""))
         .child(this.fileText(t, f.path))
         .child(h_flex().flex_none().text_size(11)
-          .child(div().w(34).text_right().text_color(known ? t.ansi2 : t.dim).child(known ? (st.added ? `+${st.added}` : "") : !outside && git && !st ? "unchanged" : ""))
-          .child(div().w(20).text_right().text_color(t.ansi1).child(known && st.removed ? `−${st.removed}` : "")))
+          .child(div().w(34).text_right().whitespace_nowrap().text_color(known ? t.ansi2 : t.dim).child(known ? (st.added ? `+${st.added}` : "") : !outside && git && !st ? "unchanged" : ""))
+          // 20 pt as decided (− ends at 323): a figure wider than that runs into the gap before the ›.
+          .child(div().w(20).text_right().whitespace_nowrap().text_color(t.ansi1).child(known && st.removed ? `−${st.removed}` : "")))
         .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.chevron));
     };
     const n = `${e.files.length} file${e.files.length === 1 ? "" : "s"}`;
