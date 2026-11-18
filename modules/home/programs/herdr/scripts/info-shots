@@ -99,10 +99,11 @@ state_() { # <state> <theme>
   local base=$1
   case $1 in narrow-*) base=${1#narrow-} ;; esac
   show pi; act nix-info.reset
-  # The big states lend the working stand-in the big session (a working pane renders every second).
+  # The big states lend the idle pi-dead stand-in the big session: pi-run is working under
+  # INFO_WORKING=1, and big would show its "Working …" with none of big's calls running (r3b).
   # A relabelled stand-in: a tick for the panel to drop the session it had (else the probe passes
   # on that one), then the wait for the new one.
-  case $base in big*) hc label "$(term_of pi-run)" "pi.session=$gen/big.jsonl" >/dev/null; "$S" do tab.select --id "$(tab_of pi-run)" >/dev/null; sleep 2; show pi-run ;; esac
+  case $base in big*) hc label "$(term_of pi-dead)" "pi.session=$gen/big.jsonl" >/dev/null; "$S" do tab.select --id "$(tab_of pi-dead)" >/dev/null; sleep 2; show pi-dead ;; esac
   case $base in real*) hc label "$(term_of pi-dead)" "pi.session=$INFO_REAL" >/dev/null; "$S" do tab.select --id "$(tab_of pi-dead)" >/dev/null; sleep 2; show pi-dead ;; esac
   case $1 in narrow-*) "$S" do layout.resize --id panel --px 260 >/dev/null ;; esac
   case $base in
@@ -156,7 +157,7 @@ state_() { # <state> <theme>
     changes|files-panel) panel info ;;
     corners) act nix-info.fill: ;;
     stale|reset-past) act nix-info.usage: ;;
-    big*) hc label "$(term_of pi-run)" "pi.session=$gen/running.jsonl" >/dev/null ;;
+    big*) hc label "$(term_of pi-dead)" "pi.session=$gen/running.jsonl" >/dev/null ;;
     real*) hc label "$(term_of pi-dead)" "pi.session=$gen/running.jsonl" >/dev/null ;;
   esac
 }
