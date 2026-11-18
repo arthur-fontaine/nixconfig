@@ -16,6 +16,14 @@ for (const name of ["dark", "light"]) {
     const g = infoContrast(c.guide, t.chrome);
     assert.ok(g >= 1.3 && g <= 1.5, `guide ${g}`);
   });
+  // Round 3d: a limit it can't vouch for (stale, reset passed) is filled at about half the normal
+  // fill's contrast against the track, so the eye tells it apart.
+  test(`${name}: the muted meter fill is about half the normal fill's contrast against the track`, () => {
+    const t = theme(name), c = infoTones(t);
+    const muted = infoContrast(c.muted, c.track), fill = infoContrast(c.fill, c.track);
+    assert.ok(muted >= 1.7 && muted <= 1.95, `muted ${muted}`);
+    assert.ok(muted <= fill / 1.8, `muted ${muted} vs fill ${fill}`);
+  });
   test(`${name}: code blocks sit one step above the island`, () => {
     const t = theme(name), c = infoTones(t);
     assert.equal(c.code, t.surface);

@@ -997,6 +997,8 @@ export function infoTones(t) {
   const track = toward(t.chrome, t.foreground, t.chrome, 1.3);
   return {
     track, fill: toward(track, t.foreground, track, 3.6),
+    // Round 3d: the fill of a limit it can't vouch for, half the normal fill's contrast.
+    muted: toward(track, t.foreground, track, 1.8),
     notch: toward(t.chrome, t.foreground, t.chrome, 3.4), // A 10 pt chevron's antialiased strokes measure about a quarter under its colour: 4.5 for ≥ 3.
     chevron: toward(t.chrome, t.foreground, t.chrome, 4.5),
     guide: toward(t.chrome, t.foreground, t.chrome, 1.4), code: t.surface,

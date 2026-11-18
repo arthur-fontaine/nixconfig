@@ -373,7 +373,7 @@ export default class Info extends View {
   // muted: a limit it can't vouch for (round 3c): dim %, dim bar, no warning colours, no notch.
   meter(t, id, { label, ratio, right, pace = null, tip = null, expand = null, muted = false }) {
     const tone = muted ? "muted" : infoMeterTone(ratio ?? 0);
-    const fill = tone === "muted" ? t.dim : tone === "error" ? t.blocked : tone === "warning" ? t.ansi3 : t.tones.fill;
+    const fill = tone === "muted" ? t.tones.muted : tone === "error" ? t.blocked : tone === "warning" ? t.ansi3 : t.tones.fill;
     const r = Math.max(0, Math.min(1, ratio ?? 0));
     // R2-7: an expandable meter's chevron follows its value ("Context 6% ›"), so every label
     // starts at the same edge.
