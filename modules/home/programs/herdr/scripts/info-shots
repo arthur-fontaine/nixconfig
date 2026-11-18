@@ -33,7 +33,9 @@ echo "sessions: $gen"
 # Tab name → session file and status.
 declare -A FILE=([pi]=session [pi-run]=running [pi-dead]=running [pi-cc]=cc [pi-empty]=empty)
 declare -A TITLE=([pi]=tide-tables-parser [pi-run]=tide-tables-parser [pi-dead]=tide-tables-parser [pi-cc]=tide-tables-cc [pi-empty]=tide-tables-new)
-declare -A STATUS=([pi]=idle [pi-run]=working [pi-dead]=idle [pi-cc]=idle [pi-empty]=idle)
+# pi-run is idle unless INFO_WORKING=1: a working stand-in shows in every Herdr window's sidebar,
+# the person's too, for as long as the sandbox is up (it only applies when the tab is created).
+declare -A STATUS=([pi]=idle [pi-run]=$([ "${INFO_WORKING:-}" = 1 ] && echo working || echo idle) [pi-dead]=idle [pi-cc]=idle [pi-empty]=idle)
 space=$(ls_ | jq -r '.spaces[] | select(.name == "info-shots") | .id' | head -1)
 if [ -z "$space" ]; then
   space=$("$S" do space.new --name info-shots --folder "$fixture/repo" | jq -r .space)
