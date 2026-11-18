@@ -139,6 +139,9 @@ let
   # classifier, titles, summaries), which all carried it and could each call Fable. An Advisor
   # row is added only for a call made by that session's turn, once per call. No runtime dependencies:
   # its imports are Pi's own packages.
+  # patches/pi-claude-code-advisor-context.patch: a turn with an advisor call makes two requests and
+  # Claude Code sums them, so Pi saw the conversation twice and compacted at half its window. The
+  # turn's totalTokens (what Pi compacts on) is now its last request; the billed components stay summed.
   piClaudeCode = pkgs.runCommand "pi-claude-code-70abb65-patched" { } ''
     cp -r ${
       pkgs.fetchFromGitHub {
@@ -157,6 +160,7 @@ let
     patch -d $out -p1 < ${./patches/pi-claude-code-advisor.patch}
     patch -d $out -p1 < ${./patches/pi-claude-code-relay-failure.patch}
     patch -d $out -p1 < ${./patches/pi-claude-code-advisor-scope.patch}
+    patch -d $out -p1 < ${./patches/pi-claude-code-advisor-context.patch}
   '';
   # nedleeds/pi-compact-tools 0.16.7 with patches/pi-compact-tools-claude-bash.patch: bash
   # titles leave the folding of long commands to syntax-highlighting, and an opened command

@@ -1,0 +1,69 @@
+diff --git a/src/stream.ts b/src/stream.ts
+index 949b648..572c267 100644
+--- a/src/stream.ts
++++ b/src/stream.ts
+@@ -93,6 +93,21 @@ function parseArguments(raw: string, fallback: ToolCall["arguments"]): ToolCall[
+   }
+ }
+ 
++/**
++ * The context of a turn that made several requests (an advisor call between two of them): the
++ * last request's tokens. Claude Code sums the requests into one usage, so the conversation counts
++ * twice and Pi would compact at half its window. undefined: the turn's own sum stands.
++ */
++export function turnContextTokens(usage: Partial<NativeUsage>): number | undefined {
++  const iterations = (usage as { iterations?: unknown }).iterations;
++  if (!Array.isArray(iterations)) return undefined;
++  const requests = iterations.filter((i) => i && typeof i === "object" && (i as { type?: unknown }).type === "message");
++  if (requests.length < 2) return undefined;
++  const last = requests[requests.length - 1] as Record<string, unknown>;
++  const n = (k: string) => (typeof last[k] === "number" ? (last[k] as number) : 0);
++  return n("input_tokens") + n("output_tokens") + n("cache_read_input_tokens") + n("cache_creation_input_tokens");
++}
++
+ function updateUsage(output: AssistantMessage, model: Model<any>, usage: Partial<NativeUsage> | undefined): void {
+   if (!usage) return;
+   if (typeof usage.input_tokens === "number") output.usage.input = usage.input_tokens;
+@@ -103,7 +118,10 @@ function updateUsage(output: AssistantMessage, model: Model<any>, usage: Partial
+   if (typeof oneHour === "number") output.usage.cacheWrite1h = oneHour;
+   const thinking = usage.output_tokens_details?.thinking_tokens;
+   if (typeof thinking === "number") output.usage.reasoning = thinking;
++  // The components stay summed (every request was billed); only the context figure Pi
++  // compacts on is the last request's.
+   output.usage.totalTokens =
++    turnContextTokens(usage) ??
+     output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
+   calculateCost(model, output.usage);
+ }
+diff --git a/tests/context-tokens.test.ts b/tests/context-tokens.test.ts
+new file mode 100644
+index 0000000..44a059f
+--- /dev/null
++++ b/tests/context-tokens.test.ts
+@@ -0,0 +1,26 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { turnContextTokens } from "../src/stream.ts";
++
++// Real usage of msg_011Ch8tJAuojFiYWyPC6f4rw: an advisor call between two requests of one turn.
++const advised = {
++  input_tokens: 4,
++  output_tokens: 302,
++  cache_read_input_tokens: 553830,
++  cache_creation_input_tokens: 3778,
++  iterations: [
++    { type: "message", input_tokens: 2, output_tokens: 100, cache_read_input_tokens: 275543, cache_creation_input_tokens: 2744 },
++    { type: "advisor_message", model: "claude-fable-5-2", input_tokens: 281430, output_tokens: 11616, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
++    { type: "message", input_tokens: 2, output_tokens: 202, cache_read_input_tokens: 278287, cache_creation_input_tokens: 1034 },
++  ],
++};
++
++test("a turn's context is its last request, not the sum of its requests", () => {
++  assert.equal(turnContextTokens(advised), 2 + 202 + 278287 + 1034);
++});
++
++test("without iterations, or with one request, the turn's own sum stands", () => {
++  assert.equal(turnContextTokens({ input_tokens: 4, output_tokens: 302, cache_read_input_tokens: 10, cache_creation_input_tokens: 5 }), undefined);
++  assert.equal(turnContextTokens({ input_tokens: 4, output_tokens: 1, iterations: [{ type: "message", input_tokens: 4, output_tokens: 1 }] }), undefined);
++  assert.equal(turnContextTokens({ input_tokens: 4, output_tokens: 1, iterations: "bad" }), undefined);
++});
