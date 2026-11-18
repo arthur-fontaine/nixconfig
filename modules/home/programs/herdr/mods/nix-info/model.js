@@ -511,7 +511,7 @@ function apply(state, entry) {
         if (wants) state.untitledNested++;
         // An edit or write that kept no arguments and no readable path: its file is unknown.
         const lost = !c.pathKnown && (c.name === "edit" || c.name === "write");
-        return { id: typeof c.id === "string" ? c.id : `${m.toolCallId}/${i + 1}`, name: c.name, kind: t.kind, arg: lost ? "File not recorded" : c.title ?? t.arg, titled: Boolean(c.title), placeholder: lost, full: lost ? "Pi kept neither this call's arguments nor its path" : t.full ?? t.arg, path: lost ? null : infoAbs(t.path, state.cwd), wants,
+        return { id: typeof c.id === "string" ? c.id : `${m.toolCallId}/${i + 1}`, name: c.name, kind: t.kind, arg: lost ? "File name not recorded" : c.title ?? t.arg, titled: Boolean(c.title), placeholder: lost, full: lost ? "Pi kept neither this call's arguments nor its path" : t.full ?? t.arg, path: lost ? null : infoAbs(t.path, state.cwd), wants,
           error: c.error, duration: c.duration, args: infoCapValue(c.args, INFO_NESTED_ARG_CAP),
           result: text.slice(0, INFO_NESTED_ARG_CAP), resultCut: text.length > INFO_NESTED_ARG_CAP || (!c.error && out?.total > lines.length) };
       });
@@ -736,9 +736,9 @@ export function infoOutsideText(n) {
   return n > 0 ? `+${n} outside repo` : null;
 }
 
-// "1 edit with no file name" (Pi kept neither its arguments nor its path), or null.
+// An edit Pi kept neither the arguments nor the path of, as its row says it (round 3c), or null.
 export function infoUnnamedText(n) {
-  return n > 0 ? `${n} edit${n === 1 ? "" : "s"} with no file name` : null;
+  return n > 0 ? `File name not recorded${n > 1 ? ` (${n} edits)` : ""}` : null;
 }
 
 export function infoFilesMeta(n, exact) {

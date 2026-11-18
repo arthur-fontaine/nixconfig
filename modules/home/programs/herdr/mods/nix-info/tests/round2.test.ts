@@ -117,7 +117,7 @@ test("titles and placeholders are flagged for the type rule, nested ones too", (
   const b = rows.find((r) => r.id === "b"), lost = rows.find((r) => r.id === "c/1");
   assert.equal(b.arg, "Runs the tests");
   assert.equal(b.titled, true);
-  assert.equal(lost.arg, "File not recorded");
+  assert.equal(lost.arg, "File name not recorded");
   assert.equal(lost.placeholder, true);
 });
 

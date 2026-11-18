@@ -62,8 +62,9 @@ test("the Calls header: the latest N of the total, in calls, only when the list 
 // ---- 2. the edits with no file name, said once, in the detail --------------------------------
 
 test("the edits with no file name: one muted row in the detail", () => {
-  assert.equal(infoUnnamedText(1), "1 edit with no file name");
-  assert.equal(infoUnnamedText(3), "3 edits with no file name");
+  // Round 3c: the row's own words ("File name not recorded"), the same thing said the same way.
+  assert.equal(infoUnnamedText(1), "File name not recorded");
+  assert.equal(infoUnnamedText(3), "File name not recorded (3 edits)");
   assert.equal(infoUnnamedText(0), null);
   const s = infoNewSession("session");
   infoFeed(s, readFileSync(join(dir, "session.jsonl"), "utf8"));

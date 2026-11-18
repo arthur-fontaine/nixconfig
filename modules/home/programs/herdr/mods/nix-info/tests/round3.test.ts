@@ -96,7 +96,7 @@ test("the edited files row: the count first, + when it is a floor", () => {
   assert.equal(infoEditedText({ files: [1, 2, 3, 4, 5, 6, 7, 8], atLeast: true, unnamed: 1 }), "8 files edited");
   assert.equal(infoEditedText({ files: [1, 2], atLeast: false, unnamed: 0 }), "2 files edited");
   assert.equal(infoEditedText({ files: [1], atLeast: false, unnamed: 0 }), "1 file edited");
-  assert.equal(infoEditedText({ files: [], atLeast: true, unnamed: 2 }), "2 edits with no file name");
+  assert.equal(infoEditedText({ files: [], atLeast: true, unnamed: 2 }), "File name not recorded (2 edits)");
   assert.equal(infoEditedText({ files: [], atLeast: false, unnamed: 0 }), "No files edited yet");
 });
 
