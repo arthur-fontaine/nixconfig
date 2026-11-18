@@ -7,7 +7,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { infoFeed, infoKeep, infoKindCounts, infoCounts, infoListRows, infoNewSession, infoTools, infoListMeta, infoCallsIn, infoUnnamedText, infoEdited } from "../model.js";
+import { infoFeed, infoKeep, infoKindCounts, infoCounts, infoListRows, infoNewSession, infoTools, infoListMeta, infoCallsIn, infoUnnamedText, infoEdited, infoRowTime } from "../model.js";
 
 // The fixture sessions, as info-shots shoots them.
 const here = dirname(fileURLToPath(import.meta.url));
@@ -70,4 +70,14 @@ test("the edits with no file name: one muted row in the detail", () => {
   const e = infoEdited(s, s.cwd);
   assert.equal(e.unnamed, 1);
   assert.equal(e.files.length, 8);
+});
+
+// ---- 8. a row's time column: what the call is doing when it has no time ----------------------
+
+test("a row's time: its duration, \"running\" while it runs, \"stopped\" when cut off", () => {
+  assert.equal(infoRowTime({ duration: 1300 }, "done"), "1.3s");
+  assert.equal(infoRowTime({ duration: 40 }, "done"), "<0.1s");
+  assert.equal(infoRowTime({ duration: null }, "running"), "running");
+  assert.equal(infoRowTime({ duration: null }, "no-result"), "stopped");
+  assert.equal(infoRowTime({ duration: null }, "done"), "");
 });

@@ -885,6 +885,12 @@ export function infoRowDuration(msec) {
   return msec < 100 ? "<0.1s" : infoDuration(msec);
 }
 
+// A row's time column (round 3b): the duration; "running" while the call runs, "stopped" when it
+// was cut off (no "No result").
+export function infoRowTime(c, state) {
+  return state === "running" ? "running" : state === "no-result" ? "stopped" : infoRowDuration(c.duration);
+}
+
 // R2-6: a file as its name and a short folder. In the repo the last folder segment; outside, its
 // anchor (/ or ~) and last segment: "/tmp/…/scratch". tip: the repo-relative or whole path.
 export function infoFolder(path, root, home) {
