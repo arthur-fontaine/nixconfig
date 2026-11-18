@@ -11,12 +11,12 @@ set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 S=$here/sandbox
 STATES=(overview context calls calls-bash calls-failed calls-nomatch collapsed call-script call-step call-edit call-next
-  show-all back files files-outside no-pi no-calls running dead claude-code narrow changes files-panel corners
+  show-all back files files-outside no-pi no-calls running dead claude-code narrow narrow-context changes files-panel corners
   big big-calls big-all big-call)
 # INFO_REAL=<a copy of a real session>: also its overview and calls (real-overview, real-calls),
 # lent to the idle pi-dead stand-in. Never a session in ~/.pi itself: the panel only reads, but
 # a copy keeps the original out of reach.
-[ -n "${INFO_REAL:-}" ] && STATES+=(real-overview real-calls)
+[ -n "${INFO_REAL:-}" ] && STATES+=(real-overview real-calls real-context)
 prefix=${1:?info-shots <prefix> <out dir> [state...]}; out=${2:?out dir}; shift 2
 states=("$@"); [ ${#states[@]} -gt 0 ] || states=("${STATES[@]}")
 root=${HERDR_SANDBOX:-/tmp/herdr-sandbox}; root=$(cd "$root" && pwd -P)
@@ -117,6 +117,7 @@ state_() { # <state> <theme>
     back) act nix-info.detail:calls; act "nix-info.select:$deep_call"; sleep 0.5; act nix-info.back ;;
     big|real-overview) ;;
     real-calls) act nix-info.detail:calls ;;
+    real-context) act nix-info.open:context ;;
     big-calls) act nix-info.detail:calls ;;
     big-all) act nix-info.detail:calls; act nix-info.all ;;
     big-call) act nix-info.detail:calls; act nix-info.all; act "nix-info.select:$big_call" ;;
@@ -129,6 +130,7 @@ state_() { # <state> <theme>
     dead) show pi-dead ;;
     claude-code) show pi-cc; act nix-info.reset ;;
     narrow) "$S" do layout.resize --id panel --px 260 >/dev/null ;;
+    narrow-context) "$S" do layout.resize --id panel --px 260 >/dev/null; act nix-info.open:context ;;
     changes) panel changes ;;
     files-panel) panel files ;;
     # A fill no theme uses, so the corner check sees the content's own corners.
@@ -137,7 +139,7 @@ state_() { # <state> <theme>
   esac
   shoot "$1" "$2"
   case $1 in
-    narrow) "$S" do layout.resize --id panel --px 360 >/dev/null ;;
+    narrow|narrow-context) "$S" do layout.resize --id panel --px 360 >/dev/null ;;
     changes|files-panel) panel info ;;
     corners) act nix-info.fill: ;;
     big*) hc label "$(term_of pi-run)" "pi.session=$gen/running.jsonl" >/dev/null ;;
