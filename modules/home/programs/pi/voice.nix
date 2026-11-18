@@ -10,6 +10,11 @@
 #   Face cache on the first call (`pi-voice fetch` gets them ahead).
 { pkgs, lib }:
 let
+  # nixpkgs' darwin libffi (Apple's fork) aborts on macOS 27 when a closure is made, so numba,
+  # which mlx_whisper imports, killed the daemon at the first call:
+  # https://github.com/NixOS/nixpkgs/issues/541367. Upstream libffi works; drop this once fixed.
+  python = pkgs.python312.override { libffi = pkgs.libffiReal; };
+
   daemonSrc = lib.fileset.toSource {
     root = ./extensions/voice/daemon;
     fileset = lib.fileset.unions [
@@ -43,7 +48,7 @@ let
     text = ''
       export UV_PROJECT_ENVIRONMENT="''${PI_VOICE_VENV:-$HOME/.cache/pi-voice/venv}"
       export UV_PYTHON_DOWNLOADS=never
-      export UV_PYTHON=${pkgs.python312}/bin/python3.12
+      export UV_PYTHON=${python}/bin/python3.12
       export PI_VOICE_AUDIO="''${PI_VOICE_AUDIO:-${audio}/bin/pi-voice-audio}"
       # The project is read-only in the store: uv syncs the venv from its lock and runs it.
       exec uv run --frozen --no-dev --project ${daemonSrc} python -m pi_voice "$@"
