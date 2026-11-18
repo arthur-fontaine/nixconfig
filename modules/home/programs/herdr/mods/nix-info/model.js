@@ -921,6 +921,13 @@ export function infoRowDuration(msec) {
   return msec < 100 ? "<0.1s" : infoDuration(msec);
 }
 
+// The kind whose icon a row shows (round 3c): a script named after its one call and with no steps
+// listed (a running one, before Pi records them) shows that call's icon, as a merged row does.
+const INFO_ICON_KINDS = ["bash", "read", "edit", "write", "ask", "fetch"];
+export function infoRowIcon(c) {
+  return c.kind === "code" && !c.titled && !c.nested?.length && INFO_ICON_KINDS.includes(c.argKind) ? c.argKind : c.kind;
+}
+
 // A row's time column (round 3b): the duration; "running" while the call runs, "stopped" when it
 // was cut off (no "No result").
 export function infoRowTime(c, state) {

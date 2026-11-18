@@ -1,7 +1,7 @@
 // Round 3c (brief-r3c.md), pure.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { infoContext, infoContextChart, infoFeed, infoNewSession, infoKindCounts, infoCounts, infoListRows, infoKeep, infoCallsIn } from "../model.js";
+import { infoContext, infoContextChart, infoFeed, infoNewSession, infoKindCounts, infoCounts, infoListRows, infoKeep, infoCallsIn, infoRowIcon } from "../model.js";
 
 const line = (o) => JSON.stringify(o) + "\n";
 const it = (type, input, read, write, model) => ({ type, input_tokens: input, cache_read_input_tokens: read, cache_creation_input_tokens: write, ...(model ? { model } : {}) });
@@ -80,4 +80,17 @@ test("a script that threw with recorded steps, none failed: a container, the hol
   assert.equal(row.failed, false);
   assert.equal(row.stepFailed, true);
   assert.equal(infoCounts(t).failed, n.failed);
+});
+
+// ---- 2. a row's icon says what it ran ----------------------------------------------------------
+
+test("a script named by its one call, with no steps listed (running), takes that call's icon", () => {
+  assert.equal(infoRowIcon({ kind: "code", argKind: "bash", nested: [], titled: false }), "bash");
+  assert.equal(infoRowIcon({ kind: "code", argKind: "read", nested: null, titled: false }), "read");
+  // Titled, a list of calls, code, or steps listed under it: the script's own icon.
+  assert.equal(infoRowIcon({ kind: "code", argKind: "bash", nested: [], titled: true }), "code");
+  assert.equal(infoRowIcon({ kind: "code", argKind: "calls", nested: [] }), "code");
+  assert.equal(infoRowIcon({ kind: "code", argKind: "code", nested: [] }), "code");
+  assert.equal(infoRowIcon({ kind: "code", argKind: "bash", nested: [{}], titled: false }), "code");
+  assert.equal(infoRowIcon({ kind: "bash" }), "bash");
 });
