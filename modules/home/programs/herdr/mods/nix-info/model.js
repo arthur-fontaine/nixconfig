@@ -677,6 +677,25 @@ export function infoMeterRight(w, key, { now }) {
   return `resets in ${key === "week" && left >= 86400000 && d >= 1 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(left)}`;
 }
 
+// A model id as people say it (round 3): "claude-opus-5-5" → "Opus 5.5", "claude-3-5-sonnet-…"
+// → "Sonnet 3.5"; a date suffix dropped; any other id unchanged.
+export function infoModelName(id) {
+  if (typeof id !== "string") return id ?? null;
+  const cap = (s) => s[0].toUpperCase() + s.slice(1);
+  let m = /^claude-(opus|sonnet|haiku)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
+  if (m) return `${cap(m[1])} ${m[2]}${m[3] ? `.${m[3]}` : ""}`;
+  m = /^claude-(\d+)(?:-(\d{1,2}))?-(opus|sonnet|haiku)(?:-\d{8})?$/.exec(id);
+  if (m) return `${cap(m[3])} ${m[1]}${m[2] ? `.${m[2]}` : ""}`;
+  return id;
+}
+
+// The line under the session name (round 3): the status (never cut), then the model and the
+// thinking level (cut first; "off" omitted).
+export function infoHeadLine(line, model, thinking) {
+  const rest = [infoModelName(model), thinking && thinking !== "off" ? thinking : null].filter(Boolean).join(" · ");
+  return { status: line.text, rest };
+}
+
 // The Context meter's right side: "59k of 1M", "(assumed)" when the model's maximum is unknown.
 export function infoContextRight(used, window, known) {
   return `${infoTokens(used)} of ${infoTokens(window)}${known ? "" : " (assumed)"}`;

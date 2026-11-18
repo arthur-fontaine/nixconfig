@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText, infoContextRight } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText, infoContextRight, infoHeadLine } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -321,11 +321,17 @@ export default class Info extends View {
     // The counts and age as the name's tooltip, not a visible line (the person's call, round 3).
     const tip = s && f.tools ? infoSessionLine(s, now) : null;
     const color = line.tone === "waiting" ? t.blocked : line.tone === "working" ? t.foreground : t.muted;
+    // Round 3, no header on the overview: the model and thinking follow the status, which is never
+    // cut ("Idle 6h · Opus 5.5 · high"); the model part is cut first.
+    const head = infoHeadLine(line, s?.model ?? null, s?.thinking ?? null);
+    // 12 pt above the name, as on its left: the panel's top is the session row, no empty band.
     return v_flex().id("status").px(CHROME.headerX).pt(12).gap(2)
       .child(h_flex().gap(8).items_center().child(this.piMark(t))
         .child(div().id("session-name").flex_1().min_w(0).truncate().font_medium().when(Boolean(tip), (e) => e.tooltip(tip)).text_color(t.foreground).child(s?.name ?? infoParseTitle(this.pane?.title)?.name ?? "Pi"))
         .when(line.tone === "working", (e) => e.child(this.spinner(t, 13))))
-      .child(div().pl(22).min_w(0).truncate().text_size(12).text_color(color).child(line.text))
+      .child(h_flex().pl(22).min_w(0).text_size(12)
+        .child(div().flex_none().text_color(color).child(head.status))
+        .when(Boolean(head.rest), (e) => e.child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(` · ${head.rest}`))))
       // The running command, the line's essential part, on a line of its own (round 3).
       .when(Boolean(line.call), (e) => e.child(div().pl(22).min_w(0).truncate().font_family(MONO()).text_size(12).text_color(t.foreground).child(infoCommandText(line.call))));
   }
@@ -800,7 +806,7 @@ export default class Info extends View {
   overview(t, f, now) {
     // D11: what the panel needs, said plainly; the limits are the account's, so they stay.
     if (!this.pane) {
-      return [v_flex().px(CHROME.headerX).pt(14).gap(4)
+      return [v_flex().px(CHROME.headerX).pt(12).gap(4)
         .child(div().font_medium().text_color(t.foreground).child("This tab isn't running Pi"))
         .child(h_flex().flex_wrap().text_size(12).text_color(t.muted)
           .child(div().child("Start "))
@@ -828,19 +834,17 @@ export default class Info extends View {
     if (this.tonesOf?.chrome !== base.chrome || this.tonesOf?.foreground !== base.foreground) this.tonesOf = { chrome: base.chrome, foreground: base.foreground, tones: infoTones(base) };
     const tones = this.tonesOf.tones, t = { ...base, tones, chevron: tones.chevron }, now = Date.now();
     const f = this.figures(now);
-    // The header names the model, not the session again (D8).
-    const s = this.session;
-    const meta = s?.model ? [s.model.replace(/^claude-/, ""), s.thinking ? `thinking ${s.thinking}` : null].filter(Boolean).join(" · ") : null;
     const KIND = { code: "Script", bash: "Bash", read: "Read", edit: "Edit", write: "Write", ask: "Question", fetch: "Fetch", agent: "Agent" };
     const call = this.detail === "call" ? this.selected(f) : null;
     const title = this.detail === "call" ? KIND[call?.kind] ?? call?.name ?? "Call" : LABELS[this.detail] ?? "Info";
     const actions = this.detail === "calls" ? this.showAllAction(t, f) : this.detail === "call" ? this.callActions(t, f)
       : this.detail === "files" ? [chromeTextButton(UI, t, "show-changes", "Show in Changes", () => run("layout.select", { stack: "panel-body", child: "changes" }), "Line counts, staging and commits")] : [];
-    const header = chromeHeader(UI, t, { id: "info-head", title, meta: this.detail ? null : meta, back: this.detail ? (cx) => this.back(cx) : null, actions });
+    // Round 3: only the detail views have a header ("‹ Calls"); the overview starts with the session.
+    const header = this.detail ? chromeHeader(UI, t, { id: "info-head", title, back: (cx) => this.back(cx), actions }) : null;
     // fill: the corner check's (nix-info.fill:<color>), so the content's own corners show.
     const root = v_flex().id("info").track_focus(this.handle).size_full().min_h(0).rounded(panelRadius()).overflow_hidden().bg(this.fill ?? t.chrome).text_color(t.foreground).text_size(CHROME.text)
       .on_key_down((e, cx) => this.key(e, cx))
-      .child(header);
+      .when(Boolean(header), (e) => e.child(header));
     if (this.detail === "calls") return root.child(this.callsView(t, f));
     if (this.detail === "call") return root.child(v_flex().id("info-call").flex_1().min_h(0).overflow_y_scrollbar().pb(12).children(this.callView(t, f, now)));
     if (this.detail === "files") return root.child(v_flex().id("info-files").flex_1().min_h(0).overflow_y_scrollbar().px(CHROME.insetX).py(CHROME.insetY).children(this.filesView(t)));

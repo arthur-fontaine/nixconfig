@@ -2,7 +2,7 @@
 // expansion's step chart, pure.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { infoContextRight, infoCommandText, infoCallMeta, infoContextChart, infoContextLines, infoEditedText, infoFeed, infoFilesMeta, infoMeterRight, infoNewSession, infoSessionLine } from "../model.js";
+import { infoModelName, infoHeadLine, infoContextRight, infoCommandText, infoCallMeta, infoContextChart, infoContextLines, infoEditedText, infoFeed, infoFilesMeta, infoMeterRight, infoNewSession, infoSessionLine } from "../model.js";
 
 const MIN = 60000;
 const session = (o) => ({ ...infoNewSession("f"), ...o });
@@ -145,4 +145,23 @@ test("a command as a row shows it: the program first, not the folder it runs in 
   // An env assignment first: left alone, never read as a path to a program.
   assert.equal(infoCommandText("INFO_REAL=/tmp/x/nested.jsonl scripts/info-shots a"), "INFO_REAL=/tmp/x/nested.jsonl scripts/info-shots a");
   assert.equal(infoCommandText("cd /tmp && FOO=a/b ./run"), "FOO=a/b ./run");
+});
+
+// ---- the overview's top: no header, "π name", then "<status> · <model> · <thinking>" -------
+
+test("a model id as a readable name; unknown ids unchanged", () => {
+  assert.equal(infoModelName("claude-opus-5-5"), "Opus 5.5");
+  assert.equal(infoModelName("claude-sonnet-4-6"), "Sonnet 4.6");
+  assert.equal(infoModelName("claude-haiku-4-5-20251001"), "Haiku 4.5");
+  assert.equal(infoModelName("claude-opus-4-20250514"), "Opus 4");
+  assert.equal(infoModelName("claude-3-5-sonnet-20241022"), "Sonnet 3.5");
+  assert.equal(infoModelName("gpt-5.1-codex"), "gpt-5.1-codex");
+  assert.equal(infoModelName(null), null);
+});
+
+test("the line under the name: the status, then the model and thinking (off omitted)", () => {
+  assert.deepEqual(infoHeadLine({ tone: "idle", text: "Idle 6h" }, "claude-opus-5-5", "high"), { status: "Idle 6h", rest: "Opus 5.5 · high" });
+  assert.deepEqual(infoHeadLine({ tone: "working", text: "Working 1m 09s", call: "x" }, "claude-opus-5-5", "off"), { status: "Working 1m 09s", rest: "Opus 5.5" });
+  assert.deepEqual(infoHeadLine({ tone: "idle", text: "No calls yet" }, null, null), { status: "No calls yet", rest: "" });
+  assert.deepEqual(infoHeadLine({ tone: "idle", text: "Idle 2m" }, null, "high"), { status: "Idle 2m", rest: "high" });
 });
