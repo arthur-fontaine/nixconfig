@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -326,7 +326,7 @@ export default class Info extends View {
         .when(line.tone === "working", (e) => e.child(this.spinner(t, 13))))
       .child(div().pl(22).min_w(0).truncate().text_size(12).text_color(color).child(line.text))
       // The running command, the line's essential part, on a line of its own (round 3).
-      .when(Boolean(line.call), (e) => e.child(div().pl(22).min_w(0).truncate().font_family(MONO()).text_size(12).text_color(t.foreground).child(line.call)))
+      .when(Boolean(line.call), (e) => e.child(div().pl(22).min_w(0).truncate().font_family(MONO()).text_size(12).text_color(t.foreground).child(infoCommandText(line.call))))
       // Round 3: the counts and age, visible rather than only in the tooltip (which keeps them, for
       // a narrow panel where this line is cut).
       .when(Boolean(tip), (e) => e.child(div().pl(22).min_w(0).truncate().text_size(12).text_color(t.muted).child(infoSessionLine(s, now))));
@@ -461,7 +461,7 @@ export default class Info extends View {
       : unknown && !c.titled ? h_flex().flex_1().min_w(0).gap(6).items_baseline()
         .child(div().flex_none().text_color(fg).child(c.name))
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(c.arg ?? ""))
-      : command ? div().flex_1().min_w(0).truncate().font_family(MONO()).text_size(12.5).text_color(fg).child(c.arg || c.name)
+      : command ? div().flex_1().min_w(0).truncate().font_family(MONO()).text_size(12.5).text_color(fg).child(infoCommandText(c.arg) || c.name)
       : sans(fg, c.arg || c.name);
     const KIND = { code: "Script", bash: "Bash", read: "Read", edit: "Edit", write: "Write", ask: "Question", fetch: "Fetch", agent: "Agent" };
     return chromeRow(UI, t, `call-${c.id}`, { on, onClick: inList ? null : onClick, clickable: inList || Boolean(onClick) })

@@ -658,6 +658,16 @@ export function infoSessionLine(state, now) {
   return state.started ? `${counts} · ${infoAge(now - state.started)}` : counts;
 }
 
+// A command as a row or the status line shows it (round 3): without a leading "cd <dir> &&" (or ";"),
+// and a program run by its path as its name, so the program is never what the cut takes. The
+// tooltip keeps the whole command.
+export function infoCommandText(cmd) {
+  if (typeof cmd !== "string") return cmd;
+  let s = cmd.trimStart();
+  for (let m; (m = /^cd\s+\S+\s*(?:&&|;)\s*(?=\S)/.exec(s));) s = s.slice(m[0].length);
+  return s.replace(/^(?:\.{0,2}|~)?\/?(?:[^\s/]+\/)+([^\s/]+)(?=\s|$)/, "$1");
+}
+
 // A limit meter's right side (round 3): the reset time is essential (never cut), pace and
 // staleness secondary (cut first); "resets in" goes to the tooltip.
 export function infoMeterRight(w, key, { now, staleFor = null } = {}) {

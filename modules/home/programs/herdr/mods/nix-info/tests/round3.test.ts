@@ -2,7 +2,7 @@
 // expansion's step chart, pure.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { infoCallMeta, infoContextChart, infoContextLines, infoEditedText, infoFeed, infoFilesMeta, infoMeterRight, infoNewSession, infoSessionLine } from "../model.js";
+import { infoCommandText, infoCallMeta, infoContextChart, infoContextLines, infoEditedText, infoFeed, infoFilesMeta, infoMeterRight, infoNewSession, infoSessionLine } from "../model.js";
 
 const MIN = 60000;
 const session = (o) => ({ ...infoNewSession("f"), ...o });
@@ -127,4 +127,16 @@ test("the Context expansion's lines: figures first", () => {
   assert.deepEqual(infoContextLines({ session: null, last: null, read: 0, written: 0 }, { compactions: 3, lastCompaction: null }, now),
     ["— cache hits · last —", "0 cache read · 0 written", "Compacted 3 times"]);
   assert.equal(infoContextLines({ session: 1, last: 1, read: 1, written: 1 }, { compactions: 0 }, now)[2], "Not compacted yet");
+});
+
+test("a command as a row shows it: the program first, not the folder it runs in or its path", () => {
+  assert.equal(infoCommandText("cd /Users/a/repo && node --test tests"), "node --test tests");
+  assert.equal(infoCommandText("cd modules/home; cd x && git status -sb"), "git status -sb");
+  assert.equal(infoCommandText("modules/home/programs/herdr/scripts/sandbox up"), "sandbox up");
+  assert.equal(infoCommandText("./scripts/info-shots after /tmp/x"), "info-shots after /tmp/x");
+  assert.equal(infoCommandText("cd /tmp && ~/bin/tool --flag"), "tool --flag");
+  // A path as an argument stays; a lone cd stays as it is.
+  assert.equal(infoCommandText("cat /etc/hosts"), "cat /etc/hosts");
+  assert.equal(infoCommandText("cd /tmp"), "cd /tmp");
+  assert.equal(infoCommandText(null), null);
 });
