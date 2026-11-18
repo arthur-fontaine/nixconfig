@@ -109,10 +109,14 @@ test("a call's meta: its time first, then when it ran, each figure with its word
   const at = (s) => Date.parse(`2026-11-18T00:27:${s}`);
   assert.equal(infoCallMeta({ duration: 3100, startedExact: at("42"), finished: at("45"), level: 0 }, "done"), "Took 3.1s, from 00:27:42 to 00:27:45");
   assert.equal(infoCallMeta({ duration: 3100, startedExact: null, finished: at("45"), level: 0 }, "done"), "Took 3.1s, finished at 00:27:45");
+  // Round 3b: start and end in the same second: one time.
+  assert.equal(infoCallMeta({ duration: 40, startedExact: at("42.100"), finished: at("42.140"), level: 0 }, "done"), "Took <0.1s at 00:27:42");
+  // A step has no clock of its own: the script's end, said as the script's.
+  assert.equal(infoCallMeta({ duration: 100, startedExact: null, finished: null, level: 1 }, "done", at("45")), "Took 0.1s, in a script that ended at 00:27:45");
   assert.equal(infoCallMeta({ duration: 40, startedExact: null, finished: null, level: 1 }, "done"), "Took <0.1s");
   assert.equal(infoCallMeta({ duration: null, startedExact: null, finished: null, level: 1 }, "done"), "No timing");
   assert.equal(infoCallMeta({}, "running"), "Running");
-  assert.equal(infoCallMeta({}, "no-result"), "No result");
+  assert.equal(infoCallMeta({}, "no-result"), "Stopped");
 });
 
 test("the Context expansion's lines: figures first", () => {

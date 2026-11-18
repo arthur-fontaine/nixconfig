@@ -659,7 +659,7 @@ export default class Info extends View {
     const c = this.selected(f);
     if (!c) return [div().px(CHROME.headerX).py(12).text_size(12).text_color(t.dim).child("This call isn't in the session any more.")];
     const state = infoCallState(c, this.pane?.status === "working");
-    const meta = infoCallMeta(c, state);
+    const meta = infoCallMeta(c, state, c.level === 1 ? f.byId?.get(c.parent)?.finished ?? null : null);
     const untitled = c.untitled && c.nested?.length ? infoStepsLabel(c.steps ?? c.nested) : null;
     const title = c.path ? this.rel(c.path) : untitled ?? c.arg ?? c.name;
     const args = c.args ?? {};

@@ -721,14 +721,18 @@ export function infoFilesMeta(n, exact) {
 }
 
 // A call's meta under its title: its time, then its clock range when exact.
-export function infoCallMeta(c, state) {
+// Round 3b: one time when it started and ended in the same second; a step (no clock of its own)
+// says when its script ended, as the script's; a call cut off: "Stopped".
+export function infoCallMeta(c, state, scriptEnd = null) {
   if (state === "running") return "Running";
-  if (state === "no-result") return "No result";
+  if (state === "no-result") return "Stopped";
   const d = infoRowDuration(c.duration);
   if (!d) return "No timing";
-  const fin = c.level === 0 && c.finished ? infoClock(c.finished, false) : null;
-  const when = c.startedExact && fin ? `from ${infoClock(c.startedExact, false)} to ${fin}` : fin ? `finished at ${fin}` : null;
-  return when ? `Took ${d}, ${when}` : `Took ${d}`;
+  const fin = c.level === 0 && c.finished ? c.finished : null, clock = (t) => infoClock(t, false);
+  if (c.startedExact && fin) return Math.floor(c.startedExact / 1000) === Math.floor(fin / 1000) ? `Took ${d} at ${clock(fin)}` : `Took ${d}, from ${clock(c.startedExact)} to ${clock(fin)}`;
+  if (fin) return `Took ${d}, finished at ${clock(fin)}`;
+  if (c.level === 1 && scriptEnd) return `Took ${d}, in a script that ended at ${clock(scriptEnd)}`;
+  return `Took ${d}`;
 }
 
 // The Context expansion's text lines, figures first.
