@@ -17,7 +17,7 @@ STATES=(overview context calls calls-bash calls-failed calls-nomatch collapsed c
 # INFO_REAL=<a copy of a real session>: also its overview and calls (real-overview, real-calls),
 # lent to the idle pi-dead stand-in. Never a session in ~/.pi itself: the panel only reads, but
 # a copy keeps the original out of reach.
-[ -n "${INFO_REAL:-}" ] && STATES+=(real-overview real-calls real-context narrow-real-overview narrow-real-calls narrow-real-context)
+[ -n "${INFO_REAL:-}" ] && STATES+=(real-overview real-calls real-context real-failed narrow-real-overview narrow-real-calls narrow-real-context)
 prefix=${1:?info-shots <prefix> <out dir> [state...]}; out=${2:?out dir}; shift 2
 states=("$@"); [ ${#states[@]} -gt 0 ] || states=("${STATES[@]}")
 root=${HERDR_SANDBOX:-/tmp/herdr-sandbox}; root=$(cd "$root" && pwd -P)
@@ -124,6 +124,7 @@ state_() { # <state> <theme>
     big|real-overview) ;;
     real-calls) act nix-info.detail:calls ;;
     real-context) act nix-info.open:context ;;
+    real-failed) act nix-info.kind:failed ;;
     big-calls) act nix-info.detail:calls ;;
     big-all) act nix-info.detail:calls; act nix-info.all ;;
     big-call) act nix-info.detail:calls; act nix-info.all; act "nix-info.select:$big_call" ;;
