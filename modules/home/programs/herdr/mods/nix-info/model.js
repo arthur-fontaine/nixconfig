@@ -648,7 +648,7 @@ export function infoContextChart(state, window = 1_000_000, { known = true, max 
   let last = -Infinity;
   const ticks = at.map((x) => { const label = x - last >= LABEL_GAP; if (label) last = x; return { at: x, label }; });
   const caption = n === 1 ? "1 request" : n < state.requests.length ? `Last ${n} requests` : `All ${n} requests`;
-  return { bars, ticks, caption, ceiling: `${infoTokens(window)} window${known ? "" : ", assumed"}` };
+  return { bars, ticks, caption, ceiling: `${infoTokens(window)} max${known ? "" : ", assumed"}` };
 }
 
 // "3 prompts · 76 replies · started 52m ago": the session name's tooltip (round 3).
@@ -706,7 +706,7 @@ export function infoContextLines(cache, ctx, now) {
   const p = (r) => (r === null || r === undefined ? "—" : `${Math.round(r * 100)}%`);
   const n = ctx.compactions ?? 0;
   const comp = n ? `Compacted ${n === 1 ? "once" : `${n} times`}${ctx.lastCompaction ? ` · ${infoAge(now - ctx.lastCompaction)} ago` : ""}` : "Not compacted yet";
-  return [`${p(cache.session)} cache hits · last ${p(cache.last)}`, `${infoTokens(cache.read)} cache read · ${infoTokens(cache.written)} written`, comp];
+  return [`${p(cache.session)} reused from cache · last ${p(cache.last)}`, `${infoTokens(cache.read)} reused · ${infoTokens(cache.written)} newly cached`, comp];
 }
 
 const hit = (r) => { const all = r.input + r.cacheRead + r.cacheWrite; return all ? r.cacheRead / all : null; };
@@ -825,7 +825,7 @@ export function infoNum(n) {
 // The Calls meta (R2-2), in rows: "200 of 216 rows", "3 rows · 1 for context".
 // Round 3: "200/218" when cut; the context rows aren't counted (they're drawn muted).
 export function infoListMeta(shown, total) {
-  return shown === total ? `${infoNum(total)} row${total === 1 ? "" : "s"}` : `${infoNum(shown)}/${infoNum(total)}`;
+  return shown === total ? "" : `${infoNum(shown)}/${infoNum(total)}`;
 }
 
 export function infoShowAll(total) {
@@ -939,7 +939,7 @@ export function infoMeterTone(ratio) {
 // "12 pts ahead of pace", only when ahead by a point or more.
 export function infoPaceText(ahead) {
   const pts = Math.round((ahead ?? 0) * 100);
-  return ahead !== null && ahead !== undefined && pts >= 1 ? `${pts} pts ahead` : null;
+  return ahead !== null && ahead !== undefined && pts >= 1 ? `${pts}% ahead` : null;
 }
 
 // The files the session edited (O3): those under `root` (rel, name, dir), the others apart, and

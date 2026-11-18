@@ -131,7 +131,7 @@ test("the status line comes from Herdr's status; the session only names the runn
 
 test("meters: neutral, warning at 80 %, error at 95 %; pace text only when ahead (D2)", () => {
   assert.deepEqual([0.2, 0.79, 0.8, 0.949, 0.95, 1].map(infoMeterTone), ["normal", "normal", "warning", "warning", "error", "error"]);
-  assert.equal(infoPaceText(0.12), "12 pts ahead");
+  assert.equal(infoPaceText(0.12), "12% ahead");
   assert.equal(infoPaceText(0.004), null);
   assert.equal(infoPaceText(-0.3), null);
   assert.equal(infoPaceText(null), null);

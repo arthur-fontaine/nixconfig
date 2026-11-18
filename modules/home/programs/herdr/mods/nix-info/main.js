@@ -385,8 +385,8 @@ export default class Info extends View {
     if (s && f.started) {
       const c = f.context, cache = f.cache;
       const known = Boolean(this.windows[s.model]);
-      out.push(this.meter(t, "meter-context", { label: "Context", ratio: c.ratio, right: { essential: `${infoTokens(c.used)} / ${infoTokens(c.window)}`, secondary: known ? "" : "window assumed" },
-        tip: known ? `${infoTokens(c.window)} window for ${s.model}` : `Window size unknown for ${s.model}: 1M assumed`,
+      out.push(this.meter(t, "meter-context", { label: "Context", ratio: c.ratio, right: { essential: `${infoTokens(c.used)} / ${infoTokens(c.window)}`, secondary: known ? "" : "max assumed" },
+        tip: known ? `Holds up to ${infoTokens(c.window)} tokens (${s.model})` : `Size unknown for ${s.model}: 1M assumed`,
         expand: { open: this.context, onClick: (_e, cx) => { this.context = !this.context; cx.notify(); } } }));
       if (this.context) {
         out.push(v_flex().id("context-more").pl(CHROME.rowX).pb(4).gap(2).text_size(12).text_color(t.muted)
@@ -556,7 +556,7 @@ export default class Info extends View {
     const n = `${e.files.length} file${e.files.length === 1 ? "" : "s"}`;
     // Round 3: no "some edits kept no file name" line: the overview's "8+" says it.
     const out = [this.section(t, "In this repo", infoFilesMeta(e.files.length, Boolean(git?.exact))), ...e.files.map((f) => row(f))];
-    if (git && !git.exact) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("No start commit: status letters only."));
+    if (git && !git.exact) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("No line counts: the session's first commit is unknown."));
     if (e.outside.length) {
       const open = this.outside;
       out.push(div().pt(8).child(chromeRow(UI, t, "outside", { onClick: (_e, cx) => this.command(open ? "close:outside" : "open:outside", cx) })
@@ -627,7 +627,7 @@ export default class Info extends View {
 
   showAllAction(t, f) {
     const rows = this.listRows(f);
-    return rows.length > SHOWN && !this.all ? [chromeTextButton(UI, t, "show-all", infoShowAll(rows.length), (_e, cx) => this.command("all", cx), "The list shows the latest 200 rows")] : [];
+    return rows.length > SHOWN && !this.all ? [chromeTextButton(UI, t, "show-all", infoShowAll(rows.length), (_e, cx) => this.command("all", cx), "Only the latest 200 are listed")] : [];
   }
 
   // ---- a call, pushed over its list (D7) ---------------------------------------------------

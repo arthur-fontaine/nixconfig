@@ -34,7 +34,7 @@ test("one bar per request, to the window, the caption counting what is plotted",
   const c = infoContextChart(session({ requests: [req(100_000), req(250_000)] }), 1e6);
   assert.deepEqual(c.bars, [{ ratio: 0.1, over: false }, { ratio: 0.25, over: false }]);
   assert.equal(c.caption, "All 2 requests");
-  assert.equal(c.ceiling, "1M window");
+  assert.equal(c.ceiling, "1M max");
   assert.equal(infoContextChart(session({ requests: [req(1000)] }), 1e6).caption, "1 request");
 });
 
@@ -52,8 +52,8 @@ test("a request past the window is drawn at the ceiling, flagged", () => {
 });
 
 test("an assumed window says so", () => {
-  assert.equal(infoContextChart(session({ requests: [req(1000)] }), 1e6, { known: false }).ceiling, "1M window, assumed");
-  assert.equal(infoContextChart(session({ requests: [req(1000)] }), 200_000).ceiling, "200k window");
+  assert.equal(infoContextChart(session({ requests: [req(1000)] }), 1e6, { known: false }).ceiling, "1M max, assumed");
+  assert.equal(infoContextChart(session({ requests: [req(1000)] }), 200_000).ceiling, "200k max");
 });
 
 test("a compaction's tick sits on the boundary before the first request after it", () => {
@@ -89,11 +89,11 @@ test("a limit's right side: the reset time is the essential part, pace and stale
   const now = Date.parse("2026-11-18T12:00:00Z");
   const H = 3600_000;
   assert.deepEqual(infoMeterRight({ resetsAt: now + 4 * H + 43 * MIN, ahead: 0.1 }, "five", { now }),
-    { essential: "4h 43m", secondary: "10 pts ahead" });
+    { essential: "4h 43m", secondary: "10% ahead" });
   assert.deepEqual(infoMeterRight({ resetsAt: now + 3 * 24 * H, ahead: -0.2 }, "week", { now }),
     { essential: "3 days", secondary: "" });
   assert.deepEqual(infoMeterRight({ resetsAt: now + 2 * H, ahead: 0.05 }, "five", { now, staleFor: 12 * MIN }),
-    { essential: "2h", secondary: "5 pts ahead · as of 12m ago" });
+    { essential: "2h", secondary: "5% ahead · as of 12m ago" });
   assert.deepEqual(infoMeterRight({ resetsAt: null, ahead: null }, "five", { now }), { essential: "", secondary: "" });
 });
 
@@ -123,9 +123,9 @@ test("a call's meta: its time first, then when it ran", () => {
 test("the Context expansion's lines: figures first", () => {
   const now = Date.parse("2026-11-18T12:00:00Z");
   assert.deepEqual(infoContextLines({ session: 0.92, last: 0.9, read: 3_200_000, written: 278_000 }, { compactions: 1, lastCompaction: now - 45 * MIN }, now),
-    ["92% cache hits · last 90%", "3.2M cache read · 278k written", "Compacted once · 45m ago"]);
+    ["92% reused from cache · last 90%", "3.2M reused · 278k newly cached", "Compacted once · 45m ago"]);
   assert.deepEqual(infoContextLines({ session: null, last: null, read: 0, written: 0 }, { compactions: 3, lastCompaction: null }, now),
-    ["— cache hits · last —", "0 cache read · 0 written", "Compacted 3 times"]);
+    ["— reused from cache · last —", "0 reused · 0 newly cached", "Compacted 3 times"]);
   assert.equal(infoContextLines({ session: 1, last: 1, read: 1, written: 1 }, { compactions: 0 }, now)[2], "Not compacted yet");
 });
 
