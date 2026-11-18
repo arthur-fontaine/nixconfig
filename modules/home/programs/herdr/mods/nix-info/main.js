@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText, infoContextRight, infoHeadLine } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText, infoContextRight, infoHeadLine, infoCallsIn } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -482,7 +482,7 @@ export default class Info extends View {
       .when(!more, (e) => e.child(svg(ICON(TOOL_ICON[c.kind] ?? "box")).size(14).flex_none().text_color(t.dim)))
       .child(text)
       .when(Boolean(c.failed), (e) => e.child(div().size(6).flex_none().rounded(3).bg(t.blocked)))
-      .when(!c.failed && Boolean(c.stepFailed), (e) => e.child(div().id(`hollow-${c.id}`).size(6).flex_none().rounded(3).border_1().border_color(t.blocked).tooltip("Went on after a failed step")))
+      .when(!c.failed && Boolean(c.stepFailed), (e) => e.child(div().id(`hollow-${c.id}`).size(6).flex_none().rounded(3).border_1().border_color(t.blocked).tooltip(c.threw === true && !c.merged ? "The script failed" : c.merged ? "The script failed; its step didn't" : "Went on after a failed step")))
       .when(!more, (e) => e.child(div().flex_none().min_w(28).text_right().text_size(12).text_color(t.muted)
         .when(state === "done" && (c.duration === null || c.duration === undefined), (x) => x.id(`time-${c.id}`).tooltip("No timing recorded"))
         .child(state === "running" ? this.spinner(t) : state === "no-result" ? "No result" : infoRowDuration(c.duration))))
@@ -604,7 +604,7 @@ export default class Info extends View {
 
   callsView(t, f) {
     const n = f.kinds ?? infoKindCounts([]);
-    const CHIPS = [["all", "All"], ["bash", "bash"], ["read", "read"], ["edit", "edit"], ["ask", "ask"], ["failed", "failed"]];
+    const CHIPS = [["all", "All"], ["bash", "bash"], ["read", "read"], ["edit", "edit"], ["ask", "ask"], ["other", "other"], ["failed", "failed"]];
     const chip = ([key, label]) => {
       const on = this.kind === key;
       return div().id(`kind-${key}`).h(24).px(8).gap(5).flex_none().flex().items_center().rounded(CHROME.radius).cursor_pointer().text_size(12)
@@ -627,7 +627,7 @@ export default class Info extends View {
         .child(chromeTextButton(UI, t, "show-all-calls", "Show all calls", (_e, cx) => this.command("kind:all", cx)));
     return v_flex().flex_1().min_h(0).px(CHROME.insetX).py(CHROME.insetY)
       .child(h_flex().flex_none().flex_wrap().gap(2).pb(4).children(CHIPS.filter(([k]) => k === "all" || k === this.kind || n[k] > 0).map(chip)))
-      .child(this.section(t, this.kind === "all" ? "All calls" : label, infoListMeta(shown.length, rows.length)))
+      .child(this.section(t, this.kind === "all" ? "All calls" : label, infoListMeta(infoCallsIn(shown, this.kind), n[this.kind] ?? 0, shown.length < rows.length)))
       .child(list);
   }
 
@@ -661,8 +661,9 @@ export default class Info extends View {
     const out = [
       div().px(CHROME.headerX).pt(12).font_medium().text_color(untitled ? t.muted : t.foreground).when(Boolean(c.path), (e) => e.tooltip(c.path)).child(title),
       h_flex().px(CHROME.headerX).pt(2).gap(8).text_size(12).text_color(t.muted).child(meta)
-        .when(Boolean(c.failed), (e) => e.child(div().text_color(t.blocked).child("Failed")))
-        .when(!c.failed && Boolean(c.stepFailed), (e) => e.child(div().text_color(t.blocked).child("Went on after a failed step"))),
+        // Round 3b: a script that threw says "Failed" here; its row has the hollow dot (a container).
+        .when(Boolean(c.failed) || c.threw === true, (e) => e.child(div().text_color(t.blocked).child("Failed")))
+        .when(!c.failed && c.threw !== true && Boolean(c.stepFailed), (e) => e.child(div().text_color(t.blocked).child("Went on after a failed step"))),
     ];
     if (c.kind === "code" && typeof args.code === "string") out.push(this.label(t, "Code"), this.tinted(t, args.code, "js"));
     if (c.kind === "bash" && typeof args.command === "string") out.push(this.label(t, "Command"), this.tinted(t, args.command, "sh"));
@@ -693,9 +694,10 @@ export default class Info extends View {
     if (state === "done") {
       const r = infoResultLines(c.result ?? "");
       const extra = r.more ? `+${r.more} more lines` : c.resultCut ? "cut at 64 KB" : r.lines.length > 1 ? `${r.lines.length} lines` : "";
-      out.push(this.label(t, c.failed ? "Error" : "Result", extra),
+      const failed = c.failed || c.threw === true;
+      out.push(this.label(t, failed ? "Error" : "Result", extra),
         (c.result ?? "") === "" ? div().px(CHROME.headerX).py(4).text_size(12).text_color(t.dim).child("Nothing")
-          : this.code(t, r.lines.map((l) => this.line(t, { bare: true, text: l, color: c.failed ? t.blocked : t.foreground }))));
+          : this.code(t, r.lines.map((l) => this.line(t, { bare: true, text: l, color: failed ? t.blocked : t.foreground }))));
     }
     return out;
   }

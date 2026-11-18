@@ -37,21 +37,23 @@ const SESSION = assistant(at("00:02"), [
   + result(at("00:07"), "e", { durationMs: 30 })
   + result(at("00:08"), "w", { durationMs: 20 });
 
-test("counts: every call, nested included; failed = calls that failed themselves (D6, F5)", () => {
+test("counts: tool calls, nested included, scripts not (containers); failed = the tool calls that failed (round 3b)", () => {
   const tools = infoTools(feed(SESSION));
-  // 6 top-level + 5 nested.
-  // Failed: s1/2, s2 (it threw) and s2/2 (its failing step: two failures), b. s1 went on: not failed.
-  assert.deepEqual(infoCounts(tools), { calls: 11, failed: 4 });
-  const s1 = infoRows(tools).find((r) => r.id === "s1");
+  // 6 top-level (2 of them scripts) + 5 nested: 9 tool calls.
+  // Failed: s1/2, s2/2 and b. A script never counts: s2 threw, s1 went on; both get the hollow dot.
+  assert.deepEqual(infoCounts(tools), { calls: 9, failed: 3 });
+  const s1 = infoRows(tools).find((r) => r.id === "s1"), s2 = infoRows(tools).find((r) => r.id === "s2");
   assert.equal(s1.failed, false);
   assert.equal(s1.stepFailed, true); // the hollow dot
-  assert.equal(infoRows(tools).find((r) => r.id === "s2").failed, true);
+  assert.equal(s2.failed, false);
+  assert.equal(s2.stepFailed, true);
+  assert.equal(s2.threw, true); // the call view still says "Failed"
   assert.equal(infoRows(tools).find((r) => r.id === "s1/2").failed, true);
 });
 
 test("kind chips count matching calls, nested included; 'failed' filters too", () => {
   const tools = infoTools(feed(SESSION));
-  assert.deepEqual(infoKindCounts(tools), { all: 11, bash: 4, read: 1, edit: 4, ask: 0, failed: 4 });
+  assert.deepEqual(infoKindCounts(tools), { all: 9, bash: 4, read: 1, edit: 4, ask: 0, other: 0, failed: 3 });
   const kept = tools.map((c) => infoKeep(c, "failed")).filter(Boolean);
   assert.deepEqual(infoRows(kept).map((r) => r.id), ["b", "s2", "s2/2", "s1", "s1/2"]);
 });
@@ -88,7 +90,7 @@ test("Claude Code's names: kinds, filters and edited files (F2)", () => {
   ]) + ["b", "q", "w", "e"].map((id, i) => result(at(`00:0${i + 3}`), id)).join(""));
   const tools = infoTools(s);
   assert.deepEqual(tools.map((c) => [c.kind, c.arg]).reverse(), [["bash", "ls"], ["ask", "Keep it?"], ["write", "a.js"], ["edit", "b.js"]]);
-  assert.deepEqual(infoKindCounts(tools), { all: 4, bash: 1, read: 0, edit: 2, ask: 1, failed: 0 });
+  assert.deepEqual(infoKindCounts(tools), { all: 4, bash: 1, read: 0, edit: 2, ask: 1, other: 0, failed: 0 });
   assert.deepEqual(infoEdited(s, "/repo").files.map((f) => f.rel), ["a.js", "b.js"]);
 });
 

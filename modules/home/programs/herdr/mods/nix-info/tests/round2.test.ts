@@ -33,13 +33,15 @@ test("titled, running and many-step scripts keep their steps under them", () => 
   assert.equal(infoListRows([script({ nested: [step(), step({ id: "s/2" })] })], ["s"]).length, 1);
 });
 
-test("a merged row's dot is the more severe of script and step", () => {
-  const threw = infoMergedRow(script({ failed: true, nested: [step({ error: true })] }));
+test("a merged row's dot is its step's: filled when the step failed, hollow when only the script threw (round 3b)", () => {
+  const threw = infoMergedRow(script({ threw: true, nested: [step({ error: true })] }));
   assert.equal(threw.failed, true);
   assert.equal(threw.tip, "Script and its step failed");
   const went = infoMergedRow(script({ stepFailed: true, nested: [step({ error: true })] }));
-  assert.equal(went.failed, false);
-  assert.equal(went.stepFailed, true);
+  assert.equal(went.failed, true);
+  const alone = infoMergedRow(script({ threw: true, nested: [step()] }));
+  assert.equal(alone.failed, false);
+  assert.equal(alone.stepFailed, true);
   assert.equal(infoMergedRow(script({ untitled: false })), null);
 });
 
@@ -69,13 +71,9 @@ test("the list counts rows, says so, and groups thousands", () => {
   assert.equal(infoNum(216), "216");
   assert.equal(infoNum(1467), "1,467");
   assert.equal(infoNum(1234567), "1,234,567");
-  // Round 3: nothing when the list is whole (the chips count the calls); "shown of total" when cut.
-  assert.equal(infoListMeta(216, 216, 0), "");
-  assert.equal(infoListMeta(200, 216, 0), "200 of 216");
-  // Round 3: the context rows aren't counted in the meta (they're drawn muted).
-  assert.equal(infoListMeta(3, 3, 1), "");
-  assert.equal(infoListMeta(200, 1467, 12), "200 of 1,467");
-  assert.equal(infoListMeta(1, 1, 0), "");
+  // Round 3b: in calls, only when capped (round3b.test.ts has the rest).
+  assert.equal(infoListMeta(216, 216, false), "");
+  assert.equal(infoListMeta(200, 1467, true), "latest 200 of 1,467 calls");
   assert.equal(infoShowAll(1467), "Show all");
 });
 

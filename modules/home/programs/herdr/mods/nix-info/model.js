@@ -752,9 +752,9 @@ export function infoTools(state, titles = null) {
     const nested = titles && c.nested ? c.nested.map((sub) => (sub.titleKey && fromFile(sub.titleKey) ? { ...sub, arg: fromFile(sub.titleKey), titled: true } : sub)) : c.nested;
     return { id: c.id, kind: c.kind, name: c.name, arg, argKind: c.argKind ?? null, titled: arg !== c.arg, full: c.full ?? c.arg, path: c.path, started: c.started, duration: c.duration, error: c.error, running: c.duration === null,
       threw: c.threw ?? null, nested: nested ?? null,
-      // D6: a call failed (filled dot) when it failed itself; a script that went on after a
-      // failed step didn't (hollow dot).
-      failed: c.threw === true, stepFailed: c.threw !== true && Boolean(c.nested?.some((n) => n.error)),
+      // Round 3b: only a tool call fails (the filled dot, what "failed N" counts); a script is a
+      // container, with the hollow dot when it threw or a step failed (`threw` tells which).
+      failed: c.kind !== "code" && c.threw === true, stepFailed: c.kind === "code" && (c.threw === true || Boolean(c.nested?.some((n) => n.error))),
       startedExact: c.durationExact && c.finished ? c.finished - c.duration : null, untitled: c.name === "codemode" && !c.title && !c.lateTitle && arg === c.arg,
       args: c.args, result: c.result, resultCut: c.resultCut, finished: c.finished, diff: c.diff ?? null };
   });
@@ -762,23 +762,27 @@ export function infoTools(state, titles = null) {
 
 const INFO_KINDS = { bash: ["bash"], read: ["read"], edit: ["edit", "write"], ask: ["ask"] };
 const infoFailedKind = (k) => k === "failed" || k === "errors";
+// Tool calls of no chip's kind (Grep, Glob, …): "other". A script ("code") is a container, no call.
+const INFO_KNOWN = ["bash", "read", "edit", "write", "ask", "code"];
+const infoOther = (k) => !INFO_KNOWN.includes(k);
 
 // A listed call under a kind filter ("all", "bash", "read", "edit", "ask", "errors"): null when
 // left out. A script is kept for the calls it made, with only those as its sub-rows.
 export function infoKeep(c, kind) {
-  const kinds = INFO_KINDS[kind];
-  if (!infoFailedKind(kind) && !kinds) return c;
-  const pick = infoFailedKind(kind) ? (n) => n.error : (n) => kinds.includes(n.kind);
+  const kinds = INFO_KINDS[kind], other = kind === "other";
+  if (!infoFailedKind(kind) && !kinds && !other) return c;
+  const is = (k) => (other ? infoOther(k) : kinds.includes(k));
+  const pick = infoFailedKind(kind) ? (n) => n.error : (n) => is(n.kind);
   const matched = c.nested?.filter(pick) ?? [];
-  if (infoFailedKind(kind) ? !c.error : !kinds.includes(c.kind) && !matched.length) return null;
+  if (infoFailedKind(kind) ? !c.error && !c.failed && !matched.length : !is(c.kind) && !matched.length) return null;
   // steps keeps them all: an untitled script is named after all its steps, not the shown ones.
   // context: kept only for the steps that match (R2-2: its text muted, counted apart).
-  const context = !(infoFailedKind(kind) ? c.failed ?? c.error : kinds.includes(c.kind)) || undefined;
+  const context = !(infoFailedKind(kind) ? c.failed : is(c.kind)) || undefined;
   return c.nested ? { ...c, nested: matched, steps: c.steps ?? c.nested, context } : c;
 }
 
 const INFO_LISTS = ["calls", "files"];
-const INFO_FILTERS = ["all", "bash", "read", "edit", "ask", "failed"];
+const INFO_FILTERS = ["all", "bash", "read", "edit", "ask", "other", "failed"];
 export const INFO_VIEW = { detail: null, from: null, kind: "all", sel: null, all: false, collapsed: [], context: false, outside: false, fill: null };
 
 // The panel's state after a nix-info.<verb> command (keys, scripts), or null for one it doesn't
@@ -824,8 +828,10 @@ export function infoMergedRow(c) {
   const all = c.steps ?? c.nested;
   if (c.kind !== "code" || !c.untitled || c.running || all?.length !== 1) return null;
   const [s] = all;
-  const tip = c.failed && s.error ? "Script and its step failed" : `Script with 1 step${s.duration !== null && s.duration !== undefined ? ` · step took ${infoRowDuration(s.duration)}` : ""}`;
+  const tip = c.threw === true && s.error ? "Script and its step failed" : `Script with 1 step${s.duration !== null && s.duration !== undefined ? ` · step took ${infoRowDuration(s.duration)}` : ""}`;
+  // The row is the step: its failure is the filled dot; a script that threw on its own, hollow.
   return { ...c, level: 0, merged: true, kind: s.kind, name: s.name, arg: s.arg, full: s.full, path: s.path, titled: Boolean(s.titled), placeholder: Boolean(s.placeholder),
+    failed: Boolean(s.error), stepFailed: !s.error && c.threw === true,
     // Never context: under a filter the step is what matched, and the row is the step.
     argKind: null, untitled: false, nested: null, steps: null, context: undefined, tip };
 }
@@ -845,10 +851,16 @@ export function infoNum(n) {
   return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-// The Calls meta (R2-2), in rows: "200 of 216 rows", "3 rows · 1 for context".
-// Round 3: "200/218" when cut; the context rows aren't counted (they're drawn muted).
-export function infoListMeta(shown, total) {
-  return shown === total ? "" : `${infoNum(shown)} of ${infoNum(total)}`;
+// The Calls meta (round 3b), in calls as the chips count them: "latest 200 of 214 calls" when the
+// list is capped, nothing otherwise.
+export function infoListMeta(shown, total, capped) {
+  return capped ? `latest ${infoNum(shown)} of ${infoNum(total)} calls` : "";
+}
+
+// The calls the listed rows hold, as the chip of `kind` counts them: a script row holds none
+// (a container), a merged row its step, a context row none; under "failed", the filled dots.
+export function infoCallsIn(rows, kind) {
+  return rows.filter((r) => r.kind !== "code" && !r.context && (!infoFailedKind(kind) || r.failed)).length;
 }
 
 export function infoShowAll(total) {
@@ -918,15 +930,16 @@ export function infoTones(t) {
 
 // Calls made, nested included, and those that failed themselves (D6).
 export function infoCounts(tools) {
-  const rows = infoRows(tools);
-  return { calls: rows.length, failed: rows.filter((r) => r.failed).length };
+  const n = infoKindCounts(tools);
+  return { calls: n.all, failed: n.failed };
 }
 
 // The filter chips' counts: matching calls, nested included.
 export function infoKindCounts(tools) {
-  const rows = infoRows(tools), n = (f) => rows.filter(f).length;
+  // Round 3b: tool calls only (a script is a container), so the kinds add up to all.
+  const rows = infoRows(tools).filter((r) => r.kind !== "code"), n = (f) => rows.filter(f).length;
   return { all: rows.length, bash: n((r) => r.kind === "bash"), read: n((r) => r.kind === "read"), edit: n((r) => r.kind === "edit" || r.kind === "write"),
-    ask: n((r) => r.kind === "ask"), failed: n((r) => r.failed) };
+    ask: n((r) => r.kind === "ask"), other: n((r) => infoOther(r.kind)), failed: n((r) => r.failed) };
 }
 
 // "running" while the agent works, "no-result" when it stopped without one (F3), else "done".
