@@ -139,4 +139,7 @@ test("a command as a row shows it: the program first, not the folder it runs in 
   assert.equal(infoCommandText("cat /etc/hosts"), "cat /etc/hosts");
   assert.equal(infoCommandText("cd /tmp"), "cd /tmp");
   assert.equal(infoCommandText(null), null);
+  // An env assignment first: left alone, never read as a path to a program.
+  assert.equal(infoCommandText("INFO_REAL=/tmp/x/nested.jsonl scripts/info-shots a"), "INFO_REAL=/tmp/x/nested.jsonl scripts/info-shots a");
+  assert.equal(infoCommandText("cd /tmp && FOO=a/b ./run"), "FOO=a/b ./run");
 });

@@ -461,7 +461,7 @@ export default class Info extends View {
       : unknown && !c.titled ? h_flex().flex_1().min_w(0).gap(6).items_baseline()
         .child(div().flex_none().text_color(fg).child(c.name))
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(c.arg ?? ""))
-      : command ? div().flex_1().min_w(0).truncate().font_family(MONO()).text_size(12.5).text_color(fg).child(infoCommandText(c.arg) || c.name)
+      : command ? div().flex_1().min_w(0).truncate().font_family(MONO()).text_size(12.5).text_color(fg).child((c.kind === "bash" || c.argKind === "bash" ? infoCommandText(c.arg) : c.arg) || c.name)
       : sans(fg, c.arg || c.name);
     const KIND = { code: "Script", bash: "Bash", read: "Read", edit: "Edit", write: "Write", ask: "Question", fetch: "Fetch", agent: "Agent" };
     return chromeRow(UI, t, `call-${c.id}`, { on, onClick: inList ? null : onClick, clickable: inList || Boolean(onClick) })

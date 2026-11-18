@@ -665,7 +665,8 @@ export function infoCommandText(cmd) {
   if (typeof cmd !== "string") return cmd;
   let s = cmd.trimStart();
   for (let m; (m = /^cd\s+\S+\s*(?:&&|;)\s*(?=\S)/.exec(s));) s = s.slice(m[0].length);
-  return s.replace(/^(?:\.{0,2}|~)?\/?(?:[^\s/]+\/)+([^\s/]+)(?=\s|$)/, "$1");
+  // A first word with "=" is an env assignment, not a program.
+  return s.replace(/^(?:\.{0,2}|~)?\/?(?:[^\s/=]+\/)+([^\s/=]+)(?=\s|$)/, "$1");
 }
 
 // A limit meter's right side (round 3): the reset time is essential (never cut), pace and
