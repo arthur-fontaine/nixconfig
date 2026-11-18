@@ -131,7 +131,7 @@ test("the status line comes from Herdr's status; the session only names the runn
   assert.deepEqual(infoStatusLine({ status: "idle", since: null, state: feed(""), tools: [], now }), { tone: "idle", text: "No calls yet" });
 });
 
-test("meters: neutral, warning at 80 %, error at 95 % (D2; no pace text since round 3)", () => {
+test("meters: neutral, warning at 80 %, error at 95 % (D2)", () => {
   assert.deepEqual([0.2, 0.79, 0.8, 0.949, 0.95, 1].map(infoMeterTone), ["normal", "normal", "warning", "warning", "error", "error"]);
 });
 

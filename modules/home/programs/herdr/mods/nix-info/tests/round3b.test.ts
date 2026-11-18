@@ -119,3 +119,11 @@ test("nix-info.usage:<file> reads the limits from a fixture file (the shots' sta
   assert.equal(infoViewCommand(v, "usage:").usageFile, null);
   assert.equal(infoViewCommand(v, "reset").usageFile, null);
 });
+
+test("the gap to a steady pace: left out under 1 %, unknown, stale or after the reset", () => {
+  const now = Date.parse("2026-11-18T12:00:00Z"), H = 3600_000, MIN = 60_000;
+  assert.equal(infoMeterRight({ resetsAt: now + 2 * H, ahead: 0.004 }, "five", { now }), "resets in 2h");
+  assert.equal(infoMeterRight({ resetsAt: now + 2 * H, ahead: null }, "five", { now }), "resets in 2h");
+  assert.equal(infoMeterRight({ resetsAt: now + 2 * H, ahead: 0.13 }, "five", { now, staleFor: 12 * MIN }), "updated 12m ago");
+  assert.equal(infoMeterRight({ resetsAt: now - 5 * MIN, ahead: 0.13 }, "five", { now }), "reset 5m ago");
+});
