@@ -768,8 +768,9 @@ export function infoFilesMeta(n, exact) {
 // A call's meta under its title: its time, then its clock range when exact.
 // Round 3b: one time when it started and ended in the same second; a step (no clock of its own)
 // says when its script ended, as the script's; a call cut off: "Stopped".
-export function infoCallMeta(c, state, scriptEnd = null) {
-  if (state === "running") return "Running";
+export function infoCallMeta(c, state, scriptEnd = null, now = Date.now()) {
+  // Its elapsed time from herdr-session's start marker, as its row counts it.
+  if (state === "running") return typeof c.ranFrom === "number" ? `Running for ${infoElapsed(now - c.ranFrom)}` : "Running";
   if (state === "no-result") return "Stopped";
   const d = infoRowDuration(c.duration);
   if (!d) return "No timing";

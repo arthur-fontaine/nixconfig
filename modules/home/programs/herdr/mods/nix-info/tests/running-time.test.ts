@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { infoRowTime, infoNewSession, infoFeed, infoTools } from "../model.js";
+import { infoRowTime, infoCallMeta, infoNewSession, infoFeed, infoTools } from "../model.js";
+
+test("the call view of a running call counts too; without a marker it says Running", () => {
+  const now = Date.parse("2026-11-18T12:00:00Z");
+  assert.equal(infoCallMeta({ ranFrom: now - 12_340 }, "running", null, now), "Running for 12.3s");
+  assert.equal(infoCallMeta({ ranFrom: null }, "running", null, now), "Running");
+});
 
 const now = Date.parse("2026-11-18T12:00:00Z");
 
