@@ -651,11 +651,51 @@ export function infoContextChart(state, window = 1_000_000, { known = true, max 
   return { bars, ticks, caption, ceiling: `${infoTokens(window)} window${known ? "" : ", assumed"}` };
 }
 
-// "3 prompts · 76 replies · started 52m ago", under the status line (round 3).
+// "3 prompts · 76 replies · 52m" (the session's age), under the status line (round 3).
 export function infoSessionLine(state, now) {
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   const counts = state.prompts + state.replies ? `${plural(state.prompts, "prompt", "prompts")} · ${plural(state.replies, "reply", "replies")}` : "No prompts yet";
-  return state.started ? `${counts} · started ${infoAge(now - state.started)} ago` : counts;
+  return state.started ? `${counts} · ${infoAge(now - state.started)}` : counts;
+}
+
+// A limit meter's right side (round 3): the reset time is essential (never cut), pace and
+// staleness secondary (cut first); "resets in" goes to the tooltip.
+export function infoMeterRight(w, key, { now, staleFor = null } = {}) {
+  const left = w.resetsAt ? w.resetsAt - now : null;
+  const d = left === null ? null : Math.round(left / 86400000);
+  const essential = left === null ? "" : key === "week" && left >= 86400000 && d >= 1 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(left);
+  const secondary = [infoPaceText(w.ahead), staleFor !== null ? `as of ${infoAge(staleFor)} ago` : null].filter(Boolean).join(" · ");
+  return { essential, secondary, tip: essential ? `Resets in ${essential}` : null };
+}
+
+// The overview's Edited row: the count first, "+" when some edit kept no file name.
+export function infoEditedText(e) {
+  const n = e.files.length;
+  if (!n && !e.atLeast) return "No files edited yet";
+  return `${n}${e.atLeast ? "+" : ""} file${n === 1 && !e.atLeast ? "" : "s"} edited`;
+}
+
+export function infoFilesMeta(n, exact) {
+  const files = `${n} file${n === 1 ? "" : "s"}`;
+  return exact ? `${files} · since start` : files;
+}
+
+// A call's meta under its title: its time, then its clock range when exact.
+export function infoCallMeta(c, state) {
+  if (state === "running") return "Running";
+  if (state === "no-result") return "No result";
+  const took = infoRowDuration(c.duration) || "No timing";
+  const fin = c.level === 0 && c.finished ? infoClock(c.finished, false) : null;
+  const when = c.startedExact && fin ? `${infoClock(c.startedExact, false)}–${fin}` : fin ? `finished ${fin}` : null;
+  return when ? `${took} · ${when}` : took;
+}
+
+// The Context expansion's text lines, figures first.
+export function infoContextLines(cache, ctx, now) {
+  const p = (r) => (r === null || r === undefined ? "—" : `${Math.round(r * 100)}%`);
+  const n = ctx.compactions ?? 0;
+  const comp = n ? `Compacted ${n === 1 ? "once" : `${n} times`}${ctx.lastCompaction ? ` · ${infoAge(now - ctx.lastCompaction)} ago` : ""}` : "Not compacted yet";
+  return [`${p(cache.session)} cache hits · last ${p(cache.last)}`, `${infoTokens(cache.read)} cache read · ${infoTokens(cache.written)} written`, comp];
 }
 
 const hit = (r) => { const all = r.input + r.cacheRead + r.cacheWrite; return all ? r.cacheRead / all : null; };
@@ -772,13 +812,13 @@ export function infoNum(n) {
 }
 
 // The Calls meta (R2-2), in rows: "200 of 216 rows", "3 rows · 1 for context".
-export function infoListMeta(shown, total, context = 0) {
-  const rows = shown === total ? `${infoNum(total)} row${total === 1 ? "" : "s"}` : `${infoNum(shown)} of ${infoNum(total)} rows`;
-  return context ? `${rows} · ${infoNum(context)} for context` : rows;
+// Round 3: "200/218" when cut; the context rows aren't counted (they're drawn muted).
+export function infoListMeta(shown, total) {
+  return shown === total ? `${infoNum(total)} row${total === 1 ? "" : "s"}` : `${infoNum(shown)}/${infoNum(total)}`;
 }
 
 export function infoShowAll(total) {
-  return `Show all ${infoNum(total)} rows`;
+  return "Show all";
 }
 
 // A list row's time, as the call view says it: "<0.1s" for an instant call, blank without timing.
@@ -868,17 +908,16 @@ export function infoIdleSince(state) {
 // The status block's line (D1): from Herdr's status for the pane ("working", "blocked", "done",
 // "idle"); the session only names the running call. `since`: when Herdr saw it start working.
 export function infoStatusLine({ status, since, state, tools, now }) {
-  if (status === "blocked") return { tone: "waiting", text: "Waiting for your answer" };
+  if (status === "blocked") return { tone: "waiting", text: "Waiting for you" };
   const open = tools.find((c) => c.running);
   if (status === "working") {
-    const parts = ["Working"];
-    if (since) parts.push(infoDuration(Math.max(100, now - since)));
-    if (open) parts.push(open.arg || open.name);
-    return { tone: "working", text: parts.join(" · ") };
+    // Round 3: the running command on a line of its own, the essential part, never cut by the clock.
+    const text = since ? `Working ${infoDuration(Math.max(100, now - since))}` : "Working";
+    return open ? { tone: "working", text, call: open.arg || open.name } : { tone: "working", text };
   }
   if (open && tools[0] === open) return { tone: "stopped", text: "Stopped mid-call" };
   const idle = infoIdleSince(state);
-  return idle ? { tone: "idle", text: `Idle for ${infoAge(now - idle)}` } : { tone: "idle", text: "No calls yet" };
+  return idle ? { tone: "idle", text: `Idle ${infoAge(now - idle)}` } : { tone: "idle", text: "No calls yet" };
 }
 
 // A meter's colour (D2): "warning" from 80 %, "error" from 95 %.
@@ -889,7 +928,7 @@ export function infoMeterTone(ratio) {
 // "12 pts ahead of pace", only when ahead by a point or more.
 export function infoPaceText(ahead) {
   const pts = Math.round((ahead ?? 0) * 100);
-  return ahead !== null && ahead !== undefined && pts >= 1 ? `${pts} pts ahead of pace` : null;
+  return ahead !== null && ahead !== undefined && pts >= 1 ? `${pts} pts ahead` : null;
 }
 
 // The files the session edited (O3): those under `root` (rel, name, dir), the others apart, and

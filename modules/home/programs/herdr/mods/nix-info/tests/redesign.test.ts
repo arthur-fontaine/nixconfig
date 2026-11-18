@@ -121,17 +121,17 @@ test("the status line comes from Herdr's status; the session only names the runn
   const now = Date.parse(at("01:11"));
   const tools = infoTools(s);
   assert.deepEqual(infoStatusLine({ status: "working", since: Date.parse(at("00:02")), state: s, tools, now }),
-    { tone: "working", text: "Working · 1m 09s · node --test tests" });
-  assert.deepEqual(infoStatusLine({ status: "blocked", since: null, state: s, tools, now }), { tone: "waiting", text: "Waiting for your answer" });
+    { tone: "working", text: "Working 1m 09s", call: "node --test tests" });
+  assert.deepEqual(infoStatusLine({ status: "blocked", since: null, state: s, tools, now }), { tone: "waiting", text: "Waiting for you" });
   assert.deepEqual(infoStatusLine({ status: "idle", since: null, state: s, tools, now }), { tone: "stopped", text: "Stopped mid-call" });
   const d = feed(SESSION);
-  assert.deepEqual(infoStatusLine({ status: "done", since: null, state: d, tools: infoTools(d), now: Date.parse(at("43:08")) }), { tone: "idle", text: "Idle for 43m" });
+  assert.deepEqual(infoStatusLine({ status: "done", since: null, state: d, tools: infoTools(d), now: Date.parse(at("43:08")) }), { tone: "idle", text: "Idle 43m" });
   assert.deepEqual(infoStatusLine({ status: "idle", since: null, state: feed(""), tools: [], now }), { tone: "idle", text: "No calls yet" });
 });
 
 test("meters: neutral, warning at 80 %, error at 95 %; pace text only when ahead (D2)", () => {
   assert.deepEqual([0.2, 0.79, 0.8, 0.949, 0.95, 1].map(infoMeterTone), ["normal", "normal", "warning", "warning", "error", "error"]);
-  assert.equal(infoPaceText(0.12), "12 pts ahead of pace");
+  assert.equal(infoPaceText(0.12), "12 pts ahead");
   assert.equal(infoPaceText(0.004), null);
   assert.equal(infoPaceText(-0.3), null);
   assert.equal(infoPaceText(null), null);

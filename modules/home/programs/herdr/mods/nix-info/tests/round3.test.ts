@@ -2,7 +2,7 @@
 // expansion's step chart, pure.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { infoContextChart, infoFeed, infoNewSession, infoSessionLine } from "../model.js";
+import { infoCallMeta, infoContextChart, infoContextLines, infoEditedText, infoFeed, infoFilesMeta, infoMeterRight, infoNewSession, infoSessionLine } from "../model.js";
 
 const MIN = 60000;
 const session = (o) => ({ ...infoNewSession("f"), ...o });
@@ -11,14 +11,14 @@ const session = (o) => ({ ...infoNewSession("f"), ...o });
 
 test("the session line: prompts, replies and how long ago it started", () => {
   const now = Date.parse("2026-11-18T12:00:00Z");
-  assert.equal(infoSessionLine(session({ prompts: 3, replies: 76, started: now - 52 * MIN }), now), "3 prompts · 76 replies · started 52m ago");
-  assert.equal(infoSessionLine(session({ prompts: 1, replies: 1, started: now - 3 * 60 * MIN }), now), "1 prompt · 1 reply · started 3h ago");
+  assert.equal(infoSessionLine(session({ prompts: 3, replies: 76, started: now - 52 * MIN }), now), "3 prompts · 76 replies · 52m");
+  assert.equal(infoSessionLine(session({ prompts: 1, replies: 1, started: now - 3 * 60 * MIN }), now), "1 prompt · 1 reply · 3h");
 });
 
 test("the session line without a start time, and before any message", () => {
   const now = Date.parse("2026-11-18T12:00:00Z");
   assert.equal(infoSessionLine(session({ prompts: 2, replies: 5, started: null }), now), "2 prompts · 5 replies");
-  assert.equal(infoSessionLine(session({ prompts: 0, replies: 0, started: now - MIN }), now), "No prompts yet · started 1m ago");
+  assert.equal(infoSessionLine(session({ prompts: 0, replies: 0, started: now - MIN }), now), "No prompts yet · 1m");
   assert.equal(infoSessionLine(session({ prompts: 0, replies: 0, started: null }), now), "No prompts yet");
 });
 
@@ -81,4 +81,50 @@ test("fed from a session: the tick follows the compaction entry", () => {
   const c = infoContextChart(s, 1e6);
   assert.equal(c.bars.length, 3);
   assert.deepEqual(c.ticks, [{ at: 2 / 3, label: true }]);
+});
+
+// ---- the words pass: numbers and names first, the essential part never cut ----------------
+
+test("a limit's right side: the reset time is the essential part, pace and staleness secondary", () => {
+  const now = Date.parse("2026-11-18T12:00:00Z");
+  const H = 3600_000;
+  assert.deepEqual(infoMeterRight({ resetsAt: now + 4 * H + 43 * MIN, ahead: 0.1 }, "five", { now }),
+    { essential: "4h 43m", secondary: "10 pts ahead", tip: "Resets in 4h 43m" });
+  assert.deepEqual(infoMeterRight({ resetsAt: now + 3 * 24 * H, ahead: -0.2 }, "week", { now }),
+    { essential: "3 days", secondary: "", tip: "Resets in 3 days" });
+  assert.deepEqual(infoMeterRight({ resetsAt: now + 2 * H, ahead: 0.05 }, "five", { now, staleFor: 12 * MIN }),
+    { essential: "2h", secondary: "5 pts ahead · as of 12m ago", tip: "Resets in 2h" });
+  assert.deepEqual(infoMeterRight({ resetsAt: null, ahead: null }, "five", { now }), { essential: "", secondary: "", tip: null });
+});
+
+test("the edited files row: the count first, + when it is a floor", () => {
+  assert.equal(infoEditedText({ files: [1, 2, 3, 4, 5, 6, 7, 8], atLeast: true }), "8+ files edited");
+  assert.equal(infoEditedText({ files: [1, 2], atLeast: false }), "2 files edited");
+  assert.equal(infoEditedText({ files: [1], atLeast: false }), "1 file edited");
+  assert.equal(infoEditedText({ files: [], atLeast: true }), "0+ files edited");
+  assert.equal(infoEditedText({ files: [], atLeast: false }), "No files edited yet");
+});
+
+test("the Edited files view's meta", () => {
+  assert.equal(infoFilesMeta(8, true), "8 files · since start");
+  assert.equal(infoFilesMeta(1, false), "1 file");
+});
+
+test("a call's meta: its time first, then when it ran", () => {
+  const at = (s) => Date.parse(`2026-11-18T00:27:${s}`);
+  assert.equal(infoCallMeta({ duration: 3100, startedExact: at("42"), finished: at("45"), level: 0 }, "done"), "3.1s · 00:27:42–00:27:45");
+  assert.equal(infoCallMeta({ duration: 3100, startedExact: null, finished: at("45"), level: 0 }, "done"), "3.1s · finished 00:27:45");
+  assert.equal(infoCallMeta({ duration: 40, startedExact: null, finished: null, level: 1 }, "done"), "<0.1s");
+  assert.equal(infoCallMeta({ duration: null, startedExact: null, finished: null, level: 1 }, "done"), "No timing");
+  assert.equal(infoCallMeta({}, "running"), "Running");
+  assert.equal(infoCallMeta({}, "no-result"), "No result");
+});
+
+test("the Context expansion's lines: figures first", () => {
+  const now = Date.parse("2026-11-18T12:00:00Z");
+  assert.deepEqual(infoContextLines({ session: 0.92, last: 0.9, read: 3_200_000, written: 278_000 }, { compactions: 1, lastCompaction: now - 45 * MIN }, now),
+    ["92% cache hits · last 90%", "3.2M cache read · 278k written", "Compacted once · 45m ago"]);
+  assert.deepEqual(infoContextLines({ session: null, last: null, read: 0, written: 0 }, { compactions: 3, lastCompaction: null }, now),
+    ["— cache hits · last —", "0 cache read · 0 written", "Compacted 3 times"]);
+  assert.equal(infoContextLines({ session: 1, last: 1, read: 1, written: 1 }, { compactions: 0 }, now)[2], "Not compacted yet");
 });

@@ -70,11 +70,12 @@ test("the list counts rows, says so, and groups thousands", () => {
   assert.equal(infoNum(1467), "1,467");
   assert.equal(infoNum(1234567), "1,234,567");
   assert.equal(infoListMeta(216, 216, 0), "216 rows");
-  assert.equal(infoListMeta(200, 216, 0), "200 of 216 rows");
-  assert.equal(infoListMeta(3, 3, 1), "3 rows · 1 for context");
-  assert.equal(infoListMeta(200, 1467, 12), "200 of 1,467 rows · 12 for context");
+  assert.equal(infoListMeta(200, 216, 0), "200/216");
+  // Round 3: the context rows aren't counted in the meta (they're drawn muted).
+  assert.equal(infoListMeta(3, 3, 1), "3 rows");
+  assert.equal(infoListMeta(200, 1467, 12), "200/1,467");
   assert.equal(infoListMeta(1, 1, 0), "1 row");
-  assert.equal(infoShowAll(1467), "Show all 1,467 rows");
+  assert.equal(infoShowAll(1467), "Show all");
 });
 
 test("a parent kept only for its matching steps is marked as context", () => {
@@ -124,7 +125,8 @@ test("titles and placeholders are flagged for the type rule, nested ones too", (
 test("the status line names a running script's command without its kind", () => {
   const tools = [{ id: "r", kind: "code", arg: "node --test tests --watch", running: true }];
   const line = infoStatusLine({ status: "working", since: 1000, state: {}, tools, now: 61000 });
-  assert.equal(line.text, "Working · 1m 00s · node --test tests --watch");
+  assert.equal(line.text, "Working 1m 00s");
+  assert.equal(line.call, "node --test tests --watch");
 });
 
 // ---- R2-6: folders --------------------------------------------------------------------------

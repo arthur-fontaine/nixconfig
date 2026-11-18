@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -83,8 +83,6 @@ const SHOWN = 200;
 const TOOL_ICON = { bash: "terminal", read: "file", edit: "pen", write: "pen", ask: "help-circle", fetch: "globe", agent: "user", code: "code" };
 const LABELS = { context: "Context window", activity: "Agent activity", lines: "Lines changed", calls: "Calls", files: "Edited files" };
 // The activity detail's filters (infoKeep's kinds): a script counts for the calls it made.
-// "in 2h 10m" reads as is; days read as words in the sub-lines ("in 4 days").
-const days = (msec) => { const d = Math.round(msec / 86400000); return d >= 1 && msec >= 86400000 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(msec); };
 
 export default class Info extends View {
   init(_props, cx) {
@@ -327,6 +325,8 @@ export default class Info extends View {
         .child(div().flex_1().min_w(0).truncate().font_medium().text_color(t.foreground).child(s?.name ?? infoParseTitle(this.pane?.title)?.name ?? "Pi"))
         .when(line.tone === "working", (e) => e.child(this.spinner(t, 13))))
       .child(div().pl(22).min_w(0).truncate().text_size(12).text_color(color).child(line.text))
+      // The running command, the line's essential part, on a line of its own (round 3).
+      .when(Boolean(line.call), (e) => e.child(div().pl(22).min_w(0).truncate().font_family(MONO()).text_size(12).text_color(t.foreground).child(line.call)))
       // Round 3: the counts and age, visible rather than only in the tooltip (which keeps them, for
       // a narrow panel where this line is cut).
       .when(Boolean(tip), (e) => e.child(div().pl(22).min_w(0).truncate().text_size(12).text_color(t.muted).child(infoSessionLine(s, now))));
@@ -357,6 +357,7 @@ export default class Info extends View {
 
   // D2: label + % and a right text on one line, a full-width 4 px bar under; neutral, warning
   // from 80 %, error from 95 %; the pace notch. `expand`: the Context meter's chevron and click.
+  // right: { essential, secondary }: the secondary part is cut first, the essential never.
   meter(t, id, { label, ratio, right, pace = null, tip = null, expand = null }) {
     const tone = infoMeterTone(ratio ?? 0);
     const fill = tone === "error" ? t.blocked : tone === "warning" ? t.ansi3 : t.tones.fill;
@@ -367,7 +368,8 @@ export default class Info extends View {
       .child(div().flex_none().text_color(t.muted).child(label))
       .child(div().flex_none().font_medium().text_color(tone === "normal" ? t.foreground : fill).child(pct(ratio)))
       .when(Boolean(expand), (e) => e.child(svg(ICON(expand?.open ? "chevron-down" : "chevron-right")).size(12).flex_none().ml(2).text_color(t.chevron)))
-      .child(div().flex_1().min_w(0).truncate().text_right().text_color(t.muted).child(right ?? ""));
+      .child(div().flex_1().min_w(0).truncate().text_right().text_color(t.muted).child(right?.secondary ?? ""))
+      .when(Boolean(right?.essential), (e) => e.child(div().flex_none().text_color(t.muted).child(right.essential)));
     // R2-4: the pace notch is 8 pt tall on the 4 pt bar, so 2 pt of it shows on the island above
     // and below whatever the fill.
     // Beside the bar, not in it: the rounded bar clips what it holds.
@@ -385,26 +387,24 @@ export default class Info extends View {
     if (s && f.started) {
       const c = f.context, cache = f.cache;
       const known = Boolean(this.windows[s.model]);
-      out.push(this.meter(t, "meter-context", { label: "Context", ratio: c.ratio, right: `${infoTokens(c.used)} / ${known ? infoTokens(c.window) : `${infoTokens(c.window)} assumed`}`,
+      out.push(this.meter(t, "meter-context", { label: "Context", ratio: c.ratio, right: { essential: `${infoTokens(c.used)} / ${infoTokens(c.window)}`, secondary: known ? "" : "window assumed" },
         tip: known ? `${infoTokens(c.window)} window for ${s.model}` : `Window size unknown for ${s.model}: 1M assumed`,
         expand: { open: this.context, onClick: (_e, cx) => { this.context = !this.context; cx.notify(); } } }));
       if (this.context) {
-        const comp = c.compactions ? `Compacted ${c.compactions === 1 ? "once" : `${c.compactions} times`}${s.lastCompaction ? `, ${infoAge(now - s.lastCompaction)} ago` : ""}` : "Not compacted yet";
         out.push(v_flex().id("context-more").pl(CHROME.rowX).pb(4).gap(2).text_size(12).text_color(t.muted)
           .when(Boolean(f.chart), (e) => e.child(this.contextChart(t, f.chart)))
-          .child(div().child(`Cache hits ${pct(cache.session)} (last request ${pct(cache.last)})`))
-          .child(div().child(`Cache: ${infoTokens(cache.read)} read, ${infoTokens(cache.written)} written`))
-          .child(div().child(comp)));
+          .children(infoContextLines(cache, { compactions: c.compactions, lastCompaction: s.lastCompaction }, now).map((l) => div().pr(CHROME.rowX).truncate().child(l))));
       }
     }
     const win = (key, label, w, length) => {
       if (!w) return null;
       const left = infoTokensLeft(w.left, key === "week" ? "weekly" : "5-hour");
-      const resets = w.resetsAt ? `resets in ${key === "week" ? days(w.resetsAt - now) : infoSpan(w.resetsAt - now)}` : "";
-      const right = [infoPaceText(w.ahead), resets, u.stale ? `as of ${infoAge(now - (u.at ?? now))} ago` : null].filter(Boolean).join(" · ");
-      return this.meter(t, `meter-${key}`, { label, ratio: w.ratio, right, pace: w.pace, tip: left?.tip ?? null });
+      // Round 3: the reset time alone on the right; "resets in" in the tooltip, before the tokens left.
+      const right = infoMeterRight(w, key, { now, staleFor: u.stale ? now - (u.at ?? now) : null });
+      const tip = [right.tip, left?.tip].filter(Boolean).join("\n");
+      return this.meter(t, `meter-${key}`, { label, ratio: w.ratio, right, pace: w.pace, tip: tip ? tipText(tip) : null });
     };
-    if (u) out.push(...[win("five", "5-hour limit", u.fiveHour), win("week", "Week", u.sevenDay)].filter(Boolean));
+    if (u) out.push(...[win("five", "5h", u.fiveHour), win("week", "Week", u.sevenDay)].filter(Boolean));
     else out.push(div().px(CHROME.rowX).py(4).text_size(12).text_color(t.dim).child("Limits not reported yet"));
     // R2-7, ink to ink: 24 pt from the status line, 14 pt from one meter's bar to the next label.
     return v_flex().id("limits").px(CHROME.insetX).pt(10.5).children(out);
@@ -415,7 +415,7 @@ export default class Info extends View {
     const e = this.session ? this.edited() : null;
     if (!e) return null;
     const n = e.files.length;
-    const text = !n && !e.atLeast ? "No files edited yet" : `Edited ${e.atLeast ? "at least " : ""}${n} file${n === 1 ? "" : "s"}`;
+    const text = infoEditedText(e);
     const go = n || e.outside.length || e.atLeast ? (_e, cx) => this.command("detail:files", cx) : null;
     // 24 pt under the last bar: a new group.
     return div().px(CHROME.insetX).pt(11).child(chromeRow(UI, t, "edited", { onClick: go })
@@ -429,12 +429,13 @@ export default class Info extends View {
   // name + folder, a command or code mono, a title or question sans), the failure dot (filled:
   // it failed; hollow: a script went on after a failed step), the duration, a chevron.
   // R2-6: a file as its name and a short muted folder (infoFolder): the name never truncates
-  // before the folder, which is capped at 40 % and cut at its end. The whole path in the tooltip.
+  // before the folder, which is cut at its end. The whole path in the tooltip.
   fileText(t, path, fg = t.foreground) {
     const f = infoFolder(path, this.root(), home());
     return h_flex().id(`path-${path}`).flex_1().min_w(0).gap(6).items_baseline().tooltip(f.tip)
       .child(div().flex_none().max_w("100%").truncate().text_color(fg).child(f.name))
-      .child(div().flex_1().min_w(0).max_w("40%").truncate().text_size(12).text_color(t.muted).child(f.folder));
+      // Round 3: the folder takes what the name leaves and is cut first; the name is never cut for it.
+      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(f.folder));
   }
 
   callRow(t, c, { on = false, onClick = null, disclose = null, more = null, inList = false } = {}) {
@@ -548,22 +549,23 @@ export default class Info extends View {
         .child(div().w(14).flex_none())
         .child(div().w(10).flex_none().font_family(MONO()).text_size(11).font_medium().text_center().text_color(color[st?.status] ?? t.ansi3).child(st?.status ?? ""))
         .child(this.fileText(t, f.path))
-        .child(h_flex().flex_none().text_size(11)
+        // Round 3: 4 pt between + and −, which touched at "+90−60" (the − column 24 pt, from 20).
+        // Outside rows have no +/−: the folder takes their width.
+        .when(!outside, (e) => e.child(h_flex().flex_none().gap(4).text_size(11)
           .child(div().w(34).text_right().whitespace_nowrap().text_color(known ? t.ansi2 : t.dim).child(known ? (st.added ? `+${st.added}` : "") : !outside && git && !st ? "unchanged" : ""))
-          // 20 pt as decided (− ends at 323): a figure wider than that runs into the gap before the ›.
-          .child(div().w(20).text_right().whitespace_nowrap().text_color(t.ansi1).child(known && st.removed ? `−${st.removed}` : "")))
+          .child(div().w(24).text_right().whitespace_nowrap().text_color(t.ansi1).child(known && st.removed ? `−${st.removed}` : ""))))
         .child(svg(ICON("chevron-right")).size(10).flex_none().text_color(t.chevron));
     };
     const n = `${e.files.length} file${e.files.length === 1 ? "" : "s"}`;
-    const out = [this.section(t, "In this repo", git?.exact ? `${n} · since session start` : n), ...e.files.map((f) => row(f))];
-    if (e.atLeast) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("Some edits kept no file name: there may be more."));
-    if (git && !git.exact) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("Line counts need the commit the session started from: git status only."));
+    // Round 3: no "some edits kept no file name" line: the overview's "8+" says it.
+    const out = [this.section(t, "In this repo", infoFilesMeta(e.files.length, Boolean(git?.exact))), ...e.files.map((f) => row(f))];
+    if (git && !git.exact) out.push(div().px(CHROME.rowX).py(6).text_size(12).text_color(t.muted).child("No start commit: status letters only."));
     if (e.outside.length) {
       const open = this.outside;
       out.push(div().pt(8).child(chromeRow(UI, t, "outside", { onClick: (_e, cx) => this.command(open ? "close:outside" : "open:outside", cx) })
         .child(svg(ICON(open ? "chevron-down" : "chevron-right")).size(10).flex_none().text_color(t.chevron))
         .child(div().flex_1().text_size(12).font_medium().text_color(t.muted).child(`Outside this repo (${e.outside.length})`))));
-      // The same anatomy as the repo's rows, the letter and +/− columns empty (R2-6).
+      // The same anatomy as the repo's rows, the letter column empty and no +/− (R2-6, round 3).
       if (open) for (const f of e.outside) out.push(row(f, true));
     }
     return out;
@@ -599,7 +601,7 @@ export default class Info extends View {
 
   callsView(t, f) {
     const n = f.kinds ?? infoKindCounts([]);
-    const CHIPS = [["all", "All"], ["bash", "bash"], ["read", "read"], ["edit", "edit/write"], ["ask", "ask"], ["failed", "failed"]];
+    const CHIPS = [["all", "All"], ["bash", "bash"], ["read", "read"], ["edit", "edit"], ["ask", "ask"], ["failed", "failed"]];
     const chip = ([key, label]) => {
       const on = this.kind === key;
       return div().id(`kind-${key}`).h(24).px(8).gap(5).flex_none().flex().items_center().rounded(CHROME.radius).cursor_pointer().text_size(12)
@@ -622,7 +624,7 @@ export default class Info extends View {
         .child(chromeTextButton(UI, t, "show-all-calls", "Show all calls", (_e, cx) => this.command("kind:all", cx)));
     return v_flex().flex_1().min_h(0).px(CHROME.insetX).py(CHROME.insetY)
       .child(h_flex().flex_none().flex_wrap().gap(2).pb(4).children(CHIPS.filter(([k]) => k === "all" || k === this.kind || n[k] > 0).map(chip)))
-      .child(this.section(t, this.kind === "all" ? "All calls" : label, infoListMeta(shown.length, rows.length, rows.filter((r) => r.context).length)))
+      .child(this.section(t, this.kind === "all" ? "All calls" : label, infoListMeta(shown.length, rows.length)))
       .child(list);
   }
 
@@ -649,9 +651,7 @@ export default class Info extends View {
     const c = this.selected(f);
     if (!c) return [div().px(CHROME.headerX).py(12).text_size(12).text_color(t.dim).child("This call isn't in the session any more.")];
     const state = infoCallState(c, this.pane?.status === "working");
-    const took = infoRowDuration(c.duration);
-    const meta = state === "running" ? "Running" : state === "no-result" ? "No result"
-      : [took ? `Took ${took}` : "No timing recorded", c.startedExact ? `started ${infoClock(c.startedExact, false)}` : null, c.level === 0 && c.finished ? `finished ${infoClock(c.finished, false)}` : null].filter(Boolean).join(" · ");
+    const meta = infoCallMeta(c, state);
     const untitled = c.untitled && c.nested?.length ? infoStepsLabel(c.steps ?? c.nested) : null;
     const title = c.path ? this.rel(c.path) : untitled ?? c.arg ?? c.name;
     const args = c.args ?? {};
