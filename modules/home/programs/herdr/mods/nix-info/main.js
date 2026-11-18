@@ -341,22 +341,25 @@ export default class Info extends View {
   contextChart(t, c) {
     if (!c) return null;
     const H = 44, label = (text) => div().text_size(11).whitespace_nowrap().text_color(t.muted).child(text);
-    const rule = (top) => div().absolute().left(0).right(0).h(1).bg(t.tones.guide).when(top, (e) => e.top(0)).when(!top, (e) => e.bottom(0));
+    // Round 3b: scaled to the peak ("peak 72k"), so no ceiling line; the axis only.
+    const axis = div().absolute().left(0).right(0).bottom(0).h(1).bg(t.tones.guide);
     const columns = h_flex().absolute().top(0).left(0).right(0).bottom(0).items_end().children(c.bars.map((b) =>
       div().flex_1().min_w(0).min_h(1.5).h(`${(b.ratio * 100).toFixed(2)}%`).bg(t.tones.track).child(div().h(1.5).bg(t.tones.fill))));
-    const ticks = c.ticks.map((k) => div().absolute().top(-3).h(H + 6).w(1).bg(t.tones.notch).left(`${(k.at * 100).toFixed(2)}%`).when(k.at >= 1, (e) => e.ml(-1)));
+    // A compaction: a short tick under the axis, never a line through the chart (it read as a spike).
+    const ticks = c.ticks.map((k) => div().absolute().top(-4).h(8).w(1).bg(t.tones.notch).left(`${(k.at * 100).toFixed(2)}%`).when(k.at >= 1, (e) => e.ml(-1)));
     // A label centred under its tick, kept inside the chart at either end.
     const W = 60;
     const names = c.ticks.filter((k) => k.label).map((k) => {
-      const box = div().absolute().top(0).w(W);
+      const box = div().absolute().top(6).w(W);
       if (k.at < 0.12) return box.left(`${(k.at * 100).toFixed(2)}%`).child(label("compacted"));
       if (k.at > 0.88) return box.right(`${((1 - k.at) * 100).toFixed(2)}%`).flex().justify_end().child(label("compacted"));
       return box.left(`${(k.at * 100).toFixed(2)}%`).ml(-W / 2).flex().justify_center().child(label("compacted"));
     });
     return v_flex().id("context-chart").pr(CHROME.rowX).pt(4).pb(8).gap(4)
       .child(h_flex().justify_between().child(label(c.caption)).child(label(c.ceiling)))
-      .child(div().relative().h(H).w_full().child(rule(true)).child(columns).child(rule(false)).children(ticks))
-      .when(names.length > 0, (e) => e.child(div().relative().h(14).w_full().children(names)));
+      .child(div().relative().h(H).w_full().child(columns).child(axis))
+      // The ticks and their labels hang under the axis.
+      .when(c.ticks.length > 0, (e) => e.child(div().relative().h(names.length ? 20 : 5).w_full().children(ticks).children(names)));
   }
 
   // D2: label + % and a right text on one line, a full-width 4 px bar under; neutral, warning
@@ -794,7 +797,7 @@ export default class Info extends View {
       context: infoContext(s, window), cache: infoCache(s), errors: n.failed, total: n.calls,
       started: s.started !== null && s.requests.length + s.messages > 0,
       list: null, byId: new Map(infoRows([...running, ...history]).map((c) => [c.id, c])), edited: infoEdited(s, this.root()),
-      chart: infoContextChart(s, window, { known: Boolean(this.windows[s.model]) }),
+      chart: infoContextChart(s),
     };
     return f;
   }

@@ -634,21 +634,22 @@ export function infoSpark(state, window = 1_000_000, max = 72) {
   return state.requests.slice(-max).map((r) => ({ ratio: r.context / window, afterCompaction: r.afterCompaction }));
 }
 
-// The Context expansion's step chart (round 3): the last `max` requests' context to the window
-// (a request past it drawn at the ceiling, `over`), and a tick on the boundary before the first
-// request after each compaction (at 1 for one no request followed yet). A tick within LABEL_GAP of
-// the last labelled one keeps no label: the labels would overlap.
+// The Context expansion's step chart (round 3): the last `max` requests' context, scaled to their
+// peak (round 3b: at 6 % of the window the line lay on the floor), and a tick on the boundary
+// before the first request after each compaction (at 1 for one no request followed yet). A tick
+// within LABEL_GAP of the last labelled one keeps no label: the labels would overlap.
 const LABEL_GAP = 0.25;
-export function infoContextChart(state, window = 1_000_000, { known = true, max = 72 } = {}) {
+export function infoContextChart(state, { max = 72 } = {}) {
   const shown = state.requests.slice(-max), n = shown.length;
   if (!n) return null;
-  const bars = shown.map((r) => ({ ratio: Math.min(1, r.context / window), over: r.context > window }));
+  const peak = Math.max(1, ...shown.map((r) => r.context));
+  const bars = shown.map((r) => ({ ratio: r.context / peak }));
   const at = shown.flatMap((r, i) => (r.afterCompaction ? [i / n] : []));
   if (state.pendingCompaction) at.push(1);
   let last = -Infinity;
   const ticks = at.map((x) => { const label = x - last >= LABEL_GAP; if (label) last = x; return { at: x, label }; });
   const caption = n === 1 ? "1 request" : n < state.requests.length ? `Last ${n} requests` : `All ${n} requests`;
-  return { bars, ticks, caption, ceiling: `${infoTokens(window)} max${known ? "" : ", assumed"}` };
+  return { bars, ticks, caption, ceiling: `peak ${infoTokens(peak)}` };
 }
 
 // "3 prompts · 76 replies · started 52m ago": the session name's tooltip (round 3).
