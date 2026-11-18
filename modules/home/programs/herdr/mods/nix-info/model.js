@@ -710,6 +710,11 @@ export function infoEditedText(e) {
   return `${n} file${n === 1 ? "" : "s"} edited`;
 }
 
+// The overview's count of files edited outside the repo (round 3b), or null.
+export function infoOutsideText(n) {
+  return n > 0 ? `+${n} outside repo` : null;
+}
+
 // "1 edit with no file name" (Pi kept neither its arguments nor its path), or null.
 export function infoUnnamedText(n) {
   return n > 0 ? `${n} edit${n === 1 ? "" : "s"} with no file name` : null;

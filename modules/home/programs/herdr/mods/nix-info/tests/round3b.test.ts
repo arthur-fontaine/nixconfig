@@ -7,7 +7,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { infoFeed, infoKeep, infoKindCounts, infoCounts, infoListRows, infoNewSession, infoTools, infoListMeta, infoCallsIn, infoUnnamedText, infoEdited, infoRowTime } from "../model.js";
+import { infoFeed, infoKeep, infoKindCounts, infoCounts, infoListRows, infoNewSession, infoTools, infoListMeta, infoCallsIn, infoUnnamedText, infoEdited, infoRowTime, infoOutsideText } from "../model.js";
 
 // The fixture sessions, as info-shots shoots them.
 const here = dirname(fileURLToPath(import.meta.url));
@@ -80,4 +80,11 @@ test("a row's time: its duration, \"running\" while it runs, \"stopped\" when cu
   assert.equal(infoRowTime({ duration: null }, "running"), "running");
   assert.equal(infoRowTime({ duration: null }, "no-result"), "stopped");
   assert.equal(infoRowTime({ duration: null }, "done"), "");
+});
+
+// ---- 10. the overview's outside count says what it is outside of ------------------------------
+
+test("files edited outside the repo: \"+2 outside repo\"", () => {
+  assert.equal(infoOutsideText(2), "+2 outside repo");
+  assert.equal(infoOutsideText(0), null);
 });

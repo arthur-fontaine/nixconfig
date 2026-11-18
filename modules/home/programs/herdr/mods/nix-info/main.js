@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText, infoContextRight, infoHeadLine, infoCallsIn, infoUnnamedText, infoRowTime } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText, infoContextRight, infoHeadLine, infoCallsIn, infoUnnamedText, infoRowTime, infoOutsideText } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -427,7 +427,7 @@ export default class Info extends View {
     return div().px(CHROME.insetX).pt(11).child(chromeRow(UI, t, "edited", { onClick: go })
       .child(svg(ICON("file-text")).size(14).flex_none().text_color(t.dim))
       .child(div().flex_1().min_w(0).truncate().text_color(go ? t.foreground : t.muted).child(text))
-      .when(e.outside.length > 0, (x) => x.child(div().flex_none().text_size(12).text_color(t.dim).child(`+${e.outside.length} outside`)))
+      .when(e.outside.length > 0, (x) => x.child(div().flex_none().text_size(12).text_color(t.dim).child(infoOutsideText(e.outside.length))))
       .when(Boolean(go), (x) => x.child(svg(ICON("chevron-right")).size(12).flex_none().text_color(t.chevron))));
   }
 
