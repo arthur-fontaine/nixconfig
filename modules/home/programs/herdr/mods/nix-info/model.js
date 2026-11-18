@@ -687,8 +687,8 @@ export function infoCommandText(cmd) {
   return s.replace(/^(?:\.{0,2}|~)?\/?(?:[^\s/=]+\/)+([^\s/=]+)(?=\s|$)/, "$1");
 }
 
-// A limit meter's right side (round 3, the person's rule): always and only when it resets,
-// "resets in 3h 44m" ("resets in 3 days" for the week). No pace text: the notch shows it.
+// A limit meter's right side: the gap to a steady pace, then when it resets, each with its word:
+// "13% ahead · resets in 3h 44m", "4% behind · resets in 3 days" (the gap left out under 1 %).
 // Round 3b: what the right side can't vouch for, it says instead: "reset 5m ago" once the reset has
 // passed (the % is from before it; it wins), else "updated 12m ago" when the usage file is stale.
 export function infoMeterRight(w, key, { now, staleFor = null }) {
@@ -696,7 +696,9 @@ export function infoMeterRight(w, key, { now, staleFor = null }) {
   if (staleFor !== null) return `updated ${infoAge(staleFor)} ago`;
   if (!w.resetsAt) return "";
   const left = w.resetsAt - now, d = Math.round(left / 86400000);
-  return `resets in ${key === "week" && left >= 86400000 && d >= 1 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(left)}`;
+  const resets = `resets in ${key === "week" && left >= 86400000 && d >= 1 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(left)}`;
+  const gap = typeof w.ahead === "number" ? Math.round(w.ahead * 100) : 0;
+  return gap ? `${Math.abs(gap)}% ${gap > 0 ? "ahead" : "behind"} · ${resets}` : resets;
 }
 
 // A model id as people say it (round 3): "claude-opus-5-5" → "Opus 5.5", "claude-3-5-sonnet-…"

@@ -411,8 +411,8 @@ export default class Info extends View {
     }
     const win = (key, label, w, length) => {
       if (!w) return null;
-      // Round 3: the right side is always and only "resets in …"; no pace text (the notch shows it),
-      // no tokens-left figure, no tooltip (the person's decisions).
+      // The gap to a steady pace and the reset ("13% ahead · resets in 1h 59m"); no tokens-left
+      // figure, no tooltip (the person's decisions).
       const at = { now, staleFor: u.stale ? now - (u.at ?? now) : null }, muted = infoMeterMuted(w, at);
       const right = { essential: infoMeterRight(w, key, at) };
       return this.meter(t, `meter-${key}`, { label, ratio: w.ratio, right, pace: muted ? null : w.pace, muted });

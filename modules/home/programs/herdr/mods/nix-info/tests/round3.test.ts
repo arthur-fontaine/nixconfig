@@ -76,11 +76,11 @@ test("fed from a session: the tick follows the compaction entry", () => {
 
 // ---- the words pass: numbers and names first, the essential part never cut ----------------
 
-test("a limit's right side is always and only when it resets", () => {
+test("a limit's right side: the gap to a steady pace, then when it resets", () => {
   const now = Date.parse("2026-11-18T12:00:00Z");
   const H = 3600_000;
-  assert.equal(infoMeterRight({ resetsAt: now + 3 * H + 44 * MIN, ahead: 0.13 }, "five", { now }), "resets in 3h 44m");
-  assert.equal(infoMeterRight({ resetsAt: now + 3 * 24 * H, ahead: -0.2 }, "week", { now }), "resets in 3 days");
+  assert.equal(infoMeterRight({ resetsAt: now + 3 * H + 44 * MIN, ahead: 0.13 }, "five", { now }), "13% ahead · resets in 3h 44m");
+  assert.equal(infoMeterRight({ resetsAt: now + 3 * 24 * H, ahead: -0.2 }, "week", { now }), "20% behind · resets in 3 days");
   assert.equal(infoMeterRight({ resetsAt: now + 1 * 24 * H + 2 * H, ahead: 0 }, "week", { now }), "resets in 1 day");
   assert.equal(infoMeterRight({ resetsAt: now + 2 * H }, "five", { now }), "resets in 2h");
   assert.equal(infoMeterRight({ resetsAt: null }, "five", { now }), "");
