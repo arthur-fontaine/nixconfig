@@ -11,12 +11,13 @@ set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 S=$here/sandbox
 STATES=(overview context calls calls-bash calls-failed calls-nomatch collapsed call-script call-step call-edit call-next
-  show-all back files files-outside no-pi no-calls running dead claude-code narrow narrow-context changes files-panel corners
+  show-all back files files-outside no-pi no-calls running dead claude-code narrow narrow-context narrow-calls narrow-files-outside
+  narrow-call-script narrow-call-edit changes files-panel corners
   big big-calls big-all big-call)
 # INFO_REAL=<a copy of a real session>: also its overview and calls (real-overview, real-calls),
 # lent to the idle pi-dead stand-in. Never a session in ~/.pi itself: the panel only reads, but
 # a copy keeps the original out of reach.
-[ -n "${INFO_REAL:-}" ] && STATES+=(real-overview real-calls real-context)
+[ -n "${INFO_REAL:-}" ] && STATES+=(real-overview real-calls real-context narrow-real-overview narrow-real-calls narrow-real-context)
 prefix=${1:?info-shots <prefix> <out dir> [state...]}; out=${2:?out dir}; shift 2
 states=("$@"); [ ${#states[@]} -gt 0 ] || states=("${STATES[@]}")
 root=${HERDR_SANDBOX:-/tmp/herdr-sandbox}; root=$(cd "$root" && pwd -P)
@@ -93,14 +94,18 @@ shoot() { # <state> <theme>
 }
 
 # One state: set it up from a reset panel on the main stand-in, shoot, put things back.
+# narrow-<state>: <state> in a 260 px panel.
 state_() { # <state> <theme>
+  local base=$1
+  case $1 in narrow-*) base=${1#narrow-} ;; esac
   show pi; act nix-info.reset
   # The big states lend the working stand-in the big session (a working pane renders every second).
   # A relabelled stand-in: a tick for the panel to drop the session it had (else the probe passes
   # on that one), then the wait for the new one.
-  case $1 in big*) hc label "$(term_of pi-run)" "pi.session=$gen/big.jsonl" >/dev/null; "$S" do tab.select --id "$(tab_of pi-run)" >/dev/null; sleep 2; show pi-run ;; esac
-  case $1 in real*) hc label "$(term_of pi-dead)" "pi.session=$INFO_REAL" >/dev/null; "$S" do tab.select --id "$(tab_of pi-dead)" >/dev/null; sleep 2; show pi-dead ;; esac
-  case $1 in
+  case $base in big*) hc label "$(term_of pi-run)" "pi.session=$gen/big.jsonl" >/dev/null; "$S" do tab.select --id "$(tab_of pi-run)" >/dev/null; sleep 2; show pi-run ;; esac
+  case $base in real*) hc label "$(term_of pi-dead)" "pi.session=$INFO_REAL" >/dev/null; "$S" do tab.select --id "$(tab_of pi-dead)" >/dev/null; sleep 2; show pi-dead ;; esac
+  case $1 in narrow-*) "$S" do layout.resize --id panel --px 260 >/dev/null ;; esac
+  case $base in
     overview) ;;
     context) act nix-info.open:context ;;
     calls) act nix-info.detail:calls ;;
@@ -130,7 +135,6 @@ state_() { # <state> <theme>
     dead) show pi-dead ;;
     claude-code) show pi-cc; act nix-info.reset ;;
     narrow) "$S" do layout.resize --id panel --px 260 >/dev/null ;;
-    narrow-context) "$S" do layout.resize --id panel --px 260 >/dev/null; act nix-info.open:context ;;
     changes) panel changes ;;
     files-panel) panel files ;;
     # A fill no theme uses, so the corner check sees the content's own corners.
@@ -138,8 +142,8 @@ state_() { # <state> <theme>
     *) echo "unknown state $1" >&2; return 1 ;;
   esac
   shoot "$1" "$2"
-  case $1 in
-    narrow|narrow-context) "$S" do layout.resize --id panel --px 360 >/dev/null ;;
+  case $1 in narrow*) "$S" do layout.resize --id panel --px 360 >/dev/null ;; esac
+  case $base in
     changes|files-panel) panel info ;;
     corners) act nix-info.fill: ;;
     big*) hc label "$(term_of pi-run)" "pi.session=$gen/running.jsonl" >/dev/null ;;
