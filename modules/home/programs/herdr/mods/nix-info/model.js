@@ -718,6 +718,12 @@ export function infoHeadLine(line, model, thinking) {
   return { status: line.text, rest };
 }
 
+// A limit the panel can't vouch for (round 3c): its reset has passed or its usage is stale. Its %
+// and bar are drawn muted, without warning colours or the pace notch.
+export function infoMeterMuted(w, { now, staleFor = null }) {
+  return Boolean(w.resetsAt && w.resetsAt <= now) || staleFor !== null;
+}
+
 // The Context meter's right side: "59k of 1M", "(assumed)" when the model's maximum is unknown.
 export function infoContextRight(used, window, known) {
   return `${infoTokens(used)} of ${infoTokens(window)}${known ? "" : " (assumed)"}`;

@@ -1,7 +1,7 @@
 // Round 3c (brief-r3c.md), pure.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { infoContext, infoContextChart, infoFeed, infoNewSession, infoKindCounts, infoCounts, infoListRows, infoKeep, infoCallsIn, infoRowIcon } from "../model.js";
+import { infoContext, infoContextChart, infoFeed, infoNewSession, infoKindCounts, infoCounts, infoListRows, infoKeep, infoCallsIn, infoRowIcon, infoMeterMuted } from "../model.js";
 
 const line = (o) => JSON.stringify(o) + "\n";
 const it = (type, input, read, write, model) => ({ type, input_tokens: input, cache_read_input_tokens: read, cache_creation_input_tokens: write, ...(model ? { model } : {}) });
@@ -93,4 +93,14 @@ test("a script named by its one call, with no steps listed (running), takes that
   assert.equal(infoRowIcon({ kind: "code", argKind: "code", nested: [] }), "code");
   assert.equal(infoRowIcon({ kind: "code", argKind: "bash", nested: [{}], titled: false }), "code");
   assert.equal(infoRowIcon({ kind: "bash" }), "bash");
+});
+
+// ---- 6. a meter it can't vouch for is drawn muted ----------------------------------------------
+
+test("a limit is muted once its reset has passed or its usage is stale", () => {
+  const now = Date.parse("2026-11-18T12:00:00Z"), MIN = 60000;
+  assert.equal(infoMeterMuted({ resetsAt: now + 60 * MIN }, { now }), false);
+  assert.equal(infoMeterMuted({ resetsAt: now - 5 * MIN }, { now }), true);
+  assert.equal(infoMeterMuted({ resetsAt: now + 60 * MIN }, { now, staleFor: 12 * MIN }), true);
+  assert.equal(infoMeterMuted({ resetsAt: null }, { now }), false);
 });

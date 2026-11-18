@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText, infoContextRight, infoHeadLine, infoCallsIn, infoUnnamedText, infoRowTime, infoOutsideText, infoRowIcon } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText, infoContextRight, infoHeadLine, infoCallsIn, infoUnnamedText, infoRowTime, infoOutsideText, infoRowIcon, infoMeterMuted } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -370,15 +370,16 @@ export default class Info extends View {
   // D2: label + % and a right text on one line, a full-width 4 px bar under; neutral, warning
   // from 80 %, error from 95 %; the pace notch. `expand`: the Context meter's chevron and click.
   // right: { essential, secondary }: the secondary part is cut first, the essential never.
-  meter(t, id, { label, ratio, right, pace = null, tip = null, expand = null }) {
-    const tone = infoMeterTone(ratio ?? 0);
-    const fill = tone === "error" ? t.blocked : tone === "warning" ? t.ansi3 : t.tones.fill;
+  // muted: a limit it can't vouch for (round 3c): dim %, dim bar, no warning colours, no notch.
+  meter(t, id, { label, ratio, right, pace = null, tip = null, expand = null, muted = false }) {
+    const tone = muted ? "muted" : infoMeterTone(ratio ?? 0);
+    const fill = tone === "muted" ? t.dim : tone === "error" ? t.blocked : tone === "warning" ? t.ansi3 : t.tones.fill;
     const r = Math.max(0, Math.min(1, ratio ?? 0));
     // R2-7: an expandable meter's chevron follows its value ("Context 6% ›"), so every label
     // starts at the same edge.
     const head = h_flex().gap(6).items_center().text_size(12)
       .child(div().flex_none().text_color(t.muted).child(label))
-      .child(div().flex_none().font_medium().text_color(tone === "normal" ? t.foreground : fill).child(pct(ratio)))
+      .child(div().flex_none().font_medium().text_color(tone === "muted" ? t.muted : tone === "normal" ? t.foreground : fill).child(pct(ratio)))
       .when(Boolean(expand), (e) => e.child(svg(ICON(expand?.open ? "chevron-down" : "chevron-right")).size(12).flex_none().ml(2).text_color(t.chevron)))
       .child(div().flex_1().min_w(0).truncate().text_right().text_color(t.muted).child(right?.secondary ?? ""))
       .when(Boolean(right?.essential), (e) => e.child(div().flex_none().text_color(t.muted).child(right.essential)));
@@ -412,8 +413,9 @@ export default class Info extends View {
       if (!w) return null;
       // Round 3: the right side is always and only "resets in …"; no pace text (the notch shows it),
       // no tokens-left figure, no tooltip (the person's decisions).
-      const right = { essential: infoMeterRight(w, key, { now, staleFor: u.stale ? now - (u.at ?? now) : null }) };
-      return this.meter(t, `meter-${key}`, { label, ratio: w.ratio, right, pace: w.pace });
+      const at = { now, staleFor: u.stale ? now - (u.at ?? now) : null }, muted = infoMeterMuted(w, at);
+      const right = { essential: infoMeterRight(w, key, at) };
+      return this.meter(t, `meter-${key}`, { label, ratio: w.ratio, right, pace: muted ? null : w.pace, muted });
     };
     if (u) out.push(...[win("five", "5h", u.fiveHour), win("week", "Week", u.sevenDay)].filter(Boolean));
     else out.push(div().px(CHROME.rowX).py(4).text_size(12).text_color(t.dim).child("Limits not reported yet"));
