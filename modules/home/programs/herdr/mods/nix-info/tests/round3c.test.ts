@@ -1,7 +1,7 @@
 // Round 3c (brief-r3c.md), pure.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { infoContext, infoContextChart, infoFeed, infoNewSession } from "../model.js";
+import { infoContext, infoContextChart, infoFeed, infoNewSession, infoKindCounts, infoCounts, infoListRows, infoKeep, infoCallsIn } from "../model.js";
 
 const line = (o) => JSON.stringify(o) + "\n";
 const it = (type, input, read, write, model) => ({ type, input_tokens: input, cache_read_input_tokens: read, cache_creation_input_tokens: write, ...(model ? { model } : {}) });
@@ -26,4 +26,58 @@ test("a turn without iterations keeps its usage as its context", () => {
   const s = infoNewSession("f");
   infoFeed(s, reply("2026-11-17T17:20:00Z", { input: 3, cacheRead: 100, cacheWrite: 7, output: 1 }));
   assert.equal(s.requests.at(-1).context, 110);
+});
+
+// ---- 7 and 8. scripts aren't calls, but a failure is never lost ---------------------------------
+
+const step = (o) => ({ id: "s/1", kind: "bash", arg: "git status", full: "git status", path: null, duration: 100, error: false, ...o });
+const script = (o) => ({ id: "s", kind: "code", name: "codemode", arg: "x", untitled: false, running: false, duration: 300, threw: false, nested: [], ...o });
+// infoTools' fields from a raw call, as the model derives them (failed, stepFailed, unrecorded).
+import { infoTool, infoTools } from "../model.js";
+const tools = (...calls) => {
+  const s = infoNewSession("f");
+  const lines = calls.map((c, i) => {
+    const ts = `2026-11-18T10:0${i}:00Z`;
+    return line({ type: "message", timestamp: ts, message: { role: "assistant", content: [{ type: "toolCall", id: c.id, name: "codemode", arguments: { code: c.code ?? "await tools.bash({ command: 'ls' })" } }] } })
+      + line({ type: "message", timestamp: ts, message: { role: "toolResult", toolCallId: c.id, toolName: "codemode", isError: Boolean(c.threw), durationMs: 50, content: [{ type: "text", text: c.threw ? "Error" : "ok" }],
+        ...(c.steps ? { nestedCalls: { complete: true, calls: c.steps } } : {}) } });
+  });
+  infoFeed(s, lines.join(""));
+  return infoTools(s);
+};
+const base = infoKindCounts(tools({ id: "d", steps: [{ id: "d/1", name: "bash", status: "ok", arguments: { command: "ls" } }] }));
+
+test("a script that threw with no recorded steps counts as one failed call, under other, with the filled dot", () => {
+  const t = tools({ id: "d", steps: [{ id: "d/1", name: "bash", status: "ok", arguments: { command: "ls" } }] }, { id: "x", threw: true });
+  const n = infoKindCounts(t);
+  assert.deepEqual(n, { ...base, all: base.all + 1, other: base.other + 1, failed: base.failed + 1 });
+  assert.equal(n.bash + n.read + n.edit + n.ask + n.other, n.all);
+  const row = infoListRows(t, []).find((r) => r.id === "x");
+  assert.equal(row.failed, true);
+  assert.equal(row.unrecorded, true);
+  // The other and failed filters list it, and count it as their chips do.
+  for (const kind of ["other", "failed", "all"]) {
+    const rows = infoListRows(t.map((c) => infoKeep(c, kind)).filter(Boolean), []);
+    assert.equal(infoCallsIn(rows, kind), n[kind], kind);
+  }
+});
+
+test("a script with zero steps that didn't throw changes nothing, and has no dot", () => {
+  const t = tools({ id: "d", steps: [{ id: "d/1", name: "bash", status: "ok", arguments: { command: "ls" } }] }, { id: "z" });
+  assert.deepEqual(infoKindCounts(t), base);
+  const row = infoListRows(t, []).find((r) => r.id === "z");
+  assert.equal(row.failed, false);
+  assert.equal(row.stepFailed, false);
+});
+
+test("a script that threw with recorded steps, none failed: a container, the hollow dot, counts unchanged", () => {
+  const t = tools({ id: "d", steps: [{ id: "d/1", name: "bash", status: "ok", arguments: { command: "ls" } }] },
+    { id: "y", threw: true, steps: [{ id: "y/1", name: "bash", status: "ok", arguments: { command: "ls" } }, { id: "y/2", name: "read", status: "ok", arguments: { path: "/a" } }] });
+  const n = infoKindCounts(t);
+  assert.equal(n.failed, base.failed);
+  assert.equal(n.all, base.all + 2);
+  const row = infoListRows(t, []).find((r) => r.id === "y");
+  assert.equal(row.failed, false);
+  assert.equal(row.stepFailed, true);
+  assert.equal(infoCounts(t).failed, n.failed);
 });

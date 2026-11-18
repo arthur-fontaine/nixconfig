@@ -784,6 +784,7 @@ export function infoCache(state) {
 export function infoTools(state, titles = null) {
   return state.order.slice().reverse().map((id) => {
     const c = state.tools.get(id);
+    const unrecorded = c.kind === "code" && c.threw === true && !c.nested?.length;
     const fromFile = (key) => { const x = titles?.[key]; return typeof x === "string" && x && !x.endsWith("…") ? x : null; };
     let arg = c.title ?? c.lateTitle ?? c.arg;
     if (c.titleKey && !c.titled) arg = fromFile(c.titleKey) ?? arg;
@@ -792,7 +793,10 @@ export function infoTools(state, titles = null) {
       threw: c.threw ?? null, nested: nested ?? null,
       // Round 3b: only a tool call fails (the filled dot, what "failed N" counts); a script is a
       // container, with the hollow dot when it threw or a step failed (`threw` tells which).
-      failed: c.kind !== "code" && c.threw === true, stepFailed: c.kind === "code" && (c.threw === true || Boolean(c.nested?.some((n) => n.error))),
+      failed: (c.kind !== "code" || unrecorded) && c.threw === true, stepFailed: c.kind === "code" && !unrecorded && (c.threw === true || Boolean(c.nested?.some((n) => n.error))),
+      // Round 3c: a script that threw with no recorded step stands in for its unrecorded calls: one
+      // failed call (under "other"), so its failure is never lost.
+      unrecorded,
       startedExact: c.durationExact && c.finished ? c.finished - c.duration : null, untitled: c.name === "codemode" && !c.title && !c.lateTitle && arg === c.arg,
       args: c.args, result: c.result, resultCut: c.resultCut, finished: c.finished, diff: c.diff ?? null };
   });
@@ -803,6 +807,9 @@ const infoFailedKind = (k) => k === "failed" || k === "errors";
 // Tool calls of no chip's kind (Grep, Glob, …): "other". A script ("code") is a container, no call.
 const INFO_KNOWN = ["bash", "read", "edit", "write", "ask", "code"];
 const infoOther = (k) => !INFO_KNOWN.includes(k);
+// A row the chips count: a tool call, or a script standing in for calls Pi didn't record.
+const infoIsCall = (r) => r.kind !== "code" || r.unrecorded === true;
+const infoIsOther = (r) => infoOther(r.kind) || r.unrecorded === true;
 
 // A listed call under a kind filter ("all", "bash", "read", "edit", "ask", "errors"): null when
 // left out. A script is kept for the calls it made, with only those as its sub-rows.
@@ -812,6 +819,7 @@ export function infoKeep(c, kind) {
   const is = (k) => (other ? infoOther(k) : kinds.includes(k));
   const pick = infoFailedKind(kind) ? (n) => n.error : (n) => is(n.kind);
   const matched = c.nested?.filter(pick) ?? [];
+  if (other && c.unrecorded) return c;
   if (infoFailedKind(kind) ? !c.error && !c.failed && !matched.length : !is(c.kind) && !matched.length) return null;
   // steps keeps them all: an untitled script is named after all its steps, not the shown ones.
   // context: kept only for the steps that match (R2-2: its text muted, counted apart).
@@ -900,7 +908,7 @@ export function infoListMeta(shown, total, capped) {
 // The calls the listed rows hold, as the chip of `kind` counts them: a script row holds none
 // (a container), a merged row its step, a context row none; under "failed", the filled dots.
 export function infoCallsIn(rows, kind) {
-  return rows.filter((r) => r.kind !== "code" && !r.context && (!infoFailedKind(kind) || r.failed)).length;
+  return rows.filter((r) => infoIsCall(r) && !r.context && (!infoFailedKind(kind) || r.failed)).length;
 }
 
 export function infoShowAll(total) {
@@ -983,9 +991,9 @@ export function infoCounts(tools) {
 // The filter chips' counts: matching calls, nested included.
 export function infoKindCounts(tools) {
   // Round 3b: tool calls only (a script is a container), so the kinds add up to all.
-  const rows = infoRows(tools).filter((r) => r.kind !== "code"), n = (f) => rows.filter(f).length;
+  const rows = infoRows(tools).filter(infoIsCall), n = (f) => rows.filter(f).length;
   return { all: rows.length, bash: n((r) => r.kind === "bash"), read: n((r) => r.kind === "read"), edit: n((r) => r.kind === "edit" || r.kind === "write"),
-    ask: n((r) => r.kind === "ask"), other: n((r) => infoOther(r.kind)), failed: n((r) => r.failed) };
+    ask: n((r) => r.kind === "ask"), other: n(infoIsOther), failed: n((r) => r.failed) };
 }
 
 // "running" while the agent works, "no-result" when it stopped without one (F3), else "done".
