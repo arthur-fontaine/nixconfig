@@ -2,7 +2,7 @@
 // expansion's step chart, pure.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { infoCommandText, infoCallMeta, infoContextChart, infoContextLines, infoEditedText, infoFeed, infoFilesMeta, infoMeterRight, infoNewSession, infoSessionLine } from "../model.js";
+import { infoContextRight, infoCommandText, infoCallMeta, infoContextChart, infoContextLines, infoEditedText, infoFeed, infoFilesMeta, infoMeterRight, infoNewSession, infoSessionLine } from "../model.js";
 
 const MIN = 60000;
 const session = (o) => ({ ...infoNewSession("f"), ...o });
@@ -85,16 +85,19 @@ test("fed from a session: the tick follows the compaction entry", () => {
 
 // ---- the words pass: numbers and names first, the essential part never cut ----------------
 
-test("a limit's right side: the reset time is the essential part, pace and staleness secondary; no tooltip", () => {
+test("a limit's right side is always and only when it resets", () => {
   const now = Date.parse("2026-11-18T12:00:00Z");
   const H = 3600_000;
-  assert.deepEqual(infoMeterRight({ resetsAt: now + 4 * H + 43 * MIN, ahead: 0.1 }, "five", { now }),
-    { essential: "4h 43m", secondary: "10% ahead" });
-  assert.deepEqual(infoMeterRight({ resetsAt: now + 3 * 24 * H, ahead: -0.2 }, "week", { now }),
-    { essential: "3 days", secondary: "" });
-  assert.deepEqual(infoMeterRight({ resetsAt: now + 2 * H, ahead: 0.05 }, "five", { now, staleFor: 12 * MIN }),
-    { essential: "2h", secondary: "5% ahead · as of 12m ago" });
-  assert.deepEqual(infoMeterRight({ resetsAt: null, ahead: null }, "five", { now }), { essential: "", secondary: "" });
+  assert.equal(infoMeterRight({ resetsAt: now + 3 * H + 44 * MIN, ahead: 0.13 }, "five", { now }), "resets in 3h 44m");
+  assert.equal(infoMeterRight({ resetsAt: now + 3 * 24 * H, ahead: -0.2 }, "week", { now }), "resets in 3 days");
+  assert.equal(infoMeterRight({ resetsAt: now + 1 * 24 * H + 2 * H, ahead: 0 }, "week", { now }), "resets in 1 day");
+  assert.equal(infoMeterRight({ resetsAt: now + 2 * H }, "five", { now }), "resets in 2h");
+  assert.equal(infoMeterRight({ resetsAt: null }, "five", { now }), "");
+});
+
+test("the Context meter's right side: used of the maximum, each figure with its word", () => {
+  assert.equal(infoContextRight(59_000, 1e6, true), "59k of 1M");
+  assert.equal(infoContextRight(59_000, 1e6, false), "59k of 1M (assumed)");
 });
 
 test("the edited files row: the count first, + when it is a floor", () => {
@@ -110,11 +113,11 @@ test("the Edited files view's meta", () => {
   assert.equal(infoFilesMeta(1, false), "1 file");
 });
 
-test("a call's meta: its time first, then when it ran", () => {
+test("a call's meta: its time first, then when it ran, each figure with its word", () => {
   const at = (s) => Date.parse(`2026-11-18T00:27:${s}`);
-  assert.equal(infoCallMeta({ duration: 3100, startedExact: at("42"), finished: at("45"), level: 0 }, "done"), "3.1s · 00:27:42–00:27:45");
-  assert.equal(infoCallMeta({ duration: 3100, startedExact: null, finished: at("45"), level: 0 }, "done"), "3.1s · finished 00:27:45");
-  assert.equal(infoCallMeta({ duration: 40, startedExact: null, finished: null, level: 1 }, "done"), "<0.1s");
+  assert.equal(infoCallMeta({ duration: 3100, startedExact: at("42"), finished: at("45"), level: 0 }, "done"), "Took 3.1s, from 00:27:42 to 00:27:45");
+  assert.equal(infoCallMeta({ duration: 3100, startedExact: null, finished: at("45"), level: 0 }, "done"), "Took 3.1s, finished at 00:27:45");
+  assert.equal(infoCallMeta({ duration: 40, startedExact: null, finished: null, level: 1 }, "done"), "Took <0.1s");
   assert.equal(infoCallMeta({ duration: null, startedExact: null, finished: null, level: 1 }, "done"), "No timing");
   assert.equal(infoCallMeta({}, "running"), "Running");
   assert.equal(infoCallMeta({}, "no-result"), "No result");

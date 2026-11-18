@@ -669,14 +669,17 @@ export function infoCommandText(cmd) {
   return s.replace(/^(?:\.{0,2}|~)?\/?(?:[^\s/=]+\/)+([^\s/=]+)(?=\s|$)/, "$1");
 }
 
-// A limit meter's right side (round 3): the reset time is essential (never cut), pace and
-// staleness secondary (cut first). No tooltip: it would only repeat the meter.
-export function infoMeterRight(w, key, { now, staleFor = null } = {}) {
-  const left = w.resetsAt ? w.resetsAt - now : null;
-  const d = left === null ? null : Math.round(left / 86400000);
-  const essential = left === null ? "" : key === "week" && left >= 86400000 && d >= 1 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(left);
-  const secondary = [infoPaceText(w.ahead), staleFor !== null ? `as of ${infoAge(staleFor)} ago` : null].filter(Boolean).join(" · ");
-  return { essential, secondary };
+// A limit meter's right side (round 3, the person's rule): always and only when it resets,
+// "resets in 3h 44m" ("resets in 3 days" for the week). No pace text: the notch shows it.
+export function infoMeterRight(w, key, { now }) {
+  if (!w.resetsAt) return "";
+  const left = w.resetsAt - now, d = Math.round(left / 86400000);
+  return `resets in ${key === "week" && left >= 86400000 && d >= 1 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(left)}`;
+}
+
+// The Context meter's right side: "59k of 1M", "(assumed)" when the model's maximum is unknown.
+export function infoContextRight(used, window, known) {
+  return `${infoTokens(used)} of ${infoTokens(window)}${known ? "" : " (assumed)"}`;
 }
 
 // The overview's Edited row: the count first, "+" when some edit kept no file name.
@@ -695,10 +698,11 @@ export function infoFilesMeta(n, exact) {
 export function infoCallMeta(c, state) {
   if (state === "running") return "Running";
   if (state === "no-result") return "No result";
-  const took = infoRowDuration(c.duration) || "No timing";
+  const d = infoRowDuration(c.duration);
+  if (!d) return "No timing";
   const fin = c.level === 0 && c.finished ? infoClock(c.finished, false) : null;
-  const when = c.startedExact && fin ? `${infoClock(c.startedExact, false)}–${fin}` : fin ? `finished ${fin}` : null;
-  return when ? `${took} · ${when}` : took;
+  const when = c.startedExact && fin ? `from ${infoClock(c.startedExact, false)} to ${fin}` : fin ? `finished at ${fin}` : null;
+  return when ? `Took ${d}, ${when}` : `Took ${d}`;
 }
 
 // The Context expansion's text lines, figures first.
@@ -825,7 +829,7 @@ export function infoNum(n) {
 // The Calls meta (R2-2), in rows: "200 of 216 rows", "3 rows · 1 for context".
 // Round 3: "200/218" when cut; the context rows aren't counted (they're drawn muted).
 export function infoListMeta(shown, total) {
-  return shown === total ? "" : `${infoNum(shown)}/${infoNum(total)}`;
+  return shown === total ? "" : `${infoNum(shown)} of ${infoNum(total)}`;
 }
 
 export function infoShowAll(total) {
@@ -936,11 +940,6 @@ export function infoMeterTone(ratio) {
   return ratio >= 0.95 ? "error" : ratio >= 0.8 ? "warning" : "normal";
 }
 
-// "12 pts ahead of pace", only when ahead by a point or more.
-export function infoPaceText(ahead) {
-  const pts = Math.round((ahead ?? 0) * 100);
-  return ahead !== null && ahead !== undefined && pts >= 1 ? `${pts}% ahead` : null;
-}
 
 // The files the session edited (O3): those under `root` (rel, name, dir), the others apart, and
 // whether some edit kept no path (then the count is a floor).

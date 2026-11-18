@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   infoCallState, infoCounts, infoEdited, infoFeed, infoGitFiles, infoIdleSince, infoKeep, infoKindCounts, infoMeterTone,
-  infoNavIds, infoNewSession, infoPaceText, infoRows, infoStatusLine, infoStepsLabel, infoTools, infoViewCommand,
+  infoNavIds, infoNewSession, infoRows, infoStatusLine, infoStepsLabel, infoTools, infoViewCommand,
 } from "../model.js";
 
 const line = (o) => JSON.stringify(o) + "\n";
@@ -129,12 +129,8 @@ test("the status line comes from Herdr's status; the session only names the runn
   assert.deepEqual(infoStatusLine({ status: "idle", since: null, state: feed(""), tools: [], now }), { tone: "idle", text: "No calls yet" });
 });
 
-test("meters: neutral, warning at 80 %, error at 95 %; pace text only when ahead (D2)", () => {
+test("meters: neutral, warning at 80 %, error at 95 % (D2; no pace text since round 3)", () => {
   assert.deepEqual([0.2, 0.79, 0.8, 0.949, 0.95, 1].map(infoMeterTone), ["normal", "normal", "warning", "warning", "error", "error"]);
-  assert.equal(infoPaceText(0.12), "12% ahead");
-  assert.equal(infoPaceText(0.004), null);
-  assert.equal(infoPaceText(-0.3), null);
-  assert.equal(infoPaceText(null), null);
 });
 
 test("git's per-file stats: status letter and +/−, new files too (O3)", () => {

@@ -69,12 +69,12 @@ test("the list counts rows, says so, and groups thousands", () => {
   assert.equal(infoNum(216), "216");
   assert.equal(infoNum(1467), "1,467");
   assert.equal(infoNum(1234567), "1,234,567");
-  // Round 3: nothing when the list is whole (the chips count the calls); "shown/total" when cut.
+  // Round 3: nothing when the list is whole (the chips count the calls); "shown of total" when cut.
   assert.equal(infoListMeta(216, 216, 0), "");
-  assert.equal(infoListMeta(200, 216, 0), "200/216");
+  assert.equal(infoListMeta(200, 216, 0), "200 of 216");
   // Round 3: the context rows aren't counted in the meta (they're drawn muted).
   assert.equal(infoListMeta(3, 3, 1), "");
-  assert.equal(infoListMeta(200, 1467, 12), "200/1,467");
+  assert.equal(infoListMeta(200, 1467, 12), "200 of 1,467");
   assert.equal(infoListMeta(1, 1, 0), "");
   assert.equal(infoShowAll(1467), "Show all");
 });

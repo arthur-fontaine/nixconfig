@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine, infoMeterRight, infoEditedText, infoFilesMeta, infoCallMeta, infoContextLines, infoCommandText, infoContextRight } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -385,7 +385,7 @@ export default class Info extends View {
     if (s && f.started) {
       const c = f.context, cache = f.cache;
       const known = Boolean(this.windows[s.model]);
-      out.push(this.meter(t, "meter-context", { label: "Context", ratio: c.ratio, right: { essential: `${infoTokens(c.used)} / ${infoTokens(c.window)}`, secondary: known ? "" : "max assumed" },
+      out.push(this.meter(t, "meter-context", { label: "Context", ratio: c.ratio, right: { essential: infoContextRight(c.used, c.window, known) },
         tip: known ? `Holds up to ${infoTokens(c.window)} tokens (${s.model})` : `Size unknown for ${s.model}: 1M assumed`,
         expand: { open: this.context, onClick: (_e, cx) => { this.context = !this.context; cx.notify(); } } }));
       if (this.context) {
@@ -396,9 +396,9 @@ export default class Info extends View {
     }
     const win = (key, label, w, length) => {
       if (!w) return null;
-      // Round 3: the reset time alone on the right; no tokens-left figure and no tooltip (the
-      // person's decision: it would only repeat the meter).
-      const right = infoMeterRight(w, key, { now, staleFor: u.stale ? now - (u.at ?? now) : null });
+      // Round 3: the right side is always and only "resets in …"; no pace text (the notch shows it),
+      // no tokens-left figure, no tooltip (the person's decisions).
+      const right = { essential: infoMeterRight(w, key, { now }) };
       return this.meter(t, `meter-${key}`, { label, ratio: w.ratio, right, pace: w.pace });
     };
     if (u) out.push(...[win("five", "5h", u.fiveHour), win("week", "Week", u.sevenDay)].filter(Boolean));
