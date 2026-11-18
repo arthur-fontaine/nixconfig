@@ -683,7 +683,11 @@ export function infoCommandText(cmd) {
 
 // A limit meter's right side (round 3, the person's rule): always and only when it resets,
 // "resets in 3h 44m" ("resets in 3 days" for the week). No pace text: the notch shows it.
-export function infoMeterRight(w, key, { now }) {
+// Round 3b: what the right side can't vouch for, it says instead: "reset 5m ago" once the reset has
+// passed (the % is from before it; it wins), else "updated 12m ago" when the usage file is stale.
+export function infoMeterRight(w, key, { now, staleFor = null }) {
+  if (w.resetsAt && w.resetsAt <= now) return `reset ${infoAge(now - w.resetsAt)} ago`;
+  if (staleFor !== null) return `updated ${infoAge(staleFor)} ago`;
   if (!w.resetsAt) return "";
   const left = w.resetsAt - now, d = Math.round(left / 86400000);
   return `resets in ${key === "week" && left >= 86400000 && d >= 1 ? `${d} day${d > 1 ? "s" : ""}` : infoSpan(left)}`;
@@ -811,7 +815,7 @@ export function infoKeep(c, kind) {
 
 const INFO_LISTS = ["calls", "files"];
 const INFO_FILTERS = ["all", "bash", "read", "edit", "ask", "other", "failed"];
-export const INFO_VIEW = { detail: null, from: null, kind: "all", sel: null, all: false, collapsed: [], context: false, outside: false, fill: null };
+export const INFO_VIEW = { detail: null, from: null, kind: "all", sel: null, all: false, collapsed: [], context: false, outside: false, fill: null, usageFile: null };
 
 // The panel's state after a nix-info.<verb> command (keys, scripts), or null for one it doesn't
 // know. detail:<calls|files> ("detail:" the overview), kind:<filter>, select:<call id> (the call
@@ -838,6 +842,8 @@ export function infoViewCommand(view, command, ids = []) {
   if (verb === "toggle" && arg) return { ...view, collapsed: view.collapsed.includes(arg) ? view.collapsed.filter((x) => x !== arg) : [...view.collapsed, arg] };
   if ((verb === "open" || verb === "close") && (arg === "context" || arg === "outside")) return { ...view, [arg]: verb === "open" };
   if (verb === "fill" && arg !== null) return { ...view, fill: arg || null };
+  // The limits read from a fixture file instead of claude-usage.json (the shots' stale states).
+  if (verb === "usage" && arg !== null) return { ...view, usageFile: arg || null };
   return null;
 }
 

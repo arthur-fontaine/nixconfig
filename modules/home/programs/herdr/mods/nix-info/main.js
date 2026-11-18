@@ -135,6 +135,8 @@ export default class Info extends View {
   // State changes here and in the loop; render() only reads (prepare() derives what it shows).
   apply(next) {
     const back = this.detail === "call" && next.detail === "calls";
+    // Another usage file (nix-info.usage:): read at the loop's next turn.
+    if ((next.usageFile ?? null) !== (this.usageFile ?? null)) { this.usageAt = 0; this.wake?.(); }
     // Onto the list from elsewhere, or another filter: its top, not where it was left.
     const top = next.detail === "calls" && !back && (this.detail !== "calls" || next.kind !== this.kind);
     Object.assign(this, next);
@@ -219,7 +221,7 @@ export default class Info extends View {
   }
 
   async readUsage() {
-    const text = await this.bounded(readFile(`${home()}/.pi/agent/claude-usage.json`, "utf8"));
+    const text = await this.bounded(readFile(this.usageFile ?? `${home()}/.pi/agent/claude-usage.json`, "utf8"));
     try { this.usageRecord = text ? JSON.parse(text) : null; } catch { this.usageRecord = null; }
     if (this.session && infoNeedsTitles(this.session)) await this.readTitles();
     if (!Object.keys(this.windows).length) {
@@ -240,7 +242,8 @@ export default class Info extends View {
       // would stop this loop for good: each gives up after BOUND, as if it had failed, and the
       // next tick tries again. A late result is dropped.
       this.bounded = (promise) => Promise.race([Promise.resolve(promise).catch(() => null), new Promise((r) => cx.timer.after(BOUND, () => r(null)))]);
-      let usageAt = 0, readAt = 0;
+      let readAt = 0;
+      this.usageAt = 0;
       for (;;) {
         // The selection is checked every POLL (memory only), the file read every TICK or
         // as soon as another pane is selected.
@@ -263,7 +266,7 @@ export default class Info extends View {
           // The session's figures are shown as soon as they are read, before usage and titles.
           let shown = false;
           if (changed) { this.rev++; this.prepare(); cx.notify(); changed = false; shown = true; }
-          if (Date.now() - usageAt > USAGE_EVERY) { usageAt = Date.now(); await this.readUsage(); changed = true; }
+          if (Date.now() - this.usageAt > USAGE_EVERY) { this.usageAt = Date.now(); await this.readUsage(); changed = true; }
           // A few keys per continuation; the view is redrawn once all are keyed. Another pane
           // selected stops it (the rest is keyed when this one shows again).
           for (const s = this.session; this.titles && s && this.session === s && selectedPane()?.pane === p?.pane && infoKeyTitles(s, KEYS_AT_ONCE);) {
@@ -407,7 +410,7 @@ export default class Info extends View {
       if (!w) return null;
       // Round 3: the right side is always and only "resets in …"; no pace text (the notch shows it),
       // no tokens-left figure, no tooltip (the person's decisions).
-      const right = { essential: infoMeterRight(w, key, { now }) };
+      const right = { essential: infoMeterRight(w, key, { now, staleFor: u.stale ? now - (u.at ?? now) : null }) };
       return this.meter(t, `meter-${key}`, { label, ratio: w.ratio, right, pace: w.pace });
     };
     if (u) out.push(...[win("five", "5h", u.fiveHour), win("week", "Week", u.sevenDay)].filter(Boolean));

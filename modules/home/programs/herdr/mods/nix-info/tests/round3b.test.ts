@@ -7,7 +7,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { infoFeed, infoKeep, infoKindCounts, infoCounts, infoListRows, infoNewSession, infoTools, infoListMeta, infoCallsIn, infoUnnamedText, infoEdited, infoRowTime, infoOutsideText, infoTool } from "../model.js";
+import { infoFeed, infoKeep, infoKindCounts, infoCounts, infoListRows, infoNewSession, infoTools, infoListMeta, infoCallsIn, infoUnnamedText, infoEdited, infoRowTime, infoOutsideText, infoTool, infoMeterRight, infoViewCommand, INFO_VIEW } from "../model.js";
 
 // The fixture sessions, as info-shots shoots them.
 const here = dirname(fileURLToPath(import.meta.url));
@@ -98,4 +98,23 @@ test("Grep: its pattern quoted and its folder; Glob: its pattern", () => {
   assert.equal(infoTool({ name: "Glob", arguments: { pattern: "src/**/*.js" } }, "/repo").arg, "src/**/*.js");
   const cc = FIXTURES.cc.find((c) => c.name === "Grep");
   assert.equal(cc.arg, "\"DEFAULT\" in src");
+});
+
+// ---- 11. stale usage says so, instead of a reset time it can't vouch for ----------------------
+
+test("a limit's right side: \"updated 12m ago\" when the usage is stale, \"reset 5m ago\" when the reset passed", () => {
+  const now = Date.parse("2026-11-18T12:00:00Z"), MIN = 60000, H = 60 * MIN;
+  assert.equal(infoMeterRight({ resetsAt: now + 3 * H }, "five", { now }), "resets in 3h");
+  assert.equal(infoMeterRight({ resetsAt: now + 3 * H }, "five", { now, staleFor: 12 * MIN }), "updated 12m ago");
+  assert.equal(infoMeterRight({ resetsAt: now - 5 * MIN }, "five", { now }), "reset 5m ago");
+  // Both: the reset wins (the % shown is from before it).
+  assert.equal(infoMeterRight({ resetsAt: now - 5 * MIN }, "week", { now, staleFor: 30 * MIN }), "reset 5m ago");
+  assert.equal(infoMeterRight({ resetsAt: null }, "five", { now, staleFor: 12 * MIN }), "updated 12m ago");
+});
+
+test("nix-info.usage:<file> reads the limits from a fixture file (the shots' stale states); usage: puts it back", () => {
+  const v = infoViewCommand({ ...INFO_VIEW }, "usage:/tmp/u.json");
+  assert.equal(v.usageFile, "/tmp/u.json");
+  assert.equal(infoViewCommand(v, "usage:").usageFile, null);
+  assert.equal(infoViewCommand(v, "reset").usageFile, null);
 });

@@ -147,7 +147,7 @@ test("an untitled script reads as its steps", () => {
 });
 
 test("nix-info.<verb> commands put the panel in any state; Back keeps filter and selection (D10)", () => {
-  const home = { detail: null, from: null, kind: "all", sel: null, all: false, collapsed: [], context: false, outside: false, fill: null };
+  const home = { detail: null, from: null, kind: "all", sel: null, all: false, collapsed: [], context: false, outside: false, fill: null, usageFile: null };
   const on = (v, c, ids) => infoViewCommand(v, c, ids);
   assert.deepEqual(on(home, "detail:calls"), { ...home, detail: "calls" });
   assert.deepEqual(on(home, "detail:files"), { ...home, detail: "files" });
