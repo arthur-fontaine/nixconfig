@@ -15,6 +15,8 @@ class FakePi {
 	userMessages: { text: string; options?: unknown }[] = [];
 	terminalInput: ((data: string) => { consume?: boolean } | undefined) | undefined;
 	onEvent!: (e: DaemonEvent) => void;
+	onClose!: () => void;
+	notes: { text: string; kind: string }[] = [];
 	idle = true;
 	navigated: string[] = [];
 
@@ -32,8 +34,9 @@ class FakePi {
 			},
 		} as unknown as ExtensionAPI;
 		voice(pi, {
-			client: (onEvent) => {
+			client: (onEvent, onClose) => {
 				this.onEvent = onEvent;
+				this.onClose = onClose;
 				const c: DaemonClient = { connect: async () => {}, send: (m) => void this.sent.push(m), close() {} };
 				return c;
 			},
@@ -59,7 +62,7 @@ class FakePi {
 			modelRegistry: { find: () => undefined, hasConfiguredAuth: () => false },
 			ui: {
 				setStatus() {},
-				notify() {},
+				notify: (text: string, kind: string) => void this.notes.push({ text, kind }),
 				confirm: async () => false,
 				getEditorText: () => "",
 				setEditorText() {},
@@ -90,6 +93,23 @@ class FakePi {
 }
 
 const tick = () => new Promise((r) => setImmediate(r));
+
+test("the daemon dying while a call starts says so, with its log; /call is never silent", async () => {
+	const pi = new FakePi();
+	await pi.emit("session_start", { reason: "startup" });
+	await pi.commands.get("call")!("", pi.ctx());
+	pi.onClose();
+	const err = pi.notes.find((n) => n.kind === "error");
+	assert.ok(err, "an error is shown");
+	assert.match(err.text, /daemon\.log/);
+});
+
+test("the daemon closing with no call starting stays quiet", async () => {
+	const pi = new FakePi();
+	await pi.emit("session_start", { reason: "startup" });
+	pi.onClose();
+	assert.equal(pi.notes.length, 0);
+});
 
 test("Esc while Pi speaks stops its voice, and the key still goes to Pi", async () => {
 	const pi = new FakePi();

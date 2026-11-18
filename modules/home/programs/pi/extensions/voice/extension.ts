@@ -46,8 +46,12 @@ export function voice(pi: ExtensionAPI, deps: Deps) {
 	// When each answer started playing, by id: the daemon reports it spoken after the answer is done here.
 	const started = new Map<string, number>();
 
+	// A /call sent but not yet answered by the daemon: if it dies now, the call never starts.
+	let starting = false;
 	const client = deps.client(onEvent, () => {
 		if (call.active && call.mine) ctx?.ui.notify("The voice daemon stopped; the call ended.", "warning");
+		else if (starting) ctx?.ui.notify("Voice: the daemon stopped before the call started (log: ~/.cache/pi-voice/daemon.log).", "error");
+		starting = false;
 		Object.assign(call, { active: false, mine: false, owner: null, loading: false });
 		render();
 	});
@@ -67,6 +71,7 @@ export function voice(pi: ExtensionAPI, deps: Deps) {
 			c.ui.notify(`Voice: ${(e as Error).message}`, "error");
 			return;
 		}
+		starting = true;
 		client.send({ type: "call.start", take });
 	}
 
@@ -81,6 +86,7 @@ export function voice(pi: ExtensionAPI, deps: Deps) {
 		switch (e.type) {
 			case "call": {
 				const wasMine = call.mine;
+				starting = false;
 				Object.assign(call, { active: Boolean(e.active), mine: Boolean(e.mine), owner: (e.owner as string) ?? null });
 				if (!call.mine) call.loading = false;
 				if (wasMine && e.moved_to) ctx?.ui.notify(`The call moved to « ${e.moved_to} ».`, "info");
