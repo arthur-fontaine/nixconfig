@@ -447,6 +447,12 @@ function apply(state, entry) {
     if (u && (u.input || u.cacheRead || u.cacheWrite || u.output)) {
       const r = { input: u.input ?? 0, cacheRead: u.cacheRead ?? 0, cacheWrite: u.cacheWrite ?? 0, output: u.output ?? 0, afterCompaction: state.pendingCompaction };
       r.context = r.input + r.cacheRead + r.cacheWrite;
+      // Round 3c: Pi's claude-code provider sums every request of a turn (the advisor's included)
+      // into one usage; the carrier's iterations keep them apart. The conversation's context is its
+      // last request's, never the sum (558k in a 279k session, 1M before a compaction).
+      const its = m.diagnostics?.find?.((d) => Array.isArray(d?.details?.carrier?.message?.usage?.iterations))?.details.carrier.message.usage.iterations;
+      const own = its?.filter((x) => x?.type === "message").at(-1);
+      if (own) r.context = (own.input_tokens ?? 0) + (own.cache_read_input_tokens ?? 0) + (own.cache_creation_input_tokens ?? 0);
       state.requests.push(r);
       state.pendingCompaction = false;
       for (const k of ["input", "output", "cacheRead", "cacheWrite"]) state.totals[k] += r[k];
