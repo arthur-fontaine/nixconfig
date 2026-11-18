@@ -9,7 +9,7 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, VirtualListScrollHandle } fr
 import { spaces, panes, focused, terminals, exec, home, layout, theme, run, props, shared, setShared, notify, nextCommand, settings } from "herdr";
 import { readFile } from "fs/promises";
 import { openInEditor } from "../_lib/editor.js";
-import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones } from "./model.js";
+import { infoAge, infoCache, infoClock, infoContext, infoDuration, infoEditDiff, infoFeed, infoFiles, infoJsonLines, infoKeep, infoKeyTitles, infoLastCall, infoRows, infoLines, infoNeedsTitles, infoNewSession, infoParseTitle, infoResultLines, infoSessionDir, infoSpan, infoSpark, infoTokens, infoTokensLeft, infoTools, infoUsage, infoUtf8Length, infoViewCommand, infoCallState, infoCounts, INFO_VIEW, infoStatusLine, infoMeterTone, infoPaceText, infoEdited, infoStepsLabel, infoKindCounts, infoGitFiles, infoNavIds, infoListRows, infoMergedRow, infoNum, infoListMeta, infoShowAll, infoRowDuration, infoFolder, infoTones, infoContextChart, infoSessionLine } from "./model.js";
 import { tokenize } from "../nix-diff/syntax.js";
 import { tipText } from "../_lib/tip.js";
 import { CHROME, chromeHeader, chromeRow, chromeSection, chromeTextButton } from "../_lib/chrome.js";
@@ -326,7 +326,33 @@ export default class Info extends View {
       .child(h_flex().gap(8).items_center().child(this.piMark(t))
         .child(div().flex_1().min_w(0).truncate().font_medium().text_color(t.foreground).child(s?.name ?? infoParseTitle(this.pane?.title)?.name ?? "Pi"))
         .when(line.tone === "working", (e) => e.child(this.spinner(t, 13))))
-      .child(div().pl(22).min_w(0).truncate().text_size(12).text_color(color).child(line.text));
+      .child(div().pl(22).min_w(0).truncate().text_size(12).text_color(color).child(line.text))
+      // Round 3: the counts and age, visible rather than only in the tooltip (which keeps them, for
+      // a narrow panel where this line is cut).
+      .when(Boolean(tip), (e) => e.child(div().pl(22).min_w(0).truncate().text_size(12).text_color(t.muted).child(infoSessionLine(s, now))));
+  }
+
+  // Round 3: context per request as a step chart, to the window (the top line, labelled), each
+  // compaction a tick; neutral tones only (R2-4). Derived in derive(), only read here.
+  contextChart(t, c) {
+    if (!c) return null;
+    const H = 44, label = (text) => div().text_size(11).whitespace_nowrap().text_color(t.muted).child(text);
+    const rule = (top) => div().absolute().left(0).right(0).h(1).bg(t.tones.guide).when(top, (e) => e.top(0)).when(!top, (e) => e.bottom(0));
+    const columns = h_flex().absolute().top(0).left(0).right(0).bottom(0).items_end().children(c.bars.map((b) =>
+      div().flex_1().min_w(0).min_h(1.5).h(`${(b.ratio * 100).toFixed(2)}%`).bg(t.tones.track).child(div().h(1.5).bg(t.tones.fill))));
+    const ticks = c.ticks.map((k) => div().absolute().top(-3).h(H + 6).w(1).bg(t.tones.notch).left(`${(k.at * 100).toFixed(2)}%`).when(k.at >= 1, (e) => e.ml(-1)));
+    // A label centred under its tick, kept inside the chart at either end.
+    const W = 60;
+    const names = c.ticks.filter((k) => k.label).map((k) => {
+      const box = div().absolute().top(0).w(W);
+      if (k.at < 0.12) return box.left(`${(k.at * 100).toFixed(2)}%`).child(label("compacted"));
+      if (k.at > 0.88) return box.right(`${((1 - k.at) * 100).toFixed(2)}%`).flex().justify_end().child(label("compacted"));
+      return box.left(`${(k.at * 100).toFixed(2)}%`).ml(-W / 2).flex().justify_center().child(label("compacted"));
+    });
+    return v_flex().id("context-chart").pr(CHROME.rowX).pt(4).pb(8).gap(4)
+      .child(h_flex().justify_between().child(label(c.caption)).child(label(c.ceiling)))
+      .child(div().relative().h(H).w_full().child(rule(true)).child(columns).child(rule(false)).children(ticks))
+      .when(names.length > 0, (e) => e.child(div().relative().h(14).w_full().children(names)));
   }
 
   // D2: label + % and a right text on one line, a full-width 4 px bar under; neutral, warning
@@ -365,6 +391,7 @@ export default class Info extends View {
       if (this.context) {
         const comp = c.compactions ? `Compacted ${c.compactions === 1 ? "once" : `${c.compactions} times`}${s.lastCompaction ? `, ${infoAge(now - s.lastCompaction)} ago` : ""}` : "Not compacted yet";
         out.push(v_flex().id("context-more").pl(CHROME.rowX).pb(4).gap(2).text_size(12).text_color(t.muted)
+          .when(Boolean(f.chart), (e) => e.child(this.contextChart(t, f.chart)))
           .child(div().child(`Cache hits ${pct(cache.session)} (last request ${pct(cache.last)})`))
           .child(div().child(`Cache: ${infoTokens(cache.read)} read, ${infoTokens(cache.written)} written`))
           .child(div().child(comp)));
@@ -760,6 +787,7 @@ export default class Info extends View {
       context: infoContext(s, window), cache: infoCache(s), errors: n.failed, total: n.calls,
       started: s.started !== null && s.requests.length + s.messages > 0,
       list: null, byId: new Map(infoRows([...running, ...history]).map((c) => [c.id, c])), edited: infoEdited(s, this.root()),
+      chart: infoContextChart(s, window, { known: Boolean(this.windows[s.model]) }),
     };
     return f;
   }
